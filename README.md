@@ -2,6 +2,17 @@
 
 A high-performance remote control system for jailbroken iOS devices. It allows you to trigger media controls, system actions, and Shortcuts instantly from your computer or Home Assistant via TCP.
 
+<p align="center">
+  <img src="images/IMG_1331.PNG" width="250" />
+  <img src="images/IMG_1332.PNG" width="250" />
+  <img src="images/IMG_1333.PNG" width="250" />
+</p>
+<p align="center">
+  <img src="images/IMG_1334.PNG" width="250" />
+  <img src="images/IMG_1336.PNG" width="250" />
+  <img src="images/IMG_1338.PNG" width="250" />
+</p>
+
 ## Requirements
 - **Rootless Jailbroken Device** (iOS 15+)
 
@@ -94,19 +105,6 @@ You can assign sequences of actions to any trigger, including:
 - **Connectivity**: WiFi, Bluetooth, AirPlay Disconnect
 - **System**: DND, Low Power Mode, Lock Device, ANC Modes
 - **App**: Open App, Run Shortcut, Execute Terminal Command
-
-### App Interface
-
-<p align="center">
-  <img src="images/IMG_1331.PNG" width="250" />
-  <img src="images/IMG_1332.PNG" width="250" />
-  <img src="images/IMG_1333.PNG" width="250" />
-</p>
-<p align="center">
-  <img src="images/IMG_1334.PNG" width="250" />
-  <img src="images/IMG_1336.PNG" width="250" />
-  <img src="images/IMG_1338.PNG" width="250" />
-</p>
 
 ### Volume/Mute Control
 - `mute [on|off|status]` - Control media mute state (uses Volume 0%).

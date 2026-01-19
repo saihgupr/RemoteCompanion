@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Name</key>
+	<string>RemoteCompanion</string>
+	<key>Script</key>
+	<string>Action.sh</string>
+	<key>Icon</key>
+	<string>Icon.png</string>
+	<key>Title</key>
+	<string>RemoteCompanion %Param%Device% %Param%Command%</string>
+<!-- 	<key>Results</key>
+	<string>None|Asynchronously|Variable|Window|Briefly|Clipboard|Large</string> -->
+	<key>Parameters</key>
+	<array>
+		<dict>
+			<key>Label</key>
+			<string>Command</string>
+			<key>Type</key>
+			<string>TokenString</string>
+		</dict>
+		<dict>
+			<key>Label</key>
+			<string>Device</string>
+			<key>Type</key>
+			<string>PopupMenu</string>
+			<key>Default</key>
+			<string>iPhone</string>
+			<key>Menu</key>
+			<string>iPad|iPhone</string>
+		</dict>
+	</array>
+</dict>
+</plist>

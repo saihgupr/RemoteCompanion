@@ -1,0 +1,11 @@
+Package: com.remote.companion
+Name: RemoteCompanion
+Depends: mobilesubstrate, firmware (>= 15.0)
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Remote Control Companion for jailbroken devices
+Maintainer: RemoteCompanion
+Author: RemoteCompanion
+Section: Tweaks
+Replaces: com.pizzaman.remotecommand
+Conflicts: com.pizzaman.remotecommand

@@ -1,0 +1,27 @@
+.DS_Store
+.theos/
+packages/
+*.deb
+*.ipa
+*.tar.gz
+*.tar.lzma
+debian-binary
+.gemini/
+.git-new/
+dump_classes
+dump_classes.m
+remote_logs.txt
+*.log
+node_modules/
+dist/
+build/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# User Scripts
+deploy.sh
+deploy_all.sh
+install_trollstore.sh

@@ -1,0 +1,344 @@
+#import "RCTriggersViewController.h"
+#import "RCConfigManager.h"
+#import "RCActionsViewController.h"
+#import "RCSettingsViewController.h"
+#import "RCNFCTriggerViewController.h"
+#import <notify.h>
+
+#define kSimulateNotificationPrefix "com.pizzaman.rc.simulate."
+
+@interface RCTriggersViewController ()
+@property (nonatomic, strong) NSArray<NSArray<NSString *> *> *sections;
+@property (nonatomic, strong) NSArray<NSString *> *sectionTitles;
+@end
+
+@implementation RCTriggersViewController
+
+// Helper to get short friendly names for command strings
+- (NSString *)shortNameForCommand:(NSString *)cmd {
+    return [self nameForCommand:cmd truncate:YES];
+}
+
+- (NSString *)nameForCommand:(NSString *)cmd truncate:(BOOL)shouldTruncate {
+    NSDictionary *names = @{
+        @"play": @"Play",
+        @"pause": @"Pause",
+        @"playpause": @"Play/Pause",
+        @"next": @"Next",
+        @"prev": @"Previous",
+        @"volume up": @"Vol+",
+        @"volume down": @"Vol-",
+        @"flashlight": @"Flashlight",
+        @"flashlight on": @"Flash On",
+        @"flashlight off": @"Flash Off",
+        @"rotate lock": @"Rotate Lock",
+        @"rotate unlock": @"Rotate Unlock",
+        @"wifi on": @"WiFi On",
+        @"wifi off": @"WiFi Off",
+        @"bluetooth on": @"BT On",
+        @"bluetooth off": @"BT Off",
+        @"haptic": @"Haptic",
+        @"screenshot": @"Screenshot",
+        @"lock": @"Lock",
+        @"dnd on": @"DND On",
+        @"dnd off": @"DND Off",
+        @"lpm on": @"LPM On",
+        @"lpm off": @"LPM Off",
+        @"anc on": @"ANC",
+        @"anc off": @"ANC Off",
+        @"anc transparency": @"Transparency",
+        @"airplay disconnect": @"AirPlay Off",
+        @"airplane on": @"Airplane On",
+        @"airplane off": @"Airplane Off",
+        @"airplane toggle": @"Airplane Toggle",
+        @"low power on": @"LPM On",
+        @"low power off": @"LPM Off",
+        @"low power mode on": @"LPM On",
+        @"low power mode off": @"LPM Off",
+        @"lock status": @"Lock Status",
+        @"lock toggle": @"Lock Toggle",
+        @"bluetooth disconnect": @"BT Disconnect"
+    };
+    
+    NSString *result = names[cmd];
+    
+    if (!result) {
+        if ([cmd hasPrefix:@"exec "]) {
+            result = [cmd substringFromIndex:5];
+        } else if ([cmd hasPrefix:@"delay "]) {
+            result = [NSString stringWithFormat:@"⏱%@s", [cmd substringFromIndex:6]];
+        } else if ([cmd hasPrefix:@"bt connect "]) {
+            result = [NSString stringWithFormat:@"BT: %@", [cmd substringFromIndex:11]];
+        } else if ([cmd hasPrefix:@"bt disconnect "]) {
+            result = [NSString stringWithFormat:@"BT Disconnect: %@", [cmd substringFromIndex:14]];
+        } else if ([cmd hasPrefix:@"airplay connect "]) {
+            result = [NSString stringWithFormat:@"AirPlay: %@", [cmd substringFromIndex:16]];
+        } else if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua "]) {
+            int prefixLen = [cmd hasPrefix:@"Lua "] ? 4 : ([cmd hasPrefix:@"lua_eval "] ? 9 : 4);
+            result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:prefixLen]];
+        } else if ([cmd hasPrefix:@"set-vol "]) {
+            result = [NSString stringWithFormat:@"Set Vol: %@", [cmd substringFromIndex:8]];
+        } else if ([cmd hasPrefix:@"brightness "]) {
+            result = [NSString stringWithFormat:@"Set Brightness: %@", [cmd substringFromIndex:11]];
+        } else if ([cmd hasPrefix:@"spotify "]) {
+            result = @"Spotify";
+        } else {
+            result = cmd;
+        }
+    }
+    
+    // Final truncation to keep the detail labels from overflowing
+    if (shouldTruncate && result.length > 18) {
+        result = [[result substringToIndex:15] stringByAppendingString:@"..."];
+    }
+    
+    return result;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    self.navigationController.navigationBar.tintColor = [UIColor labelColor];
+    self.title = @"RemoteCompanion";
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
+    
+    UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor = [UIColor systemBackgroundColor];
+    appearance.shadowColor = [UIColor clearColor];
+    
+    self.navigationItem.standardAppearance = appearance;
+    self.navigationItem.compactAppearance = appearance;
+    self.navigationItem.scrollEdgeAppearance = appearance;
+    
+    self.view.backgroundColor = [UIColor systemBackgroundColor];
+    
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] 
+        initWithImage:[UIImage systemImageNamed:@"gear"] 
+        style:UIBarButtonItemStylePlain 
+        target:self 
+        action:@selector(openSettings)];
+    
+    self.tableView.rowHeight = 64;
+    self.tableView.sectionHeaderTopPadding = 0;
+    self.tableView.contentInset = UIEdgeInsetsZero;
+    
+    self.tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 0.1)];
+    self.tableView.tableHeaderView.clipsToBounds = YES;
+    
+    UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] 
+        initWithTarget:self action:@selector(handleLongPress:)];
+    longPress.minimumPressDuration = 0.5;
+    [self.tableView addGestureRecognizer:longPress];
+    
+    self.navigationController.toolbarHidden = YES;
+    
+    // Listen for config changes
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(handleConfigChanged:) 
+                                                 name:RCConfigChangedNotification 
+                                               object:nil];
+}
+
+
+
+- (void)handleConfigChanged:(NSNotification *)note {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self reloadTableData];
+    });
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self reloadTableData];
+}
+
+- (void)reloadTableData {
+    NSMutableArray *sections = [NSMutableArray array];
+    NSMutableArray *titles = [NSMutableArray array];
+    
+    // Standard Sections
+    [sections addObject:@[@"volume_up_hold", @"volume_down_hold"]];
+    [titles addObject:@"Volume Buttons"];
+    
+    [sections addObject:@[@"power_double_tap", @"power_long_press"]];
+    [titles addObject:@"Power Button"];
+    
+    [sections addObject:@[@"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right"]];
+    [titles addObject:@"Screen Gestures"];
+    
+    [sections addObject:@[@"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"]];
+    [titles addObject:@"Edge Gestures"];
+    
+    [sections addObject:@[@"trigger_home_double_tap"]];
+    [titles addObject:@"Home Button"];
+    
+    // NFC Section
+    NSMutableArray *nfcKeys = [[[RCConfigManager sharedManager] nfcTriggerKeys] mutableCopy];
+    // Add a placeholder key for the "Add New" button
+    [nfcKeys addObject:@"__ADD_NEW_NFC__"];
+    
+    [sections addObject:nfcKeys];
+    [titles addObject:@"NFC Tags"];
+    
+    self.sections = sections;
+    self.sectionTitles = titles;
+    
+    [self.tableView reloadData];
+}
+
+- (void)openSettings {
+    RCSettingsViewController *settingsVC = [[RCSettingsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:settingsVC];
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
+- (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateBegan) return;
+    
+    CGPoint point = [gesture locationInView:self.tableView];
+    NSIndexPath *indexPath = [self.tableView indexPathForRowAtPoint:point];
+    
+    if (!indexPath) return;
+    
+    NSString *triggerKey = _sections[indexPath.section][indexPath.row];
+    if ([triggerKey isEqualToString:@"__ADD_NEW_NFC__"]) return;
+    
+    RCConfigManager *config = [RCConfigManager sharedManager];
+    NSArray *actions = [config actionsForTrigger:triggerKey];
+    
+    if (actions.count == 0) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No Actions"
+            message:@"No actions configured for this trigger. Tap to add actions first."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    
+    UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [haptic impactOccurred];
+    
+    UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+    [cell setHighlighted:YES animated:YES];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [cell setHighlighted:NO animated:YES];
+    });
+    
+    NSString *notificationName = [NSString stringWithFormat:@"%s%@", kSimulateNotificationPrefix, triggerKey];
+    notify_post([notificationName UTF8String]);
+}
+
+#pragma mark - Table View Data Source
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return _sections.count;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    return _sectionTitles[section];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return 35.0f;
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return _sections[section].count;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSString *triggerKey = _sections[indexPath.section][indexPath.row];
+    
+    if ([triggerKey isEqualToString:@"__ADD_NEW_NFC__"]) {
+        UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"AddCell"];
+        if (!cell) {
+            cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"AddCell"];
+        }
+        cell.textLabel.text = @"Scan New NFC Tag...";
+        cell.textLabel.textColor = [UIColor systemBlueColor];
+        cell.imageView.image = [UIImage systemImageNamed:@"plus.circle.fill"];
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        cell.detailTextLabel.text = nil;
+        return cell;
+    }
+    
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"TriggerCell"];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"TriggerCell"];
+    }
+    
+    RCConfigManager *config = [RCConfigManager sharedManager];
+    
+    cell.textLabel.text = [config displayNameForTrigger:triggerKey];
+    cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
+    cell.textLabel.textColor = [UIColor labelColor];
+    cell.imageView.image = nil; // Reset in case reused
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    
+    // Action names joined by >
+    NSArray *actions = [config actionsForTrigger:triggerKey];
+    if (actions.count > 0) {
+        if (actions.count == 1) {
+            cell.detailTextLabel.text = [self nameForCommand:actions.firstObject truncate:NO];
+        } else {
+            NSMutableArray *shortNames = [NSMutableArray array];
+            for (NSString *action in actions) {
+                [shortNames addObject:[self shortNameForCommand:action]];
+            }
+            cell.detailTextLabel.text = [shortNames componentsJoinedByString:@" > "];
+        }
+        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    } else {
+        cell.detailTextLabel.text = @"Not configured";
+        cell.detailTextLabel.textColor = [UIColor tertiaryLabelColor];
+    }
+    
+    cell.accessoryView = nil;
+    
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    
+    NSString *triggerKey = _sections[indexPath.section][indexPath.row];
+    
+    if ([triggerKey isEqualToString:@"__ADD_NEW_NFC__"]) {
+        // Import class at runtime to avoid circular dependency header issues if any, or just forward declare.
+        // But better is to just use string class name or helper.
+        // We included "RCNFCTriggerViewController.h" in header? No, we need to import it.
+        // Assuming we add #import "RCNFCTriggerViewController.h"
+        
+        // Dynamic instantiation for now since I can't easily add import to top via replace without context
+        Class nfcVCClass = NSClassFromString(@"RCNFCTriggerViewController");
+        if (nfcVCClass) {
+            UIViewController *vc = [[nfcVCClass alloc] init];
+            [self.navigationController pushViewController:vc animated:YES];
+        } else {
+            // Fallback if class not found (should be there)
+            NSLog(@"RCNFCTriggerViewController class not found!");
+        }
+        return;
+    }
+    
+    RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:triggerKey];
+    [self.navigationController pushViewController:actionsVC animated:YES];
+}
+
+- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSString *triggerKey = _sections[indexPath.section][indexPath.row];
+    return [triggerKey hasPrefix:@"nfc_"];
+}
+
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (editingStyle == UITableViewCellEditingStyleDelete) {
+        NSString *triggerKey = _sections[indexPath.section][indexPath.row];
+        if ([triggerKey hasPrefix:@"nfc_"]) {
+            [[RCConfigManager sharedManager] removeTrigger:triggerKey];
+            [self reloadTableData];
+        }
+    }
+}
+
+@end

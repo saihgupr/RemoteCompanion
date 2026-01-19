@@ -147,23 +147,6 @@ rc notify -t "Info" -m "FYI" -p low         # Quiet notification
 - `shortcut -r "My Shortcut Name"`
 - `shortcut -r "My Shortcut Name" -p "Input Arguments"` 
 
-## Installation
-
-### 1. RemoteCompanion Tweak
-Compile and install the tweak to your iPhone.
-```bash
-cd Tweak
-make package install
-```
-*Requires Theos and a jailbroken device.*
-
-### 2. Helper Script (rc_server.sh)
-This script runs in the background to handle Shortcuts safely.
-```bash
-./deploy.sh
-```
-*This will copy `rc_server.sh` to `/var/mobile/` and start it.*
-
 ## Usage
 
 ### Quick CLI (Recommended)
@@ -211,3 +194,9 @@ cmd: 'play'
 shell_command:
   iphone_remote: 'echo -n "{{ cmd }}" | nc -w 1 192.168.1.2 1234'
 ```
+
+## Support & Feedback
+
+If you encounter any issues or have feature requests, please [open an issue](https://github.com/saihgupr/RemoteCompanion/issues) on GitHub.
+
+If you find this project useful, please consider giving it a **star** ⭐, or [buy me a coffee](https://ko-fi.com/saihgupr) if you'd like!

@@ -97,9 +97,9 @@ fi
 
 # Map user-friendly commands to protocol commands
 
-if [[ "$CMD" == "vol-up" ]]; then
+if [[ "$CMD" == "vol-up" || "$CMD" == "volup" || "$CMD" == "volume up" || "$CMD" == "vol up" ]]; then
     CMD="button volup"
-elif [[ "$CMD" == "vol-down" ]]; then
+elif [[ "$CMD" == "vol-down" || "$CMD" == "voldown" || "$CMD" == "volume down" || "$CMD" == "vol down" ]]; then
     CMD="button voldown"
 elif [[ "$CMD" == "power" ]]; then
     CMD="button power"

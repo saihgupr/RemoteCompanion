@@ -1701,9 +1701,17 @@ static NSString *handle_command(NSString *cmd) {
         }
         
         return @"Error: AVSystemController failed. Cannot control media mute.\n";
-    } else if ([cleanCmd hasPrefix:@"volume"]) { // Matches "volume" and "volume <N>"
+    } else if ([cleanCmd isEqualToString:@"volume up"] || [cleanCmd isEqualToString:@"vol up"]) {
+        inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement, 0, 0);
+        return @"OK\n";
+    } else if ([cleanCmd isEqualToString:@"volume down"] || [cleanCmd isEqualToString:@"vol down"]) {
+        inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeDecrement, 0, 0);
+        return @"OK\n";
+    } else if ([cleanCmd hasPrefix:@"volume "] || [cleanCmd hasPrefix:@"volume"]) { // Matches "volume" and "volume <N>"
         NSString *arg = nil;
-        if (cleanCmd.length > 6) {
+        if (cleanCmd.length > 7) {
+             arg = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if (cleanCmd.length > 6) {
              arg = [[cleanCmd substringFromIndex:6] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         }
         
@@ -1716,13 +1724,20 @@ static NSString *handle_command(NSString *cmd) {
                      if (controller) {
                          // Set Volume
                          if (arg && arg.length > 0) {
-                             float target = [arg floatValue] / 100.0f;
-                             if (target < 0) target = 0;
-                             if (target > 1) target = 1;
-                             
-                             if ([controller respondsToSelector:@selector(setActiveCategoryVolumeTo:)]) {
-                                 [controller setActiveCategoryVolumeTo:target];
-                                 return [NSString stringWithFormat:@"Volume set to %d%%\n", (int)(target * 100)];
+                             // Safety check: ensure arg starts with a digit before using floatValue
+                             // as floatValue returns 0.0 for non-numeric strings like "up"
+                             if ([[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[arg characterAtIndex:0]]) {
+                                 float target = [arg floatValue] / 100.0f;
+                                 if (target < 0) target = 0;
+                                 if (target > 1) target = 1;
+                                 
+                                 if ([controller respondsToSelector:@selector(setActiveCategoryVolumeTo:)]) {
+                                     [controller setActiveCategoryVolumeTo:target];
+                                     return [NSString stringWithFormat:@"Volume set to %d%%\n", (int)(target * 100)];
+                                 }
+                             } else {
+                                 SRLog(@"[SpringRemote] Ignored non-numeric volume argument: %@", arg);
+                                 return [NSString stringWithFormat:@"Error: Invalid volume level '%@'\n", arg];
                              }
                          }
                          

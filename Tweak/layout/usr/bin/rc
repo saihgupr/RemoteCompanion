@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Simple RC client for iPhone (Localhost)
+# Connects to the Tweak running on port 1234
+# Usage: rc <command>
+
+if [ -z "$1" ]; then
+    echo "Usage: rc <command>"
+    exit 1
+fi
+
+# Construct command string
+CMD="$@"
+
+# Send to localhost:1234
+# Using /dev/tcp since nc might not be installed or behave differently
+echo -n "$CMD" > /dev/tcp/127.0.0.1/1234 2>/dev/null
+
+if [ $? -ne 0 ]; then
+    # Fallback to other ports if 1234 fails
+    for PORT in 1235 1236 1237 1238; do
+        echo -n "$CMD" > /dev/tcp/127.0.0.1/$PORT 2>/dev/null
+        if [ $? -eq 0 ]; then
+            exit 0
+        fi
+    done
+    echo "Error: RemoteCommand server not running or reachable."
+    exit 1
+fi

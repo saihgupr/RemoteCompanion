@@ -1,0 +1,11 @@
+Origin: RemoteCompanion Repo
+Label: RemoteCompanion
+Suite: stable
+Version: 1.0
+Codename: ios
+Architectures: iphoneos-arm
+
+Description: Official repository for RemoteCompanion tweaks.
+MD5Sum:
+ 58e338e4db467fbe8319bde33642043e 602 Packages
+ 8131c88db57220c986a2a060568c5256 431 Packages.bz2

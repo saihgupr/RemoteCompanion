@@ -1,0 +1,18 @@
+Package: com.pizzaman.remotecompanion
+Name: RemoteCompanion
+Depends: mobilesubstrate, firmware (>= 15.0)
+Description: Remote Companion App & Tweak
+Maintainer: Pizza Man
+Author: Pizza Man
+Section: Tweaks
+Replaces: com.pizzaman.remotecommand
+Conflicts: com.pizzaman.remotecommand
+Architecture: iphoneos-arm64
+Version: 1.0.0-19+debug
+Installed-Size: 1680
+Filename: ./com.pizzaman.remotecompanion_1.0.0-19+debug_iphoneos-arm64.deb
+Size: 344956
+MD5sum: 912812dc842a2375543520a3c79d7680
+SHA1: 947ebd0ae062ea20be7511c7f77dba6d84475304
+SHA256: bf0fdd81f8b0c653416d00de4c109f187b522052e90d643778f3fabc8ebc021e
+

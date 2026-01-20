@@ -1,0 +1,12 @@
+.DS_Store
+.theos/
+packages/
+*.deb
+!docs/*.deb
+*.ipa
+*.tar.gz
+*.tar.lzma
+debian-binary
+.git-backup-*
+deploy.sh
+

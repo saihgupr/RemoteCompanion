@@ -80,6 +80,7 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 - The `RemoteCompanion` tweak installed.
 
 ### 2. Installation
+- **Zebra/Sileo**: Add the repository `https://saihgupr.github.io/RemoteCompanion`
 - **Tweak**: Download and install the `.deb` file from the [Releases](https://github.com/saihgupr/RemoteCompanion/releases) section.
 - **Manual Build**: Alternatively, compile it yourself via Theos: `cd Tweak && make package install`.
 

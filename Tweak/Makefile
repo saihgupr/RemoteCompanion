@@ -1,3 +1,4 @@
+FINALPACKAGE=1
 THEOS ?= /opt/theos
 THEOS_DEVICE_IP = iphone.local
 INSTALL_TARGET_USER = mobile

@@ -1,9 +1,9 @@
-Package: com.pizzaman.remotecompanion
+Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion
 Version: 1.0.0
 Architecture: iphoneos-arm64
 Description: Companion app for RemoteCommand notifications
-Maintainer: pizzaman
-Author: pizzaman
+Maintainer: Saihgupr
+Author: Saihgupr
 Section: Utilities
 Depends: firmware (>= 15.0)

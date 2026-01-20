@@ -1,11 +1,11 @@
-Package: com.pizzaman.remotecompanion
+Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion
 Depends: mobilesubstrate, firmware (>= 15.0)
 Version: 1.0.0
 Architecture: iphoneos-arm
 Description: Remote Companion App & Tweak
-Maintainer: Pizza Man
-Author: Pizza Man
+Maintainer: Saihgupr
+Author: Saihgupr
 Section: Tweaks
 Replaces: com.pizzaman.remotecommand
 Conflicts: com.pizzaman.remotecommand

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2026-01-22
+
+### Added
+- **Settings UI**: Added version label (e.g., `v1.0.3`) to the bottom of the Settings menu.
+- **Improved Layout**: Refactored Settings screen to pin the version label to the bottom of the view, ensuring consistent positioning regardless of screen size.
+- **UI Details**: Matched version label styling to native table view footers (font, color).
+
 ## [1.0.2] - 2026-01-22
 
 ### Added

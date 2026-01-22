@@ -3,6 +3,8 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 @interface RCSettingsViewController () <UIDocumentPickerDelegate>
+@property (nonatomic, strong) UITableView *tableView;
+@property (nonatomic, strong) UILabel *versionLabel;
 @property (nonatomic, strong) UISwitch *masterSwitch;
 @property (nonatomic, strong) UISwitch *tcpSwitch;
 @property (nonatomic, assign) BOOL isExporting;
@@ -15,11 +17,46 @@
     
     self.title = @"Settings";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
+    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
     
     // Close button
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(dismissSettings)];
     
+    // Setup Table View
+    self.tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
+    self.tableView.delegate = self;
+    self.tableView.dataSource = self;
+    self.tableView.translatesAutoresizingMaskIntoConstraints = NO;
     self.tableView.rowHeight = 50;
+    [self.view addSubview:self.tableView];
+    
+    // Setup Version Label (Fixed at bottom)
+    self.versionLabel = [[UILabel alloc] init];
+    self.versionLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.versionLabel.textAlignment = NSTextAlignmentCenter;
+    self.versionLabel.font = [UIFont systemFontOfSize:13]; // Standard footer size
+    self.versionLabel.textColor = [UIColor secondaryLabelColor]; // Standard footer color
+    self.versionLabel.numberOfLines = 1;
+    
+    NSDictionary *infoDict = [[NSBundle mainBundle] infoDictionary];
+    NSString *version = [infoDict objectForKey:@"CFBundleShortVersionString"];
+    self.versionLabel.text = [NSString stringWithFormat:@"v%@", version];
+    
+    [self.view addSubview:self.versionLabel];
+    
+    // Constraints
+    [NSLayoutConstraint activateConstraints:@[
+        // Table View: Top, Left, Right, Bottom-to-Label
+        [self.tableView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+        [self.tableView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.tableView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.tableView.bottomAnchor constraintEqualToAnchor:self.versionLabel.topAnchor constant:-8], // Padding above label
+        
+        // Version Label: Centered, Pinned to Bottom Guide
+        [self.versionLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.versionLabel.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-8], // Padding from bottom
+        [self.versionLabel.heightAnchor constraintEqualToConstant:20]
+    ]];
 }
 
 - (void)dismissSettings {
@@ -29,7 +66,7 @@
 #pragma mark - Table View Data Source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 3;
+    return 2;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -43,18 +80,13 @@
         return nil;
     } else if (section == 1) {
         return @"Export your configuration to share or backup. Import to restore.";
-    } else if (section == 2) {
-        NSDictionary *infoDict = [[NSBundle mainBundle] infoDictionary];
-        NSString *version = [infoDict objectForKey:@"CFBundleShortVersionString"];
-        return [NSString stringWithFormat:@"v%@", version];
     }
     return nil;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return 2; // Master toggle + TCP toggle
-    if (section == 1) return 2; // Export, Import
-    return 0; // Version footer only
+    return 2; // Export, Import
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {

@@ -188,7 +188,7 @@
 }
 
 - (void)openSettings {
-    RCSettingsViewController *settingsVC = [[RCSettingsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    RCSettingsViewController *settingsVC = [[RCSettingsViewController alloc] init];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:settingsVC];
     [self presentViewController:nav animated:YES completion:nil];
 }

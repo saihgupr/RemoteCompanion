@@ -1,4 +1,4 @@
 #import <UIKit/UIKit.h>
 
-@interface RCSettingsViewController : UITableViewController
+@interface RCSettingsViewController : UIViewController <UITableViewDelegate, UITableViewDataSource>
 @end

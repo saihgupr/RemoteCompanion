@@ -966,6 +966,21 @@ static NSString *evaluate_lua_code(NSString *code) {
 
 static NSString *handle_command(NSString *cmd) {
     NSString *cleanCmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    
+    // Recursive stripping of 'sudo ' and 'rc ' prefixes for compatibility
+    BOOL stripped = YES;
+    while (stripped) {
+        stripped = NO;
+        if ([cleanCmd hasPrefix:@"sudo "]) {
+            cleanCmd = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            stripped = YES;
+        }
+        if ([cleanCmd hasPrefix:@"rc "]) {
+            cleanCmd = [[cleanCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            stripped = YES;
+        }
+    }
+    
     SRLog(@"Received command: %@", cleanCmd);
     
     // Debug hex dump of command
@@ -1890,6 +1905,7 @@ static NSString *handle_command(NSString *cmd) {
                 [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
             }
         });
+        return [NSString stringWithFormat:@"Opened %@\n", appName];
     } else if ([cleanCmd isEqualToString:@"bluetooth-on"] || [cleanCmd isEqualToString:@"bt-on"] || [cleanCmd isEqualToString:@"bluetooth on"] || [cleanCmd isEqualToString:@"bt on"]) {
         void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
         if (btHandle) {
@@ -2207,6 +2223,13 @@ static NSString *handle_command(NSString *cmd) {
         return nil;
     } else if ([cleanCmd hasPrefix:@"exec "]) {
         NSString *shellCmd = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        // If the custom command itself starts with 'rc ', handle it internally
+        if ([shellCmd hasPrefix:@"rc "]) {
+            NSString *inner = [[shellCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            return handle_command(inner);
+        }
+        
         SRLog(@"[SpringRemote] Processing command: %@", shellCmd);
         
         if ([shellCmd hasPrefix:@"curl "]) {

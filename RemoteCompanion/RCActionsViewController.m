@@ -50,7 +50,15 @@
         @"low power mode off": @"Low Power Mode Off",
         @"airplane on": @"Airplane Mode On",
         @"airplane off": @"Airplane Mode Off",
-        @"airplane toggle": @"Airplane Mode Toggle"
+        @"airplane toggle": @"Airplane Mode Toggle",
+        @"rotate toggle": @"Rotate Toggle",
+        @"rotation toggle": @"Rotate Toggle",
+        @"orientation toggle": @"Rotate Toggle",
+        @"dnd toggle": @"DND Toggle",
+        @"lpm toggle": @"LPM Toggle",
+        @"low power toggle": @"Low Power Mode Toggle",
+        @"low power mode toggle": @"Low Power Mode Toggle",
+        @"mute toggle": @"Mute Toggle"
     };
     
     NSString *result = names[cmd];
@@ -147,7 +155,16 @@
         @"anc on": @"ear.badge.checkmark",
         @"anc off": @"ear",
         @"anc transparency": @"waveform.circle.fill",
-        @"airplay disconnect": @"airplayaudio.badge.exclamationmark"
+        @"airplay disconnect": @"airplayaudio.badge.exclamationmark",
+        @"flashlight toggle": @"flashlight.on.fill",
+        @"rotate toggle": @"lock.rotation",
+        @"rotation toggle": @"lock.rotation",
+        @"orientation toggle": @"lock.rotation",
+        @"dnd toggle": @"moon.circle.fill",
+        @"lpm toggle": @"battery.25",
+        @"low power toggle": @"battery.25",
+        @"low power mode toggle": @"battery.25",
+        @"mute toggle": @"speaker.slash.fill"
     };
     return icons[cmd] ?: @"circle.fill";
 }

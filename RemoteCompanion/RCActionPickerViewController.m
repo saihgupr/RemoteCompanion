@@ -40,6 +40,7 @@
             @{ @"name": @"Set Brightness...", @"command": @"__SET_BRIGHTNESS__", @"icon": @"sun.max.fill" },
             @{ @"name": @"Next Track", @"command": @"next", @"icon": @"forward.fill" },
             @{ @"name": @"Previous Track", @"command": @"prev", @"icon": @"backward.fill" },
+            @{ @"name": @"Play/Pause Toggle", @"command": @"playpause", @"icon": @"playpause.fill" },
             @{ @"name": @"Volume Up", @"command": @"volume up", @"icon": @"speaker.wave.3.fill" },
             @{ @"name": @"Volume Down", @"command": @"volume down", @"icon": @"speaker.wave.1.fill" }
         ],
@@ -49,7 +50,8 @@
             @{ @"name": @"Flashlight On", @"command": @"flashlight on", @"icon": @"flashlight.on.fill" },
             @{ @"name": @"Flashlight Off", @"command": @"flashlight off", @"icon": @"flashlight.off.fill" },
             @{ @"name": @"Rotate Lock", @"command": @"rotate lock", @"icon": @"lock.rotation" },
-            @{ @"name": @"Rotate Unlock", @"command": @"rotate unlock", @"icon": @"lock.rotation.open" }
+            @{ @"name": @"Rotate Unlock", @"command": @"rotate unlock", @"icon": @"lock.rotation.open" },
+            @{ @"name": @"Rotate Toggle", @"command": @"rotate toggle", @"icon": @"lock.rotation" }
         ],
         // Connectivity
         @[
@@ -73,9 +75,11 @@
             @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
             @{ @"name": @"Do Not Disturb On", @"command": @"dnd on", @"icon": @"moon.fill" },
             @{ @"name": @"Do Not Disturb Off", @"command": @"dnd off", @"icon": @"moon" },
+            @{ @"name": @"Do Not Disturb Toggle", @"command": @"dnd toggle", @"icon": @"moon.circle.fill" },
             @{ @"name": @"Lock Status", @"command": @"lock status", @"icon": @"lock.circle" },
             @{ @"name": @"Low Power Mode On", @"command": @"low power on", @"icon": @"battery.25" },
             @{ @"name": @"Low Power Mode Off", @"command": @"low power off", @"icon": @"battery.100" },
+            @{ @"name": @"Low Power Mode Toggle", @"command": @"low power toggle", @"icon": @"battery.25" },
             @{ @"name": @"Custom Lua Script...", @"command": @"__LUA_SCRIPT__", @"icon": @"scroll.fill" },
             @{ @"name": @"Delay", @"command": @"__DELAY__", @"icon": @"timer" },
             @{ @"name": @"Custom Command...", @"command": @"__CUSTOM__", @"icon": @"terminal.fill" }

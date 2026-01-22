@@ -430,6 +430,29 @@ static void toggle_lpm(BOOL state) {
     });
 }
 
+// State detection helpers
+static BOOL get_lpm_state() {
+    Class BatterySaverClass = objc_getClass("_CDBatterySaver");
+    if (BatterySaverClass) {
+        id saver = [BatterySaverClass batterySaver];
+        if (saver && [saver respondsToSelector:@selector(getPowerMode)]) {
+            return [saver getPowerMode] != 0;
+        }
+    }
+    return NO;
+}
+
+static BOOL get_dnd_state() {
+    Class ServiceClass = objc_getClass("DNDModeAssertionService");
+    if (ServiceClass) {
+        DNDModeAssertionService *service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
+        NSError *err = nil;
+        id assertion = [service activeModeAssertionWithError:&err];
+        return (assertion != nil);
+    }
+    return NO;
+}
+
 
 static void inject_hid_event(uint32_t page, uint32_t usage, uint64_t durationNs, IOOptionBits flags) {
     static dispatch_queue_t hidQueue;
@@ -1032,6 +1055,8 @@ static NSString *handle_command(NSString *cmd) {
             [device setTorchMode:AVCaptureTorchModeOff];
             [device unlockForConfiguration];
         }
+    } else if ([cleanCmd isEqualToString:@"flashlight toggle"]) {
+        return handle_command(@"flashlight");
     } else if ([cleanCmd hasPrefix:@"notify "]) {
         // notify "Title" "Body" [--urgent]
         // Parse: notify "Title" "Message" OR notify Title Message
@@ -1604,6 +1629,10 @@ static NSString *handle_command(NSString *cmd) {
         } else if ([subCmd isEqualToString:@"off"]) {
             toggle_dnd(NO);
             return @"DND Disabled\n";
+        } else if ([subCmd isEqualToString:@"toggle"]) {
+            BOOL current = get_dnd_state();
+            toggle_dnd(!current);
+            return [NSString stringWithFormat:@"DND %@\n", !current ? @"Enabled" : @"Disabled"];
         }
     } else if ([cleanCmd hasPrefix:@"lpm "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -1613,6 +1642,10 @@ static NSString *handle_command(NSString *cmd) {
         } else if ([subCmd isEqualToString:@"off"]) {
             toggle_lpm(NO);
             return @"Low Power Mode Disabled\n";
+        } else if ([subCmd isEqualToString:@"toggle"]) {
+            BOOL current = get_lpm_state();
+            toggle_lpm(!current);
+            return [NSString stringWithFormat:@"Low Power Mode %@\n", !current ? @"Enabled" : @"Disabled"];
         }
     } else if ([cleanCmd hasPrefix:@"low power mode "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:15] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -1622,6 +1655,10 @@ static NSString *handle_command(NSString *cmd) {
         } else if ([subCmd isEqualToString:@"off"]) {
             toggle_lpm(NO);
             return @"Low Power Mode Disabled\n";
+        } else if ([subCmd isEqualToString:@"toggle"]) {
+            BOOL current = get_lpm_state();
+            toggle_lpm(!current);
+            return [NSString stringWithFormat:@"Low Power Mode %@\n", !current ? @"Enabled" : @"Disabled"];
         }
     } else if ([cleanCmd hasPrefix:@"low power "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -1631,7 +1668,30 @@ static NSString *handle_command(NSString *cmd) {
         } else if ([subCmd isEqualToString:@"off"]) {
             toggle_lpm(NO);
             return @"Low Power Mode Disabled\n";
+        } else if ([subCmd isEqualToString:@"toggle"]) {
+            BOOL current = get_lpm_state();
+            toggle_lpm(!current);
+            return [NSString stringWithFormat:@"Low Power Mode %@\n", !current ? @"Enabled" : @"Disabled"];
         }
+    } else if ([cleanCmd isEqualToString:@"orientation lock"] || [cleanCmd isEqualToString:@"orientation"] || [cleanCmd isEqualToString:@"rotation"] || [cleanCmd isEqualToString:@"rotate"]) {
+        return handle_command(@"orientation toggle");
+    } else if ([cleanCmd hasPrefix:@"orientation "] || [cleanCmd hasPrefix:@"rotation "] || [cleanCmd hasPrefix:@"rotate "]) {
+        NSString *subCmd = [[cleanCmd componentsSeparatedByString:@" "] lastObject];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            Class managerClass = objc_getClass("SBOrientationLockManager");
+            if (managerClass) {
+                id manager = [managerClass sharedInstance];
+                if ([subCmd isEqualToString:@"on"] || [subCmd isEqualToString:@"lock"]) {
+                    [manager lock];
+                } else if ([subCmd isEqualToString:@"off"] || [subCmd isEqualToString:@"unlock"]) {
+                    [manager unlock];
+                } else if ([subCmd isEqualToString:@"toggle"]) {
+                    if ([manager isUserLocked]) [manager unlock];
+                    else [manager lock];
+                }
+            }
+        });
+        return @"OK\n";
     } else if ([cleanCmd isEqualToString:@"mute"]) {
         return @"Usage: rc mute [on|off|status]\n";
     } else if ([cleanCmd hasPrefix:@"mute "]) {
@@ -1698,6 +1758,21 @@ static NSString *handle_command(NSString *cmd) {
                                  [controller setActiveCategoryVolumeTo:targetVol];
                                  sr_previous_volume = -1.0f; // Reset
                                  return @"Unmuted (Media)\n";
+                             }
+                         } else if ([subCmd isEqualToString:@"toggle"]) {
+                             float currentVol = 0;
+                             if ([controller respondsToSelector:@selector(getVolume:forCategory:)]) {
+                                 [controller getVolume:&currentVol forCategory:@"Audio/Video"];
+                             }
+                             BOOL isMuted = NO;
+                             if ([controller respondsToSelector:@selector(getActiveCategoryMuted:)]) {
+                                 [controller getActiveCategoryMuted:&isMuted];
+                             }
+                             
+                             if (isMuted || currentVol == 0.0f) {
+                                 return handle_command(@"mute off");
+                             } else {
+                                 return handle_command(@"mute on");
                              }
                          }
                      }

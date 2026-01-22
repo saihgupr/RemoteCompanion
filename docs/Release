@@ -8,3 +8,8 @@ Description: Official repository for RemoteCompanion tweaks.
 MD5Sum:
  ccb424306791fe18ab7f8ce99e8b82d0 1778 Packages
  161f6e90e2af09942749e420cbbd6d7c 733 Packages.bz2
+ 12818a4259b4b0df3a5d34c1606b9e48 598 Packages.zst
+SHA256:
+ 9e8ce3b9b7624c59f976f9d8e8a578019dfd0e9312770210e339c421baaaf4ed 1778 Packages
+ 2742c7b06c59f65f947e7f4f060ad708a0e2d02edd445173423d47d63a29ca12 733 Packages.bz2
+ 619f464ab0e233162752a02a4c98576ac7989a82e9fad4a2de9e78b2505c5b6b 598 Packages.zst

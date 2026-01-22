@@ -29,12 +29,13 @@
 #pragma mark - Table View Data Source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 2;
+    return 3;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     if (section == 0) return @"General";
-    return @"Backup";
+    if (section == 1) return @"Backup";
+    return nil;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
@@ -42,13 +43,18 @@
         return nil;
     } else if (section == 1) {
         return @"Export your configuration to share or backup. Import to restore.";
+    } else if (section == 2) {
+        NSDictionary *infoDict = [[NSBundle mainBundle] infoDictionary];
+        NSString *version = [infoDict objectForKey:@"CFBundleShortVersionString"];
+        return [NSString stringWithFormat:@"v%@", version];
     }
     return nil;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return 2; // Master toggle + TCP toggle
-    return 2; // Export, Import
+    if (section == 1) return 2; // Export, Import
+    return 0; // Version footer only
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {

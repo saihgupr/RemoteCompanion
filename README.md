@@ -79,10 +79,10 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 - A **Rootless Jailbroken Device** (iOS 15+)
 - The `RemoteCompanion` tweak installed.
 
-### 2. Installation
-- **Zebra**: Add the repository `https://saihgupr.github.io/RemoteCompanion`
-- **Tweak**: Download and install the `.deb` file from the [Releases](https://github.com/saihgupr/RemoteCompanion/releases) section.
-- **Manual Build**: Alternatively, compile it yourself via Theos: `cd Tweak && make package install`.
+### 2. Installation Options
+- **Repository (Recommended)**: Add `https://saihgupr.github.io/RemoteCompanion` to Zebra, or tap [Add Repo](zbra://sources/add/https://saihgupr.github.io/RemoteCompanion) to add it automatically.
+- **Manual Install**: Download the `.deb` from [Releases](https://github.com/saihgupr/RemoteCompanion/releases).
+- **Build from Source**: `cd Tweak && make package install`.
 
 ### 3. Usage Options
 Choose the control method that best fits your needs:

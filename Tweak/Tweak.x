@@ -660,11 +660,18 @@ static void load_trigger_config() {
 }
 static void update_simulation_observers();
 
+// Forward declarations for gesture management functions
+static BOOL should_register_edge_gestures();
+static void register_edge_gestures();
+static void unregister_edge_gestures();
+static void update_edge_gestures();
+
 static void config_changed_callback(CFNotificationCenterRef center, void *observer,
                                     CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     SRLog(@"[SpringRemote] Config changed notification received, reloading...");
     load_trigger_config();
     update_simulation_observers();
+    update_edge_gestures(); // Dynamically add/remove gesture recognizers
 }
 
 static void register_config_observer() {
@@ -2818,6 +2825,12 @@ static BOOL g_statusBarTouchActive = NO;
 @implementation SREdgeGestureRecognizer
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    // Early exit: Check if edge gestures should even be active
+    if (!should_register_edge_gestures()) {
+        self.state = UIGestureRecognizerStateFailed;
+        return;
+    }
+    
     UITouch *touch = [touches anyObject];
     CGPoint loc = [touch locationInView:nil];
     CGSize screenSize = [UIScreen mainScreen].bounds.size;
@@ -2931,6 +2944,97 @@ static BOOL g_statusBarTouchActive = NO;
 
 static SREdgeGestureRecognizer *leftEdgeRecognizer;
 static SREdgeGestureRecognizer *rightEdgeRecognizer;
+static SBSystemGestureManager *g_gestureManager = nil;
+
+// Helper: Check if any edge gestures are enabled
+static BOOL should_register_edge_gestures() {
+    if (!g_triggerConfig) return NO;
+    if (![g_triggerConfig[@"masterEnabled"] boolValue]) return NO;
+    
+    NSDictionary *triggers = g_triggerConfig[@"triggers"];
+    NSArray *edgeTriggers = @[@"trigger_edge_left_swipe_up", 
+                               @"trigger_edge_left_swipe_down",
+                               @"trigger_edge_right_swipe_up",
+                               @"trigger_edge_right_swipe_down"];
+    
+    for (NSString *key in edgeTriggers) {
+        NSDictionary *trigger = triggers[key];
+        if (trigger && [trigger[@"enabled"] boolValue]) {
+            return YES; // At least one edge gesture is enabled
+        }
+    }
+    
+    return NO;
+}
+
+// Register gesture recognizers
+static void register_edge_gestures() {
+    if (!g_gestureManager) {
+        g_gestureManager = [%c(SBSystemGestureManager) mainDisplayManager];
+        if (!g_gestureManager) {
+            SRLog(@"[SpringRemote] ERROR: Could not find mainDisplayManager");
+            return;
+        }
+    }
+    
+    // Left Edge
+    if (!leftEdgeRecognizer) {
+        leftEdgeRecognizer = [[SREdgeGestureRecognizer alloc] initWithTarget:[SRGestureHelper sharedInstance] action:@selector(handleEdgeGesture:)];
+        leftEdgeRecognizer.isLeftEdge = YES;
+        leftEdgeRecognizer.cancelsTouchesInView = NO; // Don't block other touches by default
+        leftEdgeRecognizer.delaysTouchesBegan = NO;   // Don't add lag
+        [g_gestureManager addGestureRecognizer:leftEdgeRecognizer withType:120];
+        SRLog(@"[SpringRemote] Registered LEFT edge gesture recognizer");
+    }
+    
+    // Right Edge
+    if (!rightEdgeRecognizer) {
+        rightEdgeRecognizer = [[SREdgeGestureRecognizer alloc] initWithTarget:[SRGestureHelper sharedInstance] action:@selector(handleEdgeGesture:)];
+        rightEdgeRecognizer.isRightEdge = YES;
+        rightEdgeRecognizer.cancelsTouchesInView = NO; // Don't block other touches by default
+        rightEdgeRecognizer.delaysTouchesBegan = NO;   // Don't add lag
+        [g_gestureManager addGestureRecognizer:rightEdgeRecognizer withType:121];
+        SRLog(@"[SpringRemote] Registered RIGHT edge gesture recognizer");
+    }
+}
+
+// Unregister gesture recognizers
+static void unregister_edge_gestures() {
+    if (leftEdgeRecognizer) {
+        if (leftEdgeRecognizer.view) {
+            [leftEdgeRecognizer.view removeGestureRecognizer:leftEdgeRecognizer];
+        }
+        leftEdgeRecognizer = nil;
+        SRLog(@"[SpringRemote] Unregistered LEFT edge gesture recognizer");
+    }
+    
+    if (rightEdgeRecognizer) {
+        if (rightEdgeRecognizer.view) {
+            [rightEdgeRecognizer.view removeGestureRecognizer:rightEdgeRecognizer];
+        }
+        rightEdgeRecognizer = nil;
+        SRLog(@"[SpringRemote] Unregistered RIGHT edge gesture recognizer");
+    }
+}
+
+// Update gesture registration based on config
+static void update_edge_gestures() {
+    BOOL shouldRegister = should_register_edge_gestures();
+    BOOL currentlyRegistered = (leftEdgeRecognizer != nil || rightEdgeRecognizer != nil);
+    
+    if (shouldRegister && !currentlyRegistered) {
+        SRLog(@"[SpringRemote] Edge gestures enabled - registering...");
+        register_edge_gestures();
+    } else if (!shouldRegister && currentlyRegistered) {
+        SRLog(@"[SpringRemote] Edge gestures disabled - unregistering...");
+        unregister_edge_gestures();
+    } else if (shouldRegister && currentlyRegistered) {
+        SRLog(@"[SpringRemote] Edge gestures already registered and should be");
+    } else {
+        SRLog(@"[SpringRemote] Edge gestures not needed and not registered");
+    }
+}
+
 
 %hook SBSystemGestureManager
 
@@ -2953,29 +3057,8 @@ static SREdgeGestureRecognizer *rightEdgeRecognizer;
         register_simulation_observers();
         start_server();
         
-        // Register System Gestures
-        SBSystemGestureManager *manager = [%c(SBSystemGestureManager) mainDisplayManager];
-        if (manager) {
-            SRLog(@"[SpringRemote] Found SBSystemGestureManager, adding recognizers...");
-            
-            // Left Edge
-            if (!leftEdgeRecognizer) {
-                leftEdgeRecognizer = [[SREdgeGestureRecognizer alloc] initWithTarget:[SRGestureHelper sharedInstance] action:@selector(handleEdgeGesture:)];
-                leftEdgeRecognizer.isLeftEdge = YES;
-                [manager addGestureRecognizer:leftEdgeRecognizer withType:120]; 
-            }
-            
-            // Right Edge
-            if (!rightEdgeRecognizer) {
-                rightEdgeRecognizer = [[SREdgeGestureRecognizer alloc] initWithTarget:[SRGestureHelper sharedInstance] action:@selector(handleEdgeGesture:)];
-                rightEdgeRecognizer.isRightEdge = YES;
-                [manager addGestureRecognizer:rightEdgeRecognizer withType:121];
-            }
-            
-            SRLog(@"[SpringRemote] Edge Gestures Installed.");
-        } else {
-            SRLog(@"[SpringRemote] ERROR: Could not find mainDisplayManager");
-        }
+        // Conditionally register edge gestures based on config
+        update_edge_gestures();
         
         SRLog(@"[SpringRemote] Initialization Complete.");
     });

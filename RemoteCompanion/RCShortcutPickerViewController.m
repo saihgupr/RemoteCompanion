@@ -95,9 +95,24 @@
             self.navigationItem.rightBarButtonItem = nil;
             
             if (results.count == 0) {
-                 UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Debug Log" message:debugLog preferredStyle:UIAlertControllerStyleAlert];
-                 [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                 [self presentViewController:alert animated:YES completion:nil];
+                NSString *binPath = @"/var/jb/usr/bin/springcuts";
+                if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
+                    binPath = @"/usr/bin/springcuts";
+                }
+                
+                if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
+                    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"SpringCuts Missing" 
+                                                                                   message:@"Please install SpringCuts from Havoc to enable shortcuts support." 
+                                                                            preferredStyle:UIAlertControllerStyleAlert];
+                    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                        [self dismissViewControllerAnimated:YES completion:nil];
+                    }]];
+                    [self presentViewController:alert animated:YES completion:nil];
+                } else {
+                    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Debug Log" message:debugLog preferredStyle:UIAlertControllerStyleAlert];
+                    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+                    [self presentViewController:alert animated:YES completion:nil];
+                }
             }
         });
     });

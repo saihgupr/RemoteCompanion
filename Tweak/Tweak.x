@@ -1167,11 +1167,15 @@ static NSString *handle_command(NSString *cmd) {
         SRLog(@"Direct spawn springcuts with: %@", args);
         
         const char *springcutsPath = "/var/jb/usr/bin/springcuts";
+        if (access(springcutsPath, X_OK) != 0) {
+            springcutsPath = "/usr/bin/springcuts";
+        }
         
         // Check if binary exists
         if (access(springcutsPath, X_OK) != 0) {
-            SRLog(@"ERROR: springcuts binary not found or not executable at %s", springcutsPath);
-            return nil;
+            SRLog(@"ERROR: springcuts binary not found");
+            send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
+            return @"Error: SpringCuts not installed\n";
         }
         SRLog(@"springcuts binary found, preparing spawn...");
         
@@ -1235,8 +1239,13 @@ static NSString *handle_command(NSString *cmd) {
         
         const char *springcutsPath = "/var/jb/usr/bin/springcuts";
         if (access(springcutsPath, X_OK) != 0) {
-            SRLog(@"ERROR: springcuts not found at %s", springcutsPath);
-            return nil;
+            springcutsPath = "/usr/bin/springcuts";
+        }
+        
+        if (access(springcutsPath, X_OK) != 0) {
+            SRLog(@"ERROR: springcuts not found");
+            send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
+            return @"Error: SpringCuts not installed\n";
         }
         
         char **argv = (char **)malloc((args.count + 2) * sizeof(char *));
@@ -2338,7 +2347,8 @@ static NSString *handle_command(NSString *cmd) {
                          [task performSelector:@selector(launch)];
                          SRLog(@"[SpringRemote] Launched springcuts for '%@'", shortcutName);
                      } else {
-                         SRLog(@"[SpringRemote] Error: springcuts binary not found at %@", binPath);
+                         SRLog(@"[SpringRemote] Error: springcuts binary not found");
+                         send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
                      }
                  } else {
                      SRLog(@"[SpringRemote] Error: NSTask class not found");

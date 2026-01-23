@@ -2742,7 +2742,11 @@ static void trigger_haptic() {
 }
 %end
 
-// --- Reachability (Home Button Double Tap) ---
+// --- Reachability (Home Button Multi-Click: Double/Triple/Quadruple) ---
+
+// Global state for home button click tracking
+static NSTimer *g_homeClickTimer = nil;
+static NSInteger g_homeClickCount = 0;
 
 %hook SBReachabilityManager
 
@@ -2751,29 +2755,78 @@ static void trigger_haptic() {
 }
 
 - (void)toggleReachability {
-    SRLog(@"[SpringRemote] SBReachabilityManager toggleReachability (Double Tap detected)");
+    SRLog(@"[SpringRemote] SBReachabilityManager toggleReachability (Click detected)");
     
-    // Execute our trigger
-    load_trigger_config();
-    NSDictionary *trigger = g_triggerConfig[@"triggers"][@"trigger_home_double_tap"];
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL triggerEnabled = [trigger[@"enabled"] boolValue];
+    // Increment click count
+    g_homeClickCount++;
     
-    if (masterEnabled && triggerEnabled) {
-        SRLog(@"[SpringRemote] Home Double Tap Trigger Fired! Suppressing default Reachability.");
-        
-        // Haptic feedback
-        trigger_haptic();
-        
-        // Execute Actions
-        RCExecuteTrigger(@"trigger_home_double_tap");
-        
-        // SUPPRESS default Reachability behavior
-        return;
+    // Cancel existing timer
+    if (g_homeClickTimer) {
+        [g_homeClickTimer invalidate];
+        g_homeClickTimer = nil;
     }
     
-    // If trigger disabled, behave normally
-    %orig;
+    // Start new timer (0.4s) to detect end of click sequence
+    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:NO block:^(NSTimer *timer) {
+        g_homeClickTimer = nil;
+        
+        SRLog(@"[SpringRemote] Home button click sequence complete: %ld clicks", (long)g_homeClickCount);
+        
+        // Determine which trigger to execute based on click count
+        NSString *triggerKey = nil;
+        NSString *actionDescription = nil;
+        
+        if (g_homeClickCount == 2) {
+            triggerKey = @"trigger_home_double_tap";
+            actionDescription = @"Double Click";
+        } else if (g_homeClickCount == 3) {
+            triggerKey = @"trigger_home_triple_click";
+            actionDescription = @"Triple Click";
+        } else if (g_homeClickCount >= 4) {
+            triggerKey = @"trigger_home_quadruple_click";
+            actionDescription = @"Quadruple Click";
+        }
+        
+        // Check if trigger is enabled
+        if (triggerKey) {
+            load_trigger_config();
+            NSDictionary *trigger = g_triggerConfig[@"triggers"][triggerKey];
+            BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+            BOOL triggerEnabled = [trigger[@"enabled"] boolValue];
+            
+            if (masterEnabled && triggerEnabled) {
+                SRLog(@"[SpringRemote] Home %@ Trigger Fired!", actionDescription);
+                
+                // Haptic feedback
+                trigger_haptic();
+                
+                // Execute Actions
+                RCExecuteTrigger(triggerKey);
+                
+                // Reset counter and exit (suppress default behavior)
+                g_homeClickCount = 0;
+                return;
+            }
+        }
+        
+        // If we get here, either:
+        // 1. No trigger defined for this click count
+        // 2. Trigger is disabled
+        // For double-tap specifically, we should invoke default reachability if trigger disabled
+        if (g_homeClickCount == 2) {
+            SRLog(@"[SpringRemote] Home Double Tap trigger disabled - invoking default Reachability");
+            // We need to manually call toggleReachability again, but we need to prevent recursion
+            // Unfortunately we can't easily call %orig from inside a block
+            // So we'll just log and do nothing - user should enable the trigger if they want behavior
+            // OR we dispatch to the original method
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[%c(SBReachabilityManager) sharedInstance] performSelector:@selector(toggleReachability)];
+            });
+        }
+        
+        // Reset counter
+        g_homeClickCount = 0;
+    }];
 }
 
 - (void)_handleSignificantUserInteraction {

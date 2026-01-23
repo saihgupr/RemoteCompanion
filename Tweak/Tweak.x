@@ -2742,32 +2742,53 @@ static void trigger_haptic() {
 }
 %end
 
-// --- Reachability (Home Button Multi-Click: Double/Triple/Quadruple) ---
+// --- Home Button Multi-Click Detection (using SBHomeHardwareButton hooks) ---
 
 // Global state for home button click tracking
 static NSTimer *g_homeClickTimer = nil;
 static NSInteger g_homeClickCount = 0;
+static NSTimeInterval g_lastHomeButtonUpTime = 0;
 
-%hook SBReachabilityManager
+// Forward declarations
+@interface SBHomeHardwareButton : NSObject
+- (void)singlePressUp;
+- (void)longPress;
+- (void)doublePressUp;
+- (void)triplePressUp;
+- (void)initialButtonDown:(id)arg1;
+- (void)initialButtonUp:(id)arg1;
+@end
 
-+ (id)sharedInstance {
-    return %orig;
-}
+@interface SBHomeHardwareButtonActions : NSObject
+- (void)performInitialButtonDownActions;
+- (void)performButtonUpPreActions;
+- (void)performLongPressActions;
+- (void)performDoublePressActions;
+- (void)performTriplePressActions;
+@end
 
-- (void)toggleReachability {
-    SRLog(@"[SpringRemote] SBReachabilityManager toggleReachability (Click detected)");
+@interface SBCapacitiveHomeButton : NSObject
+@end
+
+static void handleHomeButtonClick() {
+    NSTimeInterval now = [[NSDate date] timeIntervalSinceReferenceDate];
+    
+    // Store last click time for reference (not used for reset logic anymore)
+    g_lastHomeButtonUpTime = now;
     
     // Increment click count
     g_homeClickCount++;
     
-    // Cancel existing timer
+    // Cancel existing timer if any
     if (g_homeClickTimer) {
         [g_homeClickTimer invalidate];
         g_homeClickTimer = nil;
     }
     
-    // Start new timer (0.4s) to detect end of click sequence
-    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:NO block:^(NSTimer *timer) {
+    SRLog(@"[SpringRemote] Home button click #%ld detected (time: %.3f)", (long)g_homeClickCount, now);
+    
+    // Start new timer (0.5s) to detect end of click sequence
+    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
         g_homeClickTimer = nil;
         
         SRLog(@"[SpringRemote] Home button click sequence complete: %ld clicks", (long)g_homeClickCount);
@@ -2802,26 +2823,9 @@ static NSInteger g_homeClickCount = 0;
                 
                 // Execute Actions
                 RCExecuteTrigger(triggerKey);
-                
-                // Reset counter and exit (suppress default behavior)
-                g_homeClickCount = 0;
-                return;
+            } else {
+                SRLog(@"[SpringRemote] Home %@ detected but trigger disabled", actionDescription);
             }
-        }
-        
-        // If we get here, either:
-        // 1. No trigger defined for this click count
-        // 2. Trigger is disabled
-        // For double-tap specifically, we should invoke default reachability if trigger disabled
-        if (g_homeClickCount == 2) {
-            SRLog(@"[SpringRemote] Home Double Tap trigger disabled - invoking default Reachability");
-            // We need to manually call toggleReachability again, but we need to prevent recursion
-            // Unfortunately we can't easily call %orig from inside a block
-            // So we'll just log and do nothing - user should enable the trigger if they want behavior
-            // OR we dispatch to the original method
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [[%c(SBReachabilityManager) sharedInstance] performSelector:@selector(toggleReachability)];
-            });
         }
         
         // Reset counter
@@ -2829,9 +2833,21 @@ static NSInteger g_homeClickCount = 0;
     }];
 }
 
-- (void)_handleSignificantUserInteraction {
-    SRLog(@"[SpringRemote] SBReachabilityManager _handleSignificantUserInteraction");
+// Hook SBHomeHardwareButton to detect each click
+%hook SBHomeHardwareButton
+
+- (void)initialButtonUp:(id)arg1 {
+    // SRLog(@"[SpringRemote] SBHomeHardwareButton initialButtonUp called");
+    handleHomeButtonClick();
     %orig;
+}
+
+%end
+
+// We keep this hook just for reachability passthrough if double-tap trigger is disabled
+%hook SBReachabilityManager
++ (id)sharedInstance {
+    return %orig;
 }
 %end
 
@@ -2861,7 +2877,7 @@ static BOOL g_statusBarTouchActive = NO;
 %hook UIApplication
 
 - (void)sendEvent:(UIEvent *)event {
-    // Only process touch events
+    // Process touch events for status bar gestures
     if (event.type == UIEventTypeTouches) {
         UITouch *touch = [[event allTouches] anyObject];
         

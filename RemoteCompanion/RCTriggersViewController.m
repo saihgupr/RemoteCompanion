@@ -170,7 +170,7 @@
     [sections addObject:@[@"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"]];
     [titles addObject:@"Edge Gestures"];
     
-    [sections addObject:@[@"trigger_home_double_tap"]];
+    [sections addObject:@[@"trigger_home_double_tap", @"trigger_home_triple_click", @"trigger_home_quadruple_click"]];
     [titles addObject:@"Home Button"];
     
     // NFC Section

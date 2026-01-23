@@ -2390,8 +2390,8 @@ static NSString *handle_command(NSString *cmd) {
 static void start_server() {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         // Server starts always, but will refuse commands if disabled in config
-        
-        int server_fd, new_socket;
+        int server_fd = 0;
+        int new_socket = 0;
         struct sockaddr_in address;
         int opt = 1;
         int addrlen = sizeof(address);
@@ -2402,51 +2402,50 @@ static void start_server() {
         int num_ports = sizeof(ports) / sizeof(ports[0]);
         int bound_port = 0;
 
-        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-            SRLog(@"[RemoteCommand] ERROR: Failed to create socket");
-            return;
-        }
-
-        // Set both SO_REUSEADDR and SO_REUSEPORT for faster rebind after respring
-        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-            SRLog(@"[RemoteCommand] WARNING: Failed to set SO_REUSEADDR");
-        }
-        #ifdef SO_REUSEPORT
-        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt))) {
-            SRLog(@"[RemoteCommand] WARNING: Failed to set SO_REUSEPORT");
-        }
-        #endif
-
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = INADDR_ANY;
-        
-        // Try each port until one works
+        // Try to bind to a port
         for (int i = 0; i < num_ports; i++) {
+            // Create a fresh socket for each attempt
+            if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+                SRLog(@"[SpringRemote] ERROR: Failed to create socket");
+                continue;
+            }
+
+            // Set SO_REUSEADDR to allow restart after crash/respring (TIME_WAIT).
+            // CRITICAL: We DO NOT use SO_REUSEPORT anymore. This ensures that if a 'zombie' 
+            // process is still holding the port, bind() will FAIL, causing us to move to 
+            // the next port (e.g. 1235) instead of silently attaching to a broken port.
+            if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+                SRLog(@"[SpringRemote] WARNING: Failed to set SO_REUSEADDR");
+            }
+
+            address.sin_family = AF_INET;
+            address.sin_addr.s_addr = INADDR_ANY;
             address.sin_port = htons(ports[i]);
             
+            // Try to bind
             if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
+                // Try to listen
+                if (listen(server_fd, 3) < 0) {
+                    SRLog(@"[SpringRemote] Listen failed on port %d (errno: %d), closing and trying next...", ports[i], errno);
+                    close(server_fd);
+                    server_fd = 0;
+                    continue; // Try next port
+                }
+                
                 bound_port = ports[i];
-                SRLog(@"[RemoteCommand] Successfully bound to port %d", bound_port);
-                break;
+                SRLog(@"[SpringRemote] SUCCESS: Server listening on port %d", bound_port);
+                break; // Found our port!
             } else {
-                SRLog(@"[RemoteCommand] Failed to bind to port %d (errno: %d - %s), trying next...", 
-                      ports[i], errno, strerror(errno));
+                SRLog(@"[SpringRemote] Failed to bind port %d (errno: %d), trying next...", ports[i], errno);
+                close(server_fd); // Clean up and try next
+                server_fd = 0;
             }
         }
         
-        if (bound_port == 0) {
-            SRLog(@"[RemoteCommand] ERROR: Failed to bind to any port!");
-            close(server_fd);
+        if (bound_port == 0 || server_fd == 0) {
+            SRLog(@"[SpringRemote] FATAL: Failed to bind to any port (1234-1238)!");
             return;
         }
-        
-        if (listen(server_fd, 3) < 0) {
-            SRLog(@"[RemoteCommand] ERROR: Failed to listen (errno: %d)", errno);
-            close(server_fd);
-            return;
-        }
-
-        SRLog(@"[RemoteCommand] Server listening on port %d", bound_port);
 
         while (1) {
             if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) continue;

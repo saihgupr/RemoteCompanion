@@ -34,8 +34,8 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 - `rc brightness 0-100` - Set screen brightness.
 - `rc flashlight [on|off|toggle]` - Control the torch.
 - `rc rotate [lock|unlock|status]` - Orientation lock control.
-- `rc dnd [on|off]` - Toggle Do Not Disturb.
-- `rc low power mode [on|off]` - Toggle battery saver.
+- `rc dnd [on|off|toggle]` - Toggle Do Not Disturb.
+- `rc low power mode [on|off|toggle]` - Toggle battery saver.
 - `rc airplane [on|off|toggle]` - Control Airplane Mode.
 - `rc haptic` / `rc screenshot`
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1]
+
+### Added
+- Shortcuts (via Powercuts)
+- **Custom Command**: You can now use `rc open Music` (or any other `rc` command) directly in the Custom Command action to open apps or trigger any system action.
+
 ## [1.0.3] - 2026-01-22
 
 ### Added

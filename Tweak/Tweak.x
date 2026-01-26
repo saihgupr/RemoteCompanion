@@ -2751,18 +2751,16 @@ static NSTimeInterval g_lastHomeButtonUpTime = 0;
 
 // Forward declarations
 @interface SBHomeHardwareButton : NSObject
-- (void)singlePressUp;
-- (void)longPress;
-- (void)doublePressUp;
-- (void)triplePressUp;
 - (void)initialButtonDown:(id)arg1;
 - (void)initialButtonUp:(id)arg1;
+- (void)singlePressUp;
+- (void)doublePressUp;
+- (void)triplePressUp;
+- (void)_setHomeButtonPressClickCount:(long long)arg1;
+- (void)_performHomeButtonPressWithClickCount:(long long)arg1;
 @end
 
 @interface SBHomeHardwareButtonActions : NSObject
-- (void)performInitialButtonDownActions;
-- (void)performButtonUpPreActions;
-- (void)performLongPressActions;
 - (void)performDoublePressActions;
 - (void)performTriplePressActions;
 @end
@@ -2787,8 +2785,8 @@ static void handleHomeButtonClick() {
     
     SRLog(@"[SpringRemote] Home button click #%ld detected (time: %.3f)", (long)g_homeClickCount, now);
     
-    // Start new timer (0.5s) to detect end of click sequence
-    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
+    // Start new timer (0.8s) to detect end of click sequence
+    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:0.8 repeats:NO block:^(NSTimer *timer) {
         g_homeClickTimer = nil;
         
         SRLog(@"[SpringRemote] Home button click sequence complete: %ld clicks", (long)g_homeClickCount);
@@ -2837,11 +2835,83 @@ static void handleHomeButtonClick() {
 %hook SBHomeHardwareButton
 
 - (void)initialButtonUp:(id)arg1 {
-    // SRLog(@"[SpringRemote] SBHomeHardwareButton initialButtonUp called");
+    SRLog(@"[SpringRemote] SBHomeHardwareButton initialButtonUp called");
     handleHomeButtonClick();
     %orig;
 }
 
+- (void)doublePressUp {
+    SRLog(@"[SpringRemote] SBHomeHardwareButton doublePressUp called");
+    
+    // Check if our custom double tap trigger is enabled
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+    
+    if (masterEnabled && doubleEnabled) {
+        // Cancel the click timer if it's running (we're taking over)
+        if (g_homeClickTimer) {
+            [g_homeClickTimer invalidate];
+            g_homeClickTimer = nil;
+        }
+        
+        // Trigger our custom action
+        SRLog(@"[SpringRemote] Double Tap Trigger Fired (via doublePressUp)!");
+        trigger_haptic();
+        RCExecuteTrigger(@"trigger_home_double_tap");
+        
+        // Reset counter
+        g_homeClickCount = 0;
+        
+        // Suppress iOS default behavior (reachability)
+        return;
+    }
+    
+    %orig;
+}
+
+- (void)triplePressUp {
+    SRLog(@"[SpringRemote] SBHomeHardwareButton triplePressUp called");
+    
+    // Check if our custom triple click trigger is enabled
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL tripleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
+    
+    if (masterEnabled && tripleEnabled) {
+        // Cancel the click timer if it's running (we're taking over)
+        if (g_homeClickTimer) {
+            [g_homeClickTimer invalidate];
+            g_homeClickTimer = nil;
+        }
+        
+        // Trigger our custom action
+        SRLog(@"[SpringRemote] Triple Click Trigger Fired (via triplePressUp)!");
+        trigger_haptic();
+        RCExecuteTrigger(@"trigger_home_triple_click");
+        
+        // Reset counter
+        g_homeClickCount = 0;
+        
+        // Suppress iOS default behavior
+        return;
+    }
+    
+    %orig;
+}
+
+%end
+
+// Hook SBHomeHardwareButtonActions
+%hook SBHomeHardwareButtonActions
+- (void)performDoublePressActions {
+    SRLog(@"[SpringRemote] SBHomeHardwareButtonActions performDoublePressActions");
+    %orig;
+}
+- (void)performTriplePressActions {
+    SRLog(@"[SpringRemote] SBHomeHardwareButtonActions performTriplePressActions");
+    %orig;
+}
 %end
 
 // We keep this hook just for reachability passthrough if double-tap trigger is disabled

@@ -2,6 +2,12 @@
 
 Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, apps, and system actions from your computer or directly from the RemoteCompanion app.
 
+> [!NOTE] 
+> **What's New in v1.1**
+> - **Shortcuts Support**: Trigger any action from Apple Shortcuts using Powercuts (Run shell command).
+> - **Custom Commands**: Use `rc open Music` or any `rc` command directly in the "Custom Command" action to open apps or trigger triggers.
+
+
 <p align="center">
   <img src="images/IMG_1331.PNG" width="250" alt="RemoteCompanion Interface" />
   <img src="images/IMG_1332.PNG" width="250" alt="Settings View" />
@@ -116,6 +122,16 @@ ssh mobile@iphone.local "rc lock"
 ssh mobile@iphone.local "rc volume 50"
 ssh mobile@iphone.local "rc respring"
 ```
+
+#### Option 3: Shortcuts (via Powercuts)
+Actions can even be fired from shortcuts using Powercuts.
+
+1. Add the **Run shell command** action.
+2. Enter your command:
+   ```bash
+   rc open Music
+   rc volume 50
+   ```
 
 ## Home Assistant Setup
 

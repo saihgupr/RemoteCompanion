@@ -2742,12 +2742,8 @@ static void trigger_haptic() {
 }
 %end
 
-// --- Home Button Multi-Click Detection (using SBHomeHardwareButton hooks) ---
-
-// Global state for home button click tracking
-static NSTimer *g_homeClickTimer = nil;
-static NSInteger g_homeClickCount = 0;
-static NSTimeInterval g_lastHomeButtonUpTime = 0;
+// --- Home Button Multi-Click Detection (Plan G - System Hooks) ---
+// We no longer need manual timers/counters as we hook the system's own click counter.
 
 // Forward declarations
 @interface SBHomeHardwareButton : NSObject
@@ -2768,135 +2764,67 @@ static NSTimeInterval g_lastHomeButtonUpTime = 0;
 @interface SBCapacitiveHomeButton : NSObject
 @end
 
-static void handleHomeButtonClick() {
-    NSTimeInterval now = [[NSDate date] timeIntervalSinceReferenceDate];
-    
-    // Store last click time for reference (not used for reset logic anymore)
-    g_lastHomeButtonUpTime = now;
-    
-    // Increment click count
-    g_homeClickCount++;
-    
-    // Cancel existing timer if any
-    if (g_homeClickTimer) {
-        [g_homeClickTimer invalidate];
-        g_homeClickTimer = nil;
-    }
-    
-    SRLog(@"[SpringRemote] Home button click #%ld detected (time: %.3f)", (long)g_homeClickCount, now);
-    
-    // Start new timer (0.8s) to detect end of click sequence
-    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:0.8 repeats:NO block:^(NSTimer *timer) {
-        g_homeClickTimer = nil;
-        
-        SRLog(@"[SpringRemote] Home button click sequence complete: %ld clicks", (long)g_homeClickCount);
-        
-        // Determine which trigger to execute based on click count
-        NSString *triggerKey = nil;
-        NSString *actionDescription = nil;
-        
-        if (g_homeClickCount == 2) {
-            triggerKey = @"trigger_home_double_tap";
-            actionDescription = @"Double Click";
-        } else if (g_homeClickCount == 3) {
-            triggerKey = @"trigger_home_triple_click";
-            actionDescription = @"Triple Click";
-        } else if (g_homeClickCount >= 4) {
-            triggerKey = @"trigger_home_quadruple_click";
-            actionDescription = @"Quadruple Click";
-        }
-        
-        // Check if trigger is enabled
-        if (triggerKey) {
-            load_trigger_config();
-            NSDictionary *trigger = g_triggerConfig[@"triggers"][triggerKey];
-            BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-            BOOL triggerEnabled = [trigger[@"enabled"] boolValue];
-            
-            if (masterEnabled && triggerEnabled) {
-                SRLog(@"[SpringRemote] Home %@ Trigger Fired!", actionDescription);
-                
-                // Haptic feedback
-                trigger_haptic();
-                
-                // Execute Actions
-                RCExecuteTrigger(triggerKey);
-            } else {
-                SRLog(@"[SpringRemote] Home %@ detected but trigger disabled", actionDescription);
-            }
-        }
-        
-        // Reset counter
-        g_homeClickCount = 0;
-    }];
-}
+// Manual handleHomeButtonClick removed in Plan G
 
 // Hook SBHomeHardwareButton to detect each click
 %hook SBHomeHardwareButton
 
 - (void)initialButtonUp:(id)arg1 {
     SRLog(@"[SpringRemote] SBHomeHardwareButton initialButtonUp called");
-    handleHomeButtonClick();
+    %orig;
+}
+
+- (void)_performHomeButtonPressWithClickCount:(long long)count {
+    SRLog(@"[SpringRemote] _performHomeButtonPressWithClickCount: %lld", count);
+    
+    if (count > 1) {
+        load_trigger_config();
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        NSString *triggerKey = nil;
+        NSString *desc = nil;
+        
+        if (count == 2) {
+            triggerKey = @"trigger_home_double_tap";
+            desc = @"Double Click";
+        } else if (count == 3) {
+            triggerKey = @"trigger_home_triple_click";
+            desc = @"Triple Click";
+        } else if (count >= 4) {
+            triggerKey = @"trigger_home_quadruple_click";
+            desc = @"Quadruple Click";
+        }
+        
+        if (masterEnabled && triggerKey) {
+            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+            if (enabled) {
+                SRLog(@"[SpringRemote] System Multi-Click Intercepted: %@ (%lld)", desc, count);
+                trigger_haptic();
+                RCExecuteTrigger(triggerKey);
+                return; // Suppress system action
+            }
+        }
+    }
+    
     %orig;
 }
 
 - (void)doublePressUp {
     SRLog(@"[SpringRemote] SBHomeHardwareButton doublePressUp called");
     
-    // Check if our custom double tap trigger is enabled
     load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
-    
-    if (masterEnabled && doubleEnabled) {
-        // Cancel the click timer if it's running (we're taking over)
-        if (g_homeClickTimer) {
-            [g_homeClickTimer invalidate];
-            g_homeClickTimer = nil;
-        }
-        
-        // Trigger our custom action
-        SRLog(@"[SpringRemote] Double Tap Trigger Fired (via doublePressUp)!");
-        trigger_haptic();
-        RCExecuteTrigger(@"trigger_home_double_tap");
-        
-        // Reset counter
-        g_homeClickCount = 0;
-        
-        // Suppress iOS default behavior (reachability)
+    if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue]) {
         return;
     }
-    
     %orig;
 }
 
 - (void)triplePressUp {
     SRLog(@"[SpringRemote] SBHomeHardwareButton triplePressUp called");
     
-    // Check if our custom triple click trigger is enabled
     load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL tripleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
-    
-    if (masterEnabled && tripleEnabled) {
-        // Cancel the click timer if it's running (we're taking over)
-        if (g_homeClickTimer) {
-            [g_homeClickTimer invalidate];
-            g_homeClickTimer = nil;
-        }
-        
-        // Trigger our custom action
-        SRLog(@"[SpringRemote] Triple Click Trigger Fired (via triplePressUp)!");
-        trigger_haptic();
-        RCExecuteTrigger(@"trigger_home_triple_click");
-        
-        // Reset counter
-        g_homeClickCount = 0;
-        
-        // Suppress iOS default behavior
+    if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue]) {
         return;
     }
-    
     %orig;
 }
 
@@ -2906,18 +2834,63 @@ static void handleHomeButtonClick() {
 %hook SBHomeHardwareButtonActions
 - (void)performDoublePressActions {
     SRLog(@"[SpringRemote] SBHomeHardwareButtonActions performDoublePressActions");
+    
+    // Check enablement to suppress default behavior (Reachability/App Switcher)
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+
+    if (masterEnabled && doubleEnabled) {
+        SRLog(@"[SpringRemote] Suppressing default Double Press Actions (Reachability)");
+        return; 
+    }
+
     %orig;
 }
 - (void)performTriplePressActions {
     SRLog(@"[SpringRemote] SBHomeHardwareButtonActions performTriplePressActions");
+    
+    // Check enablement to suppress default behavior (Accessibility Shortcuts/Magnifier)
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL tripleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
+
+    if (masterEnabled && tripleEnabled) {
+        SRLog(@"[SpringRemote] Suppressing default Triple Press Actions");
+        return; 
+    }
+
     %orig;
 }
 %end
 
-// We keep this hook just for reachability passthrough if double-tap trigger is disabled
+// Plan G: Fire custom action on Reachability (Double Tap)
 %hook SBReachabilityManager
-+ (id)sharedInstance {
-    return %orig;
+- (void)toggleReachability {
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+
+    if (masterEnabled && doubleEnabled) {
+        SRLog(@"[SpringRemote] Custom Double Tap Fired (via toggleReachability)!");
+        trigger_haptic();
+        RCExecuteTrigger(@"trigger_home_double_tap");
+        return; 
+    }
+    %orig;
+}
+- (void)_toggleReachabilityMode {
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+
+    if (masterEnabled && doubleEnabled) {
+        SRLog(@"[SpringRemote] Custom Double Tap Fired (via _toggleReachabilityMode)!");
+        trigger_haptic();
+        RCExecuteTrigger(@"trigger_home_double_tap");
+        return; 
+    }
+    %orig;
 }
 %end
 

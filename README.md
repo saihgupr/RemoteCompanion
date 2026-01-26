@@ -3,7 +3,7 @@
 Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, apps, and system actions from your computer or directly from the RemoteCompanion app.
 
 > [!NOTE] 
-> **What's New in v1.1**
+> **What's New in v1.0.3**
 > - **Shortcuts Support**: Trigger any action from Apple Shortcuts using Powercuts (Run shell command).
 > - **Custom Commands**: Use `rc open Music` or any `rc` command directly in the "Custom Command" action to open apps or trigger triggers.
 

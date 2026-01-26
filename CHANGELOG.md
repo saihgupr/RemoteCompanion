@@ -2,18 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1]
+## [1.0.3] - 2026-01-22
 
 ### Added
 - Shortcuts (via Powercuts)
 - **Custom Command**: You can now use `rc open Music` (or any other `rc` command) directly in the Custom Command action to open apps or trigger any system action.
-
-## [1.0.3] - 2026-01-22
-
-### Added
 - **Settings UI**: Added version label (e.g., `v1.0.3`) to the bottom of the Settings menu.
 - **Improved Layout**: Refactored Settings screen to pin the version label to the bottom of the view, ensuring consistent positioning regardless of screen size.
 - **UI Details**: Matched version label styling to native table view footers (font, color).
+
+### Fixed
+- **Home Button Interference**: Fixed an issue where the Double Click trigger would fire before you could complete a Triple Click. Double Click now waits briefly if Triple Click is enabled.
 
 ## [1.0.2] - 2026-01-22
 

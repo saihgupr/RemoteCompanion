@@ -13,6 +13,35 @@
 #import <mach/mach_time.h>
 #import "native_curl.h"
 
+// --- Debug Logger (Plan M) ---
+// --- Debug Logger (Plan M) ---
+static FILE *g_logFile = NULL;
+
+// Global function (visible to RCNFCManager.x)
+void SRLog(NSString *format, ...) {
+    if (!g_logFile) {
+        // Open in append mode - using /tmp to avoid permissions issues
+        g_logFile = fopen("/tmp/springremote.log", "a");
+    }
+    
+    va_list args;
+    va_start(args, format);
+    NSString *logStr = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+    
+    // Also notify internal logs
+    NSLog(@"[SpringRemote] %@", logStr);
+    
+    if (g_logFile) {
+        NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+        [dateFormatter setDateFormat:@"yyyy-MM-dd HH:mm:ss.SSS"];
+        NSString *timestamp = [dateFormatter stringFromDate:[NSDate date]];
+        
+        fprintf(g_logFile, "[%s] %s\n", [timestamp UTF8String], [logStr UTF8String]);
+        fflush(g_logFile);
+    }
+}
+
 // WorkflowKit interfaces
 @interface WFWorkflowDescriptor : NSObject
 - (instancetype)initWithName:(NSString *)name;
@@ -330,26 +359,7 @@ static float sr_previous_volume = -1.0f;
 
 
 // File-based logging helper
-void SRLog(NSString *format, ...) {
-    va_list args;
-    va_start(args, format);
-    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
-    va_end(args);
-    
-    NSLog(@"[RemoteCommand] %@", message);
-    
-    NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] %@\n", [NSDate date], message];
-    NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
-    if (fileHandle) {
-        @try {
-            [fileHandle seekToEndOfFile];
-            [fileHandle writeData:[logMsg dataUsingEncoding:NSUTF8StringEncoding]];
-            [fileHandle closeFile];
-        } @catch (NSException *e) {}
-    } else {
-        [logMsg writeToFile:@"/tmp/remotecommand.log" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    }
-}
+
 
 // Add DND Toggle Helper
 // Helper to inspect current state
@@ -2756,112 +2766,87 @@ static void trigger_haptic() {
 - (void)_performHomeButtonPressWithClickCount:(long long)arg1;
 @end
 
-@interface SBHomeHardwareButtonActions : NSObject
-- (void)performDoublePressActions;
-- (void)performTriplePressActions;
-@end
 
-@interface SBCapacitiveHomeButton : NSObject
-@end
+
 
 // Manual handleHomeButtonClick removed in Plan G
 
-// Hook SBHomeHardwareButton to detect each click
+// --- Home Button Handling (Plan P - Manual Counter Reloaded) ---
+// 1. Manual Click Counter for Physical Clicks (Verified reliable initialButtonUp)
+// 2. Strict Suppression of System Multi-Clicks
+
+static NSTimer *g_homeClickTimer = nil;
+static NSInteger g_homeClickCount = 0;
+
+static void handleHomeButtonClick() {
+    g_homeClickCount++;
+    
+    // Reset timer
+    if (g_homeClickTimer) {
+        [g_homeClickTimer invalidate];
+        g_homeClickTimer = nil;
+    }
+    
+    SRLog(@"[SpringRemote] Manual Click Count: %ld", (long)g_homeClickCount);
+    
+    // Start 0.5s timer (Relaxed for slower clicks)
+    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
+        g_homeClickTimer = nil;
+        SRLog(@"[SpringRemote] Click Sequence Ended. Total: %ld", (long)g_homeClickCount);
+        
+        NSString *triggerKey = nil;
+        if (g_homeClickCount == 2) triggerKey = @"trigger_home_double_tap";
+        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_triple_click";
+        else if (g_homeClickCount >= 4) triggerKey = @"trigger_home_quadruple_click";
+        
+        if (triggerKey) {
+            load_trigger_config();
+            BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+            
+            if (masterEnabled && enabled) {
+                SRLog(@"[SpringRemote] Firing Manual Trigger: %@", triggerKey);
+                // Ensure main thread
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    trigger_haptic();
+                    RCExecuteTrigger(triggerKey);
+                });
+            } else {
+                 SRLog(@"[SpringRemote] Trigger %@ detected but disabled. System action suppressed.", triggerKey);
+            }
+        }
+        
+        g_homeClickCount = 0;
+    }];
+}
+
 %hook SBHomeHardwareButton
 
 - (void)initialButtonUp:(id)arg1 {
-    SRLog(@"[SpringRemote] SBHomeHardwareButton initialButtonUp called");
+    SRLog(@"[SpringRemote] SBHomeHardwareButton initialButtonUp");
+    handleHomeButtonClick();
     %orig;
 }
 
-- (void)_performHomeButtonPressWithClickCount:(long long)count {
-    SRLog(@"[SpringRemote] _performHomeButtonPressWithClickCount: %lld", count);
-    
-    if (count > 1) {
-        load_trigger_config();
-        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-        NSString *triggerKey = nil;
-        NSString *desc = nil;
-        
-        if (count == 2) {
-            triggerKey = @"trigger_home_double_tap";
-            desc = @"Double Click";
-        } else if (count == 3) {
-            triggerKey = @"trigger_home_triple_click";
-            desc = @"Triple Click";
-        } else if (count >= 4) {
-            triggerKey = @"trigger_home_quadruple_click";
-            desc = @"Quadruple Click";
-        }
-        
-        if (masterEnabled && triggerKey) {
-            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-            if (enabled) {
-                SRLog(@"[SpringRemote] System Multi-Click Intercepted: %@ (%lld)", desc, count);
-                trigger_haptic();
-                RCExecuteTrigger(triggerKey);
-                return; // Suppress system action
-            }
-        }
-    }
-    
-    %orig;
-}
-
+// Strict Suppression of System Actions
 - (void)doublePressUp {
-    SRLog(@"[SpringRemote] SBHomeHardwareButton doublePressUp called");
-    
     load_trigger_config();
     if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue]) {
+        SRLog(@"[SpringRemote] Suppressing system doublePressUp");
         return;
     }
     %orig;
 }
 
 - (void)triplePressUp {
-    SRLog(@"[SpringRemote] SBHomeHardwareButton triplePressUp called");
-    
     load_trigger_config();
     if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue]) {
+        SRLog(@"[SpringRemote] Suppressing system triplePressUp");
         return;
     }
     %orig;
 }
 
-%end
-
-// Hook SBHomeHardwareButtonActions
-%hook SBHomeHardwareButtonActions
-- (void)performDoublePressActions {
-    SRLog(@"[SpringRemote] SBHomeHardwareButtonActions performDoublePressActions");
-    
-    // Check enablement to suppress default behavior (Reachability/App Switcher)
-    load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
-
-    if (masterEnabled && doubleEnabled) {
-        SRLog(@"[SpringRemote] Suppressing default Double Press Actions (Reachability)");
-        return; 
-    }
-
-    %orig;
-}
-- (void)performTriplePressActions {
-    SRLog(@"[SpringRemote] SBHomeHardwareButtonActions performTriplePressActions");
-    
-    // Check enablement to suppress default behavior (Accessibility Shortcuts/Magnifier)
-    load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL tripleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
-
-    if (masterEnabled && tripleEnabled) {
-        SRLog(@"[SpringRemote] Suppressing default Triple Press Actions");
-        return; 
-    }
-
-    %orig;
-}
 %end
 
 // Plan G: Fire custom action on Reachability (Double Tap)

@@ -646,6 +646,10 @@ static void send_notification(NSString *title, NSString *message, BOOL urgent) {
 static NSDictionary *g_triggerConfig = nil;
 static NSString *g_resolvedConfigPath = nil;
 
+// Moved from later in file to fix scope
+static NSTimer *g_homeClickTimer = nil;
+static NSInteger g_homeClickCount = 0;
+
 // Find config file - check shared path first, then search app containers
 static NSString *find_config_path() {
     NSFileManager *fm = [NSFileManager defaultManager];
@@ -671,25 +675,64 @@ static NSString *find_config_path() {
     return nil;
 }
 
-static void load_trigger_config() {
+// Forward declaration for haptic
+static void trigger_haptic();
+
+// Actual implementation that reads from disk
+static void reload_trigger_config() {
     @autoreleasepool {
-        // Find the config file
         g_resolvedConfigPath = find_config_path();
-        
         if (g_resolvedConfigPath) {
             g_triggerConfig = [NSDictionary dictionaryWithContentsOfFile:g_resolvedConfigPath];
             if (g_triggerConfig) {
-                SRLog(@"[SpringRemote] Loaded trigger config from %@: masterEnabled=%@, triggers=%lu",
-                      g_resolvedConfigPath,
-                      g_triggerConfig[@"masterEnabled"],
-                      (unsigned long)[g_triggerConfig[@"triggers"] count]);
-            } else {
-                SRLog(@"[SpringRemote] Failed to parse config at %@", g_resolvedConfigPath);
+                 SRLog(@"[SpringRemote] Loaded config from %@", g_resolvedConfigPath);
             }
-        } else {
-            SRLog(@"[SpringRemote] No trigger config found at shared path or in app containers");
         }
     }
+}
+
+// Lazy wrapper - only loads if nil
+static void load_trigger_config() {
+    if (g_triggerConfig) return;
+    reload_trigger_config();
+}
+
+static void handleHomeButtonClick() {
+    g_homeClickCount++;
+    
+    // Reset timer of previous clicks
+    if (g_homeClickTimer) {
+        [g_homeClickTimer invalidate];
+        g_homeClickTimer = nil;
+    }
+    
+    SRLog(@"[SpringRemote] 🔵 CLICK DETECTED! Count: %ld", (long)g_homeClickCount);
+    
+    // HARDCODED BABY STEP: 1.0s timeout to allow 4 clicks
+    NSTimeInterval timeout = 1.0;
+    
+    SRLog(@"[SpringRemote] 🔵 Timer started (1.0s)");
+    
+    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
+        g_homeClickTimer = nil;
+        SRLog(@"[SpringRemote] 🔵 TIMER FIRED! Final count: %ld", (long)g_homeClickCount);
+        
+        if (g_homeClickCount == 4) {
+             SRLog(@"[SpringRemote] 🔦 4 CLICKS DETECTED! Toggling Flashlight (Hardcoded)");
+             dispatch_async(dispatch_get_main_queue(), ^{
+                 AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
+                 if ([device hasTorch]) {
+                     [device lockForConfiguration:nil];
+                     device.torchMode = (device.torchMode == AVCaptureTorchModeOn) ? AVCaptureTorchModeOff : AVCaptureTorchModeOn;
+                     [device unlockForConfiguration];
+                 }
+                 // Call the forward declared function
+                 trigger_haptic();
+             });
+        }
+        
+        g_homeClickCount = 0;
+    }];
 }
 static void update_simulation_observers();
 
@@ -2779,66 +2822,8 @@ static void trigger_haptic() {
 // 1. Manual Click Counter for Physical Clicks (Verified reliable initialButtonUp)
 // 2. Strict Suppression of System Multi-Clicks
 
-static NSTimer *g_homeClickTimer = nil;
-static NSInteger g_homeClickCount = 0;
-
-static void handleHomeButtonClick() {
-    g_homeClickCount++;
-    
-    // Reset timer
-    if (g_homeClickTimer) {
-        [g_homeClickTimer invalidate];
-        g_homeClickTimer = nil;
-    }
-    
-    SRLog(@"[SpringRemote] 🔵 CLICK DETECTED! Count now: %ld", (long)g_homeClickCount);
-    
-    // Check if triple click is enabled to determine wait time
-    load_trigger_config();
-    BOOL tripleClickEnabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                              [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
-    
-    // Use shorter timeout (0.3s) for double tap if triple click is disabled,
-    // otherwise use longer timeout (0.5s) to wait for potential triple click
-    NSTimeInterval timeout = tripleClickEnabled ? 0.5 : 0.3;
-    
-    SRLog(@"[SpringRemote] 🔵 Timer started with timeout: %.1fs (triple click enabled: %d)", timeout, tripleClickEnabled);
-    
-    // Start timer with dynamic timeout
-    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
-        g_homeClickTimer = nil;
-        SRLog(@"[SpringRemote] 🔵 TIMER FIRED! Final click count: %ld", (long)g_homeClickCount);
-        
-        NSString *triggerKey = nil;
-        if (g_homeClickCount == 2) triggerKey = @"trigger_home_triple_click";
-        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_double_tap";
-        else if (g_homeClickCount >= 4) triggerKey = @"trigger_home_quadruple_click";
-        
-        SRLog(@"[SpringRemote] 🔵 Trigger key selected: %@", triggerKey ?: @"NONE");
-        
-        if (triggerKey) {
-            load_trigger_config();
-            BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-            
-            SRLog(@"[SpringRemote] 🔵 Trigger %@ - masterEnabled:%d, enabled:%d", triggerKey, masterEnabled, enabled);
-            
-            if (masterEnabled && enabled) {
-                SRLog(@"[SpringRemote] ✅ FIRING TRIGGER: %@", triggerKey);
-                // Ensure main thread
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    trigger_haptic();
-                    RCExecuteTrigger(triggerKey);
-                });
-            } else {
-                 SRLog(@"[SpringRemote] ❌ Trigger %@ detected but disabled. System action suppressed.", triggerKey);
-            }
-        }
-        
-        g_homeClickCount = 0;
-        SRLog(@"[SpringRemote] 🔵 Click count reset to 0");
-    }];
-}
+// handleHomeButtonClick defined earlier
+// handleHomeButtonClick defined earlier
 
 %hook SBHomeHardwareButton
 

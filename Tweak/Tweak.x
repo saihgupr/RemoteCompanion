@@ -2923,17 +2923,6 @@ static NSTimeInterval g_lastReachabilityTime = 0;
     
     SRLog(@"[SpringRemote] 🟣 toggleReachability called - timeSince last: %.2fs", timeSinceLastTap);
     
-    // TEMPORARY TEST: Toggle flashlight to prove this hook is called
-    SRLog(@"[SpringRemote] 🔦 TEST: Toggling flashlight!");
-    dispatch_async(dispatch_get_main_queue(), ^{
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch]) {
-            [device lockForConfiguration:nil];
-            device.torchMode = (device.torchMode == AVCaptureTorchModeOn) ? AVCaptureTorchModeOff : AVCaptureTorchModeOn;
-            [device unlockForConfiguration];
-            SRLog(@"[SpringRemote] 🔦 Flashlight toggled! Mode: %ld", (long)device.torchMode);
-        }
-    });
     
     
     load_trigger_config();

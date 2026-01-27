@@ -958,6 +958,10 @@ static NSString *execute_lua_script(NSString *scriptPath) {
 }
 
 static NSString *evaluate_lua_code(NSString *code) {
+    // DIAGNOSTIC: Log call stack to find who's calling this
+    SRLog(@"[SpringRemote] 🔍 evaluate_lua_code CALLED");
+    SRLog(@"[SpringRemote] 🔍 Call stack: %@", [NSThread callStackSymbols]);
+    
     lua_State *L = setup_lua_environment();
     if (!L) return @"[SpringRemote] Error: Could not create Lua state";
     
@@ -2787,97 +2791,224 @@ static void handleHomeButtonClick() {
         g_homeClickTimer = nil;
     }
     
-    SRLog(@"[SpringRemote] Manual Click Count: %ld", (long)g_homeClickCount);
+    SRLog(@"[SpringRemote] 🔵 CLICK DETECTED! Count now: %ld", (long)g_homeClickCount);
     
-    // Start 0.5s timer (Relaxed for slower clicks)
-    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
+    // Check if triple click is enabled to determine wait time
+    load_trigger_config();
+    BOOL tripleClickEnabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
+                              [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
+    
+    // Use shorter timeout (0.3s) for double tap if triple click is disabled,
+    // otherwise use longer timeout (0.5s) to wait for potential triple click
+    NSTimeInterval timeout = tripleClickEnabled ? 0.5 : 0.3;
+    
+    SRLog(@"[SpringRemote] 🔵 Timer started with timeout: %.1fs (triple click enabled: %d)", timeout, tripleClickEnabled);
+    
+    // Start timer with dynamic timeout
+    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
         g_homeClickTimer = nil;
-        SRLog(@"[SpringRemote] Click Sequence Ended. Total: %ld", (long)g_homeClickCount);
+        SRLog(@"[SpringRemote] 🔵 TIMER FIRED! Final click count: %ld", (long)g_homeClickCount);
         
         NSString *triggerKey = nil;
         if (g_homeClickCount == 2) triggerKey = @"trigger_home_double_tap";
         else if (g_homeClickCount == 3) triggerKey = @"trigger_home_triple_click";
         else if (g_homeClickCount >= 4) triggerKey = @"trigger_home_quadruple_click";
         
+        SRLog(@"[SpringRemote] 🔵 Trigger key selected: %@", triggerKey ?: @"NONE");
+        
         if (triggerKey) {
             load_trigger_config();
             BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
             BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
             
+            SRLog(@"[SpringRemote] 🔵 Trigger %@ - masterEnabled:%d, enabled:%d", triggerKey, masterEnabled, enabled);
+            
             if (masterEnabled && enabled) {
-                SRLog(@"[SpringRemote] Firing Manual Trigger: %@", triggerKey);
+                SRLog(@"[SpringRemote] ✅ FIRING TRIGGER: %@", triggerKey);
                 // Ensure main thread
                 dispatch_async(dispatch_get_main_queue(), ^{
                     trigger_haptic();
                     RCExecuteTrigger(triggerKey);
                 });
             } else {
-                 SRLog(@"[SpringRemote] Trigger %@ detected but disabled. System action suppressed.", triggerKey);
+                 SRLog(@"[SpringRemote] ❌ Trigger %@ detected but disabled. System action suppressed.", triggerKey);
             }
         }
         
         g_homeClickCount = 0;
+        SRLog(@"[SpringRemote] 🔵 Click count reset to 0");
     }];
 }
 
 %hook SBHomeHardwareButton
 
 - (void)initialButtonUp:(id)arg1 {
-    SRLog(@"[SpringRemote] SBHomeHardwareButton initialButtonUp");
+    SRLog(@"[SpringRemote] 🔵 initialButtonUp called - about to increment click counter");
     handleHomeButtonClick();
+    SRLog(@"[SpringRemote] 🔵 initialButtonUp - calling %orig");
+    %orig;
+}
+
+// Alternative approach: Hook the system's click count handler
+- (void)_performHomeButtonPressWithClickCount:(long long)clickCount {
+    SRLog(@"[SpringRemote] 🔴 _performHomeButtonPressWithClickCount called with count: %lld", clickCount);
+    
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    
+    NSString *triggerKey = nil;
+    if (clickCount == 2) triggerKey = @"trigger_home_double_tap";
+    else if (clickCount == 3) triggerKey = @"trigger_home_triple_click";
+    else if (clickCount >= 4) triggerKey = @"trigger_home_quadruple_click";
+    
+    if (triggerKey && masterEnabled) {
+        BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+        SRLog(@"[SpringRemote] 🔴 Trigger %@ - enabled:%d", triggerKey, enabled);
+        
+        if (enabled) {
+            SRLog(@"[SpringRemote] ✅ FIRING TRIGGER via _performHomeButtonPressWithClickCount: %@", triggerKey);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                trigger_haptic();
+                RCExecuteTrigger(triggerKey);
+            });
+            // Suppress system action by not calling %orig
+            SRLog(@"[SpringRemote] ❌ SUPPRESSING system handler for %lld clicks", clickCount);
+            return;
+        }
+    }
+    
+    SRLog(@"[SpringRemote] 🔴 Calling %orig for click count: %lld", clickCount);
     %orig;
 }
 
 // Strict Suppression of System Actions
 - (void)doublePressUp {
+    SRLog(@"[SpringRemote] 🟡 SYSTEM doublePressUp CALLED");
     load_trigger_config();
-    if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue]) {
-        SRLog(@"[SpringRemote] Suppressing system doublePressUp");
+    BOOL shouldSuppress = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+    SRLog(@"[SpringRemote] 🟡 doublePressUp - shouldSuppress: %d", shouldSuppress);
+    if (shouldSuppress) {
+        SRLog(@"[SpringRemote] ❌ SUPPRESSING system doublePressUp");
         return;
     }
+    SRLog(@"[SpringRemote] ✅ ALLOWING system doublePressUp");
     %orig;
 }
 
 - (void)triplePressUp {
+    SRLog(@"[SpringRemote] 🟡 SYSTEM triplePressUp CALLED");
     load_trigger_config();
-    if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue]) {
-        SRLog(@"[SpringRemote] Suppressing system triplePressUp");
+    BOOL shouldSuppress = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
+    SRLog(@"[SpringRemote] 🟡 triplePressUp - shouldSuppress: %d", shouldSuppress);
+    if (shouldSuppress) {
+        SRLog(@"[SpringRemote] ❌ SUPPRESSING system triplePressUp");
         return;
     }
+    SRLog(@"[SpringRemote] ✅ ALLOWING system triplePressUp");
     %orig;
 }
 
 %end
 
-// Plan G: Fire custom action on Reachability (Double Tap)
+// iOS 15 FIX: SBHomeHardwareButton doesn't work, so use Reachability as tap detector
+// Reachability is called on each double tap - we'll count these and determine multi-click
+static NSTimer *g_reachabilityTapTimer = nil;
+static NSInteger g_reachabilityTapCount = 0;
+static NSTimeInterval g_lastReachabilityTime = 0;
+
 %hook SBReachabilityManager
 - (void)toggleReachability {
+    NSTimeInterval now = [[NSDate date] timeIntervalSinceReferenceDate];
+    NSTimeInterval timeSinceLastTap = now - g_lastReachabilityTime;
+    
+    SRLog(@"[SpringRemote] 🟣 toggleReachability called - timeSince last: %.2fs", timeSinceLastTap);
+    
+    // TEMPORARY TEST: Toggle flashlight to prove this hook is called
+    SRLog(@"[SpringRemote] 🔦 TEST: Toggling flashlight!");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
+        if ([device hasTorch]) {
+            [device lockForConfiguration:nil];
+            device.torchMode = (device.torchMode == AVCaptureTorchModeOn) ? AVCaptureTorchModeOff : AVCaptureTorchModeOn;
+            [device unlockForConfiguration];
+            SRLog(@"[SpringRemote] 🔦 Flashlight toggled! Mode: %ld", (long)device.torchMode);
+        }
+    });
+    
+    
     load_trigger_config();
     BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
     BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+    BOOL tripleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
 
-    if (masterEnabled && doubleEnabled) {
-        SRLog(@"[SpringRemote] Custom Double Tap Fired (via toggleReachability)!");
-        trigger_haptic();
-        RCExecuteTrigger(@"trigger_home_double_tap");
-        return; 
+    if (masterEnabled && (doubleEnabled || tripleEnabled)) {
+        // Increment tap count if this is a continuation (within 0.6s)
+        if (timeSinceLastTap < 0.6) {
+            g_reachabilityTapCount++;
+        } else {
+            g_reachabilityTapCount = 1;  // First tap of a new sequence
+        }
+        
+        g_lastReachabilityTime = now;
+        
+        SRLog(@"[SpringRemote] 🟣 Tap count now: %ld", (long)g_reachabilityTapCount);
+        
+        // Cancel existing timer
+        if (g_reachabilityTapTimer) {
+            [g_reachabilityTapTimer invalidate];
+            g_reachabilityTapTimer = nil;
+        }
+        
+        // Start timer - if triple is enabled, wait longer
+        NSTimeInterval delay = tripleEnabled ? 0.5 : 0.3;
+        SRLog(@"[SpringRemote] 🟣 Starting timer with delay: %.1fs (triple enabled: %d)", delay, tripleEnabled);
+        
+        g_reachabilityTapTimer = [NSTimer scheduledTimerWithTimeInterval:delay repeats:NO block:^(NSTimer *timer) {
+            g_reachabilityTapTimer = nil;
+            
+            NSString *triggerKey = nil;
+            // FIXED MAPPING: On iOS 15, toggleReachability is called ONCE for triple-click
+            // (double-tap triggers reachability, then 3rd click registers)
+            if (g_reachabilityTapCount == 1) triggerKey = @"trigger_home_triple_click";
+            else if (g_reachabilityTapCount == 2) triggerKey = @"trigger_home_quadruple_click";
+            else if (g_reachabilityTapCount >= 3) triggerKey = @"trigger_home_quadruple_click"; // fallback
+            
+            SRLog(@"[SpringRemote] 🟣 Timer fired! Tap count: %ld, trigger: %@", (long)g_reachabilityTapCount, triggerKey ?: @"NONE");
+            
+            if (triggerKey) {
+                load_trigger_config();
+                BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+                
+                if (enabled) {
+                    SRLog(@"[SpringRemote] ✅ FIRING TRIGGER: %@", triggerKey);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        trigger_haptic();
+                        RCExecuteTrigger(triggerKey);
+                    });
+                } else {
+                    SRLog(@"[SpringRemote] ❌ Trigger %@ detected but disabled", triggerKey);
+                }
+            }
+            
+            g_reachabilityTapCount = 0;
+        }];
+        
+        // Always suppress Reachability
+        SRLog(@"[SpringRemote] ❌ SUPPRESSING toggleReachability");
+        return;
     }
+    
+    SRLog(@"[SpringRemote] ✅ ALLOWING toggleReachability (triggers disabled)");
     %orig;
 }
-- (void)_toggleReachabilityMode {
-    load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
 
-    if (masterEnabled && doubleEnabled) {
-        SRLog(@"[SpringRemote] Custom Double Tap Fired (via _toggleReachabilityMode)!");
-        trigger_haptic();
-        RCExecuteTrigger(@"trigger_home_double_tap");
-        return; 
-    }
-    %orig;
+- (void)_toggleReachabilityMode {
+    // Just suppress this variant too
+    SRLog(@"[SpringRemote] 🟣 _toggleReachabilityMode - suppressed");
+    return;
 }
 %end
+
 
 // [Removed unused biometric hooks]
 

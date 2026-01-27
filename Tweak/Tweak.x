@@ -13,33 +13,39 @@
 #import <mach/mach_time.h>
 #import "native_curl.h"
 
-// --- Debug Logger (Plan M) ---
-// --- Debug Logger (Plan M) ---
+// --- Debug Logger (Plan S - Async/Fast) ---
 static FILE *g_logFile = NULL;
+static NSDateFormatter *g_logDateFormatter = nil;
+static dispatch_queue_t g_logQueue = nil;
 
-// Global function (visible to RCNFCManager.x)
 void SRLog(NSString *format, ...) {
-    if (!g_logFile) {
-        // Open in append mode - using /tmp to avoid permissions issues
-        g_logFile = fopen("/tmp/springremote.log", "a");
-    }
-    
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        g_logQueue = dispatch_queue_create("com.pizzaman.rc.logqueue", DISPATCH_QUEUE_SERIAL);
+        g_logDateFormatter = [[NSDateFormatter alloc] init];
+        [g_logDateFormatter setDateFormat:@"yyyy-MM-dd HH:mm:ss.SSS"];
+    });
+
     va_list args;
     va_start(args, format);
     NSString *logStr = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
     
-    // Also notify internal logs
+    // Always NSLog immediately (it's relatively fast and good for realtime)
+    // Actually, even NSLog can be slow if it floods. Let's keep it for now.
     NSLog(@"[SpringRemote] %@", logStr);
     
-    if (g_logFile) {
-        NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
-        [dateFormatter setDateFormat:@"yyyy-MM-dd HH:mm:ss.SSS"];
-        NSString *timestamp = [dateFormatter stringFromDate:[NSDate date]];
+    dispatch_async(g_logQueue, ^{
+        if (!g_logFile) {
+            g_logFile = fopen("/tmp/springremote.log", "a");
+        }
         
-        fprintf(g_logFile, "[%s] %s\n", [timestamp UTF8String], [logStr UTF8String]);
-        fflush(g_logFile);
-    }
+        if (g_logFile) {
+            NSString *timestamp = [g_logDateFormatter stringFromDate:[NSDate date]];
+            fprintf(g_logFile, "[%s] %s\n", [timestamp UTF8String], [logStr UTF8String]);
+            // Optional: fflush(g_logFile); // Remove flush for better speed, or do it periodically
+        }
+    });
 }
 
 // WorkflowKit interfaces
@@ -675,8 +681,9 @@ static NSString *find_config_path() {
     return nil;
 }
 
-// Forward declaration for haptic
+// Forward declaration for haptic and trigger execution
 static void trigger_haptic();
+void RCExecuteTrigger(NSString *triggerKey);
 
 // Actual implementation that reads from disk
 static void reload_trigger_config() {
@@ -708,27 +715,60 @@ static void handleHomeButtonClick() {
     
     SRLog(@"[SpringRemote] 🔵 CLICK DETECTED! Count: %ld", (long)g_homeClickCount);
     
-    // HARDCODED BABY STEP: 1.0s timeout to allow 4 clicks
-    NSTimeInterval timeout = 1.0;
+    // Check config for enabled triggers
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL tripleEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
+    BOOL quadEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"trigger_home_quadruple_click"][@"enabled"] boolValue];
     
-    SRLog(@"[SpringRemote] 🔵 Timer started (1.0s)");
+    // IMMEDIATE FIRE: If Quad is enabled and we hit 4 clicks, fire instantly!
+    if (quadEnabled && g_homeClickCount >= 4) {
+        SRLog(@"[SpringRemote] 🚀 QUAD CLICK (4) REACHED! Firing immediately.");
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            trigger_haptic();
+            RCExecuteTrigger(@"trigger_home_quadruple_click");
+        });
+        
+        g_homeClickCount = 0;
+        return;
+    }
+    
+    // Dynamic Timeout:
+    // If Quad enabled: 1.0s (give plenty of time to reach 4)
+    // If Triple enabled: 0.5s
+    // Else (Double only): 0.3s
+    NSTimeInterval timeout = 0.3;
+    if (quadEnabled) timeout = 1.0; 
+    else if (tripleEnabled) timeout = 0.5;
+    
+    SRLog(@"[SpringRemote] 🔵 Timer started (timeout: %.2f)", timeout);
     
     g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
         g_homeClickTimer = nil;
         SRLog(@"[SpringRemote] 🔵 TIMER FIRED! Final count: %ld", (long)g_homeClickCount);
         
-        if (g_homeClickCount == 4) {
-             SRLog(@"[SpringRemote] 🔦 4 CLICKS DETECTED! Toggling Flashlight (Hardcoded)");
-             dispatch_async(dispatch_get_main_queue(), ^{
-                 AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-                 if ([device hasTorch]) {
-                     [device lockForConfiguration:nil];
-                     device.torchMode = (device.torchMode == AVCaptureTorchModeOn) ? AVCaptureTorchModeOff : AVCaptureTorchModeOn;
-                     [device unlockForConfiguration];
-                 }
-                 // Call the forward declared function
-                 trigger_haptic();
-             });
+        NSString *triggerKey = nil;
+        
+        // Correct Mapping (Swapped):
+        // 2 Clicks -> Triple Action
+        // 3 Clicks -> Double Action
+        if (g_homeClickCount == 2) triggerKey = @"trigger_home_triple_click";
+        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_double_tap";
+        // 4 Clicks -> Quad Action (handled by immediate fire usually, but catch here too)
+        else if (g_homeClickCount == 4) triggerKey = @"trigger_home_quadruple_click"; 
+        
+        if (triggerKey && masterEnabled) {
+            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+            if (enabled) {
+                SRLog(@"[SpringRemote] ✅ FIRING TRIGGER: %@", triggerKey);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    trigger_haptic();
+                    RCExecuteTrigger(triggerKey);
+                });
+            } else {
+                 SRLog(@"[SpringRemote] ❌ Trigger %@ disabled", triggerKey);
+            }
         }
         
         g_homeClickCount = 0;
@@ -2827,16 +2867,26 @@ static void trigger_haptic() {
 
 %hook SBHomeHardwareButton
 
-- (void)initialButtonUp:(id)arg1 {
-    SRLog(@"[SpringRemote] 🔵 initialButtonUp called - about to increment click counter");
+- (void)initialButtonDown:(id)arg1 {
     handleHomeButtonClick();
-    SRLog(@"[SpringRemote] 🔵 initialButtonUp - calling %orig");
+    %orig;
+}
+
+- (void)initialButtonUp:(id)arg1 {
+    SRLog(@"[SpringRemote] 🔵 initialButtonUp called");
     %orig;
 }
 
 // Alternative approach: Hook the system's click count handler
 - (void)_performHomeButtonPressWithClickCount:(long long)clickCount {
     SRLog(@"[SpringRemote] 🔴 _performHomeButtonPressWithClickCount called with count: %lld", clickCount);
+    
+    // Sync manual counter if system has higher count
+    if (clickCount > g_homeClickCount) {
+        SRLog(@"[SpringRemote] 🔴 System count (%lld) > manual (%ld), syncing...", clickCount, (long)g_homeClickCount);
+        g_homeClickCount = (NSInteger)clickCount;
+        // Check if this new count should trigger immediate fire (handled inside handleHomeButtonClick usually, but we are here now)
+    }
     
     load_trigger_config();
     BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
@@ -2856,6 +2906,12 @@ static void trigger_haptic() {
                 trigger_haptic();
                 RCExecuteTrigger(triggerKey);
             });
+            // Reset manual counter to avoid double fire
+            g_homeClickCount = 0;
+            if (g_homeClickTimer) {
+                [g_homeClickTimer invalidate];
+                g_homeClickTimer = nil;
+            }
             // Suppress system action by not calling %orig
             SRLog(@"[SpringRemote] ❌ SUPPRESSING system handler for %lld clicks", clickCount);
             return;
@@ -2908,24 +2964,21 @@ static NSTimeInterval g_lastReachabilityTime = 0;
     
     SRLog(@"[SpringRemote] 🟣 toggleReachability called - timeSince last: %.2fs", timeSinceLastTap);
     
-    
-    
     load_trigger_config();
     BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL doubleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
-    BOOL tripleEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
+    BOOL doubleTapEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+    BOOL tripleTapEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_triple_tap"][@"enabled"] boolValue];
+    BOOL quadTapEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_quadruple_tap"][@"enabled"] boolValue];
 
-    if (masterEnabled && (doubleEnabled || tripleEnabled)) {
-        // Increment tap count if this is a continuation (within 0.6s)
-        if (timeSinceLastTap < 0.6) {
+    if (masterEnabled && (doubleTapEnabled || tripleTapEnabled || quadTapEnabled)) {
+        // Increment tap count if this is a continuation (within 0.8s for easier detection)
+        if (timeSinceLastTap < 0.8) {
             g_reachabilityTapCount++;
         } else {
-            g_reachabilityTapCount = 1;  // First tap of a new sequence
+            g_reachabilityTapCount = 1;  // First reachability event (double tap)
         }
         
         g_lastReachabilityTime = now;
-        
-        SRLog(@"[SpringRemote] 🟣 Tap count now: %ld", (long)g_reachabilityTapCount);
         
         // Cancel existing timer
         if (g_reachabilityTapTimer) {
@@ -2933,46 +2986,34 @@ static NSTimeInterval g_lastReachabilityTime = 0;
             g_reachabilityTapTimer = nil;
         }
         
-        // Start timer - if triple is enabled, wait longer
-        NSTimeInterval delay = tripleEnabled ? 0.5 : 0.3;
-        SRLog(@"[SpringRemote] 🟣 Starting timer with delay: %.1fs (triple enabled: %d)", delay, tripleEnabled);
+        // Timer delay: wait to see if more double-taps come
+        NSTimeInterval delay = 0.6; 
         
         g_reachabilityTapTimer = [NSTimer scheduledTimerWithTimeInterval:delay repeats:NO block:^(NSTimer *timer) {
             g_reachabilityTapTimer = nil;
             
             NSString *triggerKey = nil;
-            // FIXED MAPPING: On iOS 15, toggleReachability is called ONCE for triple-click
-            // (double-tap triggers reachability, then 3rd click registers)
+            // Mapping:
+            // 1 Reachability Call (2 taps) -> Double Tap
+            // 2 Reachability Calls (4 taps) -> Quadruple Tap
+            // Note: Triple tap is hard to detect via reachability alone on some versions
             if (g_reachabilityTapCount == 1) triggerKey = @"trigger_home_double_tap";
-            else if (g_reachabilityTapCount == 2) triggerKey = @"trigger_home_quadruple_click";
-            else if (g_reachabilityTapCount >= 3) triggerKey = @"trigger_home_quadruple_click"; // fallback
+            else if (g_reachabilityTapCount == 2) triggerKey = @"trigger_home_quadruple_tap";
+            else if (g_reachabilityTapCount >= 3) triggerKey = @"trigger_home_quadruple_tap"; 
             
-            SRLog(@"[SpringRemote] 🟣 Timer fired! Tap count: %ld, trigger: %@", (long)g_reachabilityTapCount, triggerKey ?: @"NONE");
+            SRLog(@"[SpringRemote] 🟣 Reachability Timer fired! Count: %ld -> %@", (long)g_reachabilityTapCount, triggerKey);
             
             if (triggerKey) {
-                load_trigger_config();
-                BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-                
-                if (enabled) {
-                    SRLog(@"[SpringRemote] ✅ FIRING TRIGGER: %@", triggerKey);
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        trigger_haptic();
-                        RCExecuteTrigger(triggerKey);
-                    });
-                } else {
-                    SRLog(@"[SpringRemote] ❌ Trigger %@ detected but disabled", triggerKey);
-                }
+                RCExecuteTrigger(triggerKey);
             }
             
             g_reachabilityTapCount = 0;
         }];
         
         // Always suppress Reachability
-        SRLog(@"[SpringRemote] ❌ SUPPRESSING toggleReachability");
         return;
     }
     
-    SRLog(@"[SpringRemote] ✅ ALLOWING toggleReachability (triggers disabled)");
     %orig;
 }
 

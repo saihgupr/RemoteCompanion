@@ -2810,8 +2810,8 @@ static void handleHomeButtonClick() {
         SRLog(@"[SpringRemote] 🔵 TIMER FIRED! Final click count: %ld", (long)g_homeClickCount);
         
         NSString *triggerKey = nil;
-        if (g_homeClickCount == 2) triggerKey = @"trigger_home_double_tap";
-        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_triple_click";
+        if (g_homeClickCount == 2) triggerKey = @"trigger_home_triple_click";
+        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_double_tap";
         else if (g_homeClickCount >= 4) triggerKey = @"trigger_home_quadruple_click";
         
         SRLog(@"[SpringRemote] 🔵 Trigger key selected: %@", triggerKey ?: @"NONE");
@@ -2857,8 +2857,8 @@ static void handleHomeButtonClick() {
     BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
     
     NSString *triggerKey = nil;
-    if (clickCount == 2) triggerKey = @"trigger_home_double_tap";
-    else if (clickCount == 3) triggerKey = @"trigger_home_triple_click";
+    if (clickCount == 2) triggerKey = @"trigger_home_triple_click";
+    else if (clickCount == 3) triggerKey = @"trigger_home_double_tap";
     else if (clickCount >= 4) triggerKey = @"trigger_home_quadruple_click";
     
     if (triggerKey && masterEnabled) {
@@ -2885,7 +2885,7 @@ static void handleHomeButtonClick() {
 - (void)doublePressUp {
     SRLog(@"[SpringRemote] 🟡 SYSTEM doublePressUp CALLED");
     load_trigger_config();
-    BOOL shouldSuppress = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+    BOOL shouldSuppress = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
     SRLog(@"[SpringRemote] 🟡 doublePressUp - shouldSuppress: %d", shouldSuppress);
     if (shouldSuppress) {
         SRLog(@"[SpringRemote] ❌ SUPPRESSING system doublePressUp");
@@ -2898,7 +2898,7 @@ static void handleHomeButtonClick() {
 - (void)triplePressUp {
     SRLog(@"[SpringRemote] 🟡 SYSTEM triplePressUp CALLED");
     load_trigger_config();
-    BOOL shouldSuppress = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
+    BOOL shouldSuppress = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
     SRLog(@"[SpringRemote] 🟡 triplePressUp - shouldSuppress: %d", shouldSuppress);
     if (shouldSuppress) {
         SRLog(@"[SpringRemote] ❌ SUPPRESSING system triplePressUp");
@@ -2969,7 +2969,7 @@ static NSTimeInterval g_lastReachabilityTime = 0;
             NSString *triggerKey = nil;
             // FIXED MAPPING: On iOS 15, toggleReachability is called ONCE for triple-click
             // (double-tap triggers reachability, then 3rd click registers)
-            if (g_reachabilityTapCount == 1) triggerKey = @"trigger_home_triple_click";
+            if (g_reachabilityTapCount == 1) triggerKey = @"trigger_home_double_tap";
             else if (g_reachabilityTapCount == 2) triggerKey = @"trigger_home_quadruple_click";
             else if (g_reachabilityTapCount >= 3) triggerKey = @"trigger_home_quadruple_click"; // fallback
             

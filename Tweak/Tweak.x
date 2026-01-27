@@ -704,59 +704,62 @@ static void load_trigger_config() {
     reload_trigger_config();
 }
 
-static void handleHomeButtonClick() {
+// --- Refactored Home Button Logic (RC_ProcessHomeClick) ---
+// --- Refactored Home Button Logic (RC_ProcessHomeClick) ---
+
+// Forward Declaration
+static void RC_CheckAndFire();
+
+static void RC_ProcessHomeClick() {
     g_homeClickCount++;
-    
-    // Reset timer of previous clicks
+    SRLog(@"[SpringRemote] 🔵 CLICK DETECTED (Up)! Count: %ld", (long)g_homeClickCount);
+    RC_CheckAndFire();
+}
+
+
+
+static void RC_CheckAndFire() {
+    // 1. Reset existing timer
     if (g_homeClickTimer) {
         [g_homeClickTimer invalidate];
         g_homeClickTimer = nil;
     }
     
-    SRLog(@"[SpringRemote] 🔵 CLICK DETECTED! Count: %ld", (long)g_homeClickCount);
-    
-    // Check config for enabled triggers
+    // 2. Load Config
     load_trigger_config();
     BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL tripleEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
     BOOL quadEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"trigger_home_quadruple_click"][@"enabled"] boolValue];
+
     
-    // IMMEDIATE FIRE: If Quad is enabled and we hit 4 clicks, fire instantly!
+    // 3. IMMEDIATE FIRE CHECK (Quadruple)
+    // If we have >= 4 clicks, fire immediately!
     if (quadEnabled && g_homeClickCount >= 4) {
-        SRLog(@"[SpringRemote] 🚀 QUAD CLICK (4) REACHED! Firing immediately.");
+        SRLog(@"[SpringRemote] 🚀 QUAD CLICK (4+) REACHED! Firing immediately.");
         
         dispatch_async(dispatch_get_main_queue(), ^{
             trigger_haptic();
             RCExecuteTrigger(@"trigger_home_quadruple_click");
         });
         
-        g_homeClickCount = 0;
+        g_homeClickCount = 0; // Reset Sequence
         return;
     }
     
-    // Dynamic Timeout:
-    // If Quad enabled: 1.0s (give plenty of time to reach 4)
-    // If Triple enabled: 0.5s
-    // Else (Double only): 0.3s
-    NSTimeInterval timeout = 0.3;
-    if (quadEnabled) timeout = 1.0; 
-    else if (tripleEnabled) timeout = 0.5;
+    // 4. Determine Timeout (End of Sequence)
+    NSTimeInterval timeout = 0.35; 
+    if (quadEnabled) timeout = 0.55; // Slightly longer if waiting for potentially missed click
     
-    SRLog(@"[SpringRemote] 🔵 Timer started (timeout: %.2f)", timeout);
-    
-    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
+    // 5. Schedule Timer on CommonModes
+    g_homeClickTimer = [NSTimer timerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
         g_homeClickTimer = nil;
-        SRLog(@"[SpringRemote] 🔵 TIMER FIRED! Final count: %ld", (long)g_homeClickCount);
+        SRLog(@"[SpringRemote] 🔵 SEQUENCE ENDED. Final count: %ld", (long)g_homeClickCount);
         
         NSString *triggerKey = nil;
         
-        // Correct Mapping (Swapped):
-        // 2 Clicks -> Triple Action
-        // 3 Clicks -> Double Action
-        if (g_homeClickCount == 2) triggerKey = @"trigger_home_triple_click";
-        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_double_tap";
-        // 4 Clicks -> Quad Action (handled by immediate fire usually, but catch here too)
-        else if (g_homeClickCount == 4) triggerKey = @"trigger_home_quadruple_click"; 
+        // Final logic check on timeout
+        if (g_homeClickCount == 4 && quadEnabled) triggerKey = @"trigger_home_quadruple_click"; // Catch-all if immediate missed
+        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_triple_click";
+        else if (g_homeClickCount == 2) triggerKey = @"trigger_home_double_tap";
         
         if (triggerKey && masterEnabled) {
             BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
@@ -766,13 +769,13 @@ static void handleHomeButtonClick() {
                     trigger_haptic();
                     RCExecuteTrigger(triggerKey);
                 });
-            } else {
-                 SRLog(@"[SpringRemote] ❌ Trigger %@ disabled", triggerKey);
             }
         }
         
-        g_homeClickCount = 0;
+        g_homeClickCount = 0; // Reset Sequence
     }];
+    
+    [[NSRunLoop mainRunLoop] addTimer:g_homeClickTimer forMode:NSRunLoopCommonModes];
 }
 static void update_simulation_observers();
 
@@ -2853,81 +2856,89 @@ static void trigger_haptic() {
 - (void)_performHomeButtonPressWithClickCount:(long long)arg1;
 @end
 
+@interface AXSpringBoardServer : NSObject
++ (id)server;
+- (void)toggleAccessibilityShortcut;
+@end
 
 
 
-// Manual handleHomeButtonClick removed in Plan G
 
-// --- Home Button Handling (Plan P - Manual Counter Reloaded) ---
-// 1. Manual Click Counter for Physical Clicks (Verified reliable initialButtonUp)
-// 2. Strict Suppression of System Multi-Clicks
+// --- IOHID Definitions ---
+#import <IOKit/IOKitLib.h>
+#include <IOKit/hid/IOHIDEventSystemClient.h>
+#include <IOKit/hid/IOHIDEvent.h>
 
-// handleHomeButtonClick defined earlier
-// handleHomeButtonClick defined earlier
+// IOHID Definitions
+// Header includes are sufficient for most types. 
+// We only manually declare what is missing.
+
+// Missing from some SDKs
+extern IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
+
+// Forward Declaration needed for ProcessRawClick
+static void RC_ProcessHomeClick(); 
+
+// Raw HID Callback
+// Signature must match IOHIDEventSystemClientEventCallback:
+// void (*)(void *target, void *refcon, IOHIDEventQueueRef queue, IOHIDEventRef event)
+// We use void* for queue to avoid dependency on IOHIDEventQueue type if missing.
+static void handle_hid_event(void* target, void* refcon, void* queue, IOHIDEventRef event) {
+    if (IOHIDEventGetType(event) == 3) { // kIOHIDEventTypeKeyboard
+        // usagePage and usage are implicitly int in GetIntegerValue
+        int usagePage = IOHIDEventGetIntegerValue(event, 0x30000); // kIOHIDEventFieldKeyboardUsagePage
+        int usage = IOHIDEventGetIntegerValue(event, 0x30001);     // kIOHIDEventFieldKeyboardUsage
+        int down = IOHIDEventGetIntegerValue(event, 0x30002);      // kIOHIDEventFieldKeyboardDown
+        
+        // Home Button (Consumer Page 0x0C, Usage 0x40)
+        if (usagePage == 0x0C && usage == 0x40) {
+            if (down == 0) { // UP Event
+                 SRLog(@"[SpringRemote] 🕹️ HID HOME BUTTON UP detected!");
+                 RC_ProcessHomeClick();
+            } else {
+                 SRLog(@"[SpringRemote] 🕹️ HID HOME BUTTON DOWN detected");
+            }
+        }
+    }
+}
+
+static IOHIDEventSystemClientRef g_hidClient = NULL;
+
+static void setup_hid_listener() {
+    SRLog(@"[SpringRemote] 🔌 Setting up Raw HID Listener...");
+    g_hidClient = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
+    if (g_hidClient) {
+        IOHIDEventSystemClientRegisterEventCallback(g_hidClient, (IOHIDEventSystemClientEventCallback)handle_hid_event, NULL, NULL);
+        IOHIDEventSystemClientScheduleWithRunLoop(g_hidClient, CFRunLoopGetMain(), kCFRunLoopDefaultMode);
+        SRLog(@"[SpringRemote] ✅ HID Listener Active!");
+    } else {
+        SRLog(@"[SpringRemote] ❌ Failed to create HID Client");
+    }
+}
+
+// --- Home Button Handling (Plan H - Raw HID) ---
+// We now rely on the HID Listener (above) for counting.
+// SBHomeHardwareButton is used ONLY for strict suppression.
 
 %hook SBHomeHardwareButton
 
-- (void)initialButtonDown:(id)arg1 {
-    handleHomeButtonClick();
-    %orig;
-}
+// Disable manual counting here - we use HID now
+- (void)initialButtonDown:(id)arg1 { %orig; }
+- (void)initialButtonUp:(id)arg1 { %orig; }
 
-- (void)initialButtonUp:(id)arg1 {
-    SRLog(@"[SpringRemote] 🔵 initialButtonUp called");
-    %orig;
-}
-
-// Alternative approach: Hook the system's click count handler
+// Remove Legacy Sync Logic - HID doesn't need it
 - (void)_performHomeButtonPressWithClickCount:(long long)clickCount {
-    SRLog(@"[SpringRemote] 🔴 _performHomeButtonPressWithClickCount called with count: %lld", clickCount);
-    
-    // Sync manual counter if system has higher count
-    if (clickCount > g_homeClickCount) {
-        SRLog(@"[SpringRemote] 🔴 System count (%lld) > manual (%ld), syncing...", clickCount, (long)g_homeClickCount);
-        g_homeClickCount = (NSInteger)clickCount;
-        // Check if this new count should trigger immediate fire (handled inside handleHomeButtonClick usually, but we are here now)
-    }
-    
-    load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    
-    NSString *triggerKey = nil;
-    if (clickCount == 2) triggerKey = @"trigger_home_triple_click";
-    else if (clickCount == 3) triggerKey = @"trigger_home_double_tap";
-    else if (clickCount >= 4) triggerKey = @"trigger_home_quadruple_click";
-    
-    if (triggerKey && masterEnabled) {
-        BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-        SRLog(@"[SpringRemote] 🔴 Trigger %@ - enabled:%d", triggerKey, enabled);
-        
-        if (enabled) {
-            SRLog(@"[SpringRemote] ✅ FIRING TRIGGER via _performHomeButtonPressWithClickCount: %@", triggerKey);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                trigger_haptic();
-                RCExecuteTrigger(triggerKey);
-            });
-            // Reset manual counter to avoid double fire
-            g_homeClickCount = 0;
-            if (g_homeClickTimer) {
-                [g_homeClickTimer invalidate];
-                g_homeClickTimer = nil;
-            }
-            // Suppress system action by not calling %orig
-            SRLog(@"[SpringRemote] ❌ SUPPRESSING system handler for %lld clicks", clickCount);
-            return;
-        }
-    }
-    
-    SRLog(@"[SpringRemote] 🔴 Calling %orig for click count: %lld", clickCount);
+    SRLog(@"[SpringRemote] 🔴 _performHomeButtonPressWithClickCount: %lld (Ignored for Triggering)", clickCount);
     %orig;
 }
 
 // Strict Suppression of System Actions
 - (void)doublePressUp {
-    SRLog(@"[SpringRemote] 🟡 SYSTEM doublePressUp CALLED");
+    SRLog(@"[SpringRemote] 🟡 SYSTEM doublePressUp");
     load_trigger_config();
-    BOOL shouldSuppress = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
-    SRLog(@"[SpringRemote] 🟡 doublePressUp - shouldSuppress: %d", shouldSuppress);
+    BOOL master = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL shouldSuppress = master && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
+
     if (shouldSuppress) {
         SRLog(@"[SpringRemote] ❌ SUPPRESSING system doublePressUp");
         return;
@@ -2937,10 +2948,16 @@ static void trigger_haptic() {
 }
 
 - (void)triplePressUp {
-    SRLog(@"[SpringRemote] 🟡 SYSTEM triplePressUp CALLED");
+    SRLog(@"[SpringRemote] 🟡 SYSTEM triplePressUp");
     load_trigger_config();
-    BOOL shouldSuppress = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
-    SRLog(@"[SpringRemote] 🟡 triplePressUp - shouldSuppress: %d", shouldSuppress);
+    BOOL master = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL shouldSuppress = master && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+
+    if (master) {
+        // Critical for "7 Clicks" fix:
+        // [Sync moved to _performHomeButtonPressWithClickCount]
+    }
+
     if (shouldSuppress) {
         SRLog(@"[SpringRemote] ❌ SUPPRESSING system triplePressUp");
         return;
@@ -2953,76 +2970,10 @@ static void trigger_haptic() {
 
 // iOS 15 FIX: SBHomeHardwareButton doesn't work, so use Reachability as tap detector
 // Reachability is called on each double tap - we'll count these and determine multi-click
-static NSTimer *g_reachabilityTapTimer = nil;
-static NSInteger g_reachabilityTapCount = 0;
-static NSTimeInterval g_lastReachabilityTime = 0;
 
-%hook SBReachabilityManager
-- (void)toggleReachability {
-    NSTimeInterval now = [[NSDate date] timeIntervalSinceReferenceDate];
-    NSTimeInterval timeSinceLastTap = now - g_lastReachabilityTime;
-    
-    SRLog(@"[SpringRemote] 🟣 toggleReachability called - timeSince last: %.2fs", timeSinceLastTap);
-    
-    load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL doubleTapEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
-    BOOL tripleTapEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_triple_tap"][@"enabled"] boolValue];
-    BOOL quadTapEnabled = [g_triggerConfig[@"triggers"][@"trigger_home_quadruple_tap"][@"enabled"] boolValue];
 
-    if (masterEnabled && (doubleTapEnabled || tripleTapEnabled || quadTapEnabled)) {
-        // Increment tap count if this is a continuation (within 0.8s for easier detection)
-        if (timeSinceLastTap < 0.8) {
-            g_reachabilityTapCount++;
-        } else {
-            g_reachabilityTapCount = 1;  // First reachability event (double tap)
-        }
-        
-        g_lastReachabilityTime = now;
-        
-        // Cancel existing timer
-        if (g_reachabilityTapTimer) {
-            [g_reachabilityTapTimer invalidate];
-            g_reachabilityTapTimer = nil;
-        }
-        
-        // Timer delay: wait to see if more double-taps come
-        NSTimeInterval delay = 0.6; 
-        
-        g_reachabilityTapTimer = [NSTimer scheduledTimerWithTimeInterval:delay repeats:NO block:^(NSTimer *timer) {
-            g_reachabilityTapTimer = nil;
-            
-            NSString *triggerKey = nil;
-            // Mapping:
-            // 1 Reachability Call (2 taps) -> Double Tap
-            // 2 Reachability Calls (4 taps) -> Quadruple Tap
-            // Note: Triple tap is hard to detect via reachability alone on some versions
-            if (g_reachabilityTapCount == 1) triggerKey = @"trigger_home_double_tap";
-            else if (g_reachabilityTapCount == 2) triggerKey = @"trigger_home_quadruple_tap";
-            else if (g_reachabilityTapCount >= 3) triggerKey = @"trigger_home_quadruple_tap"; 
-            
-            SRLog(@"[SpringRemote] 🟣 Reachability Timer fired! Count: %ld -> %@", (long)g_reachabilityTapCount, triggerKey);
-            
-            if (triggerKey) {
-                RCExecuteTrigger(triggerKey);
-            }
-            
-            g_reachabilityTapCount = 0;
-        }];
-        
-        // Always suppress Reachability
-        return;
-    }
-    
-    %orig;
-}
 
-- (void)_toggleReachabilityMode {
-    // Just suppress this variant too
-    SRLog(@"[SpringRemote] 🟣 _toggleReachabilityMode - suppressed");
-    return;
-}
-%end
+// REMOVED: SBReachabilityManager (Dead Code / Unreliable)
 
 
 // [Removed unused biometric hooks]
@@ -3405,6 +3356,7 @@ static void update_edge_gestures() {
         load_trigger_config();
         register_config_observer();
         register_simulation_observers();
+        setup_hid_listener(); // Start RAW HID Listener
         start_server();
         
         // Conditionally register edge gestures based on config

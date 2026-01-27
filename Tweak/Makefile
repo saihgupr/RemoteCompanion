@@ -16,8 +16,8 @@ LUA_FILES = $(wildcard lua/*.c)
 
 RemoteCommand_FILES = Tweak.x RCNFCManager.x $(LUA_FILES)
 RemoteCommand_CFLAGS = -fobjc-arc -Ilua -DLUA_USE_IOS
-RemoteCommand_FRAMEWORKS = UIKit CoreNFC
-RemoteCommand_PRIVATE_FRAMEWORKS = AppSupport MediaRemote MobileCoreServices FrontBoardServices BackBoardServices MediaPlayer DoNotDisturb BiometricKit
+RemoteCommand_FRAMEWORKS = UIKit CoreNFC IOKit
+RemoteCommand_PRIVATE_FRAMEWORKS = AppSupport MediaRemote MobileCoreServices FrontBoardServices BackBoardServices MediaPlayer DoNotDisturb BiometricKit AccessibilityUtilities
 RemoteCommand_LDFLAGS += -F/opt/theos/sdks/iPhoneOS16.5.sdk/System/Library/PrivateFrameworks
 
 include $(THEOS_MAKE_PATH)/tweak.mk

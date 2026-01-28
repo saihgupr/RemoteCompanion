@@ -57,8 +57,10 @@
         @[
             @{ @"name": @"WiFi On", @"command": @"wifi on", @"icon": @"wifi" },
             @{ @"name": @"WiFi Off", @"command": @"wifi off", @"icon": @"wifi.slash" },
+            @{ @"name": @"WiFi Toggle", @"command": @"wifi toggle", @"icon": @"wifi.circle.fill" },
             @{ @"name": @"Bluetooth On", @"command": @"bluetooth on", @"icon": @"bolt.horizontal.fill" },
             @{ @"name": @"Bluetooth Off", @"command": @"bluetooth off", @"icon": @"bolt.horizontal" },
+            @{ @"name": @"Bluetooth Toggle", @"command": @"bluetooth toggle", @"icon": @"bolt.horizontal.circle.fill" },
             @{ @"name": @"Airplane Mode On", @"command": @"airplane on", @"icon": @"airplane" },
             @{ @"name": @"Airplane Mode Off", @"command": @"airplane off", @"icon": @"airplane" },
             @{ @"name": @"Airplane Mode Toggle", @"command": @"airplane toggle", @"icon": @"airplane" },

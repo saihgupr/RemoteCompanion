@@ -205,6 +205,7 @@ extern Boolean MRMediaRemoteSendCommandToApp(MRMediaRemoteCommand command, NSDic
 // SBWiFiManager API
 @interface SBWiFiManager : NSObject
 + (instancetype)sharedInstance;
+- (BOOL)wiFiEnabled;
 - (void)setWiFiEnabled:(BOOL)enabled;
 @end
 
@@ -2117,6 +2118,28 @@ static NSString *handle_command(NSString *cmd) {
             return @"Airplane Mode OFF\n";
         }
         return @"Error: RadiosPreferences not found\n";
+    } else if ([cleanCmd isEqualToString:@"wifi toggle"]) {
+        SBWiFiManager *manager = [objc_getClass("SBWiFiManager") sharedInstance];
+        if (manager) {
+            BOOL current = [manager wiFiEnabled];
+            [manager setWiFiEnabled:!current];
+            SRLog(@"[SpringRemote] WiFi Toggled: %d -> %d", current, !current);
+            return [NSString stringWithFormat:@"WiFi Toggled: %@\n", !current ? @"ON" : @"OFF"];
+        }
+        return @"Error: SBWiFiManager not found\n";
+    } else if ([cleanCmd isEqualToString:@"bluetooth toggle"] || [cleanCmd isEqualToString:@"bt toggle"]) {
+        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
+        if (btHandle) {
+            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
+            if (BluetoothManagerClass) {
+                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
+                BOOL current = [btManager enabled];
+                [btManager setEnabled:!current];
+                SRLog(@"[SpringRemote] Bluetooth Toggled: %d -> %d", current, !current);
+                return [NSString stringWithFormat:@"Bluetooth Toggled: %@\n", !current ? @"ON" : @"OFF"];
+            }
+        }
+        return @"Error: BluetoothManager failed\n";
     } else if ([cleanCmd isEqualToString:@"airplane"] || [cleanCmd isEqualToString:@"airplane toggle"]) {
         SRLog(@"[SpringRemote] Executing airplane toggle...");
         dlopen("/System/Library/PrivateFrameworks/AppSupport.framework/AppSupport", RTLD_NOW);

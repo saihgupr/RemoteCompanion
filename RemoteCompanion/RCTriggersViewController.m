@@ -37,6 +37,8 @@
         @"wifi off": @"WiFi Off",
         @"bluetooth on": @"BT On",
         @"bluetooth off": @"BT Off",
+        @"bluetooth toggle": @"BT Toggle",
+        @"wifi toggle": @"WiFi Toggle",
         @"haptic": @"Haptic",
         @"screenshot": @"Screenshot",
         @"lock": @"Lock",

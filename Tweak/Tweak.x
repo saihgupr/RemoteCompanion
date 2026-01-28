@@ -788,7 +788,7 @@ static void update_edge_gestures();
 static void config_changed_callback(CFNotificationCenterRef center, void *observer,
                                     CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     SRLog(@"[SpringRemote] Config changed notification received, reloading...");
-    load_trigger_config();
+    reload_trigger_config(); // FORCE reload
     update_simulation_observers();
     update_edge_gestures(); // Dynamically add/remove gesture recognizers
 }

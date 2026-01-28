@@ -82,7 +82,7 @@
     NSMutableArray *titles = [NSMutableArray array];
     
     // Standard Sections
-    [sections addObject:@[@"volume_up_hold", @"volume_down_hold"]];
+    [sections addObject:@[@"volume_up_hold", @"volume_down_hold", @"volume_both_press"]];
     [titles addObject:@"Volume Buttons"];
     
     [sections addObject:@[@"power_double_tap", @"power_long_press"]];

@@ -99,10 +99,10 @@ Replaces: com.pizzaman.remotecommand
 Conflicts: com.pizzaman.remotecommand
 Architecture: iphoneos-arm64
 Version: 1.0.4
-Installed-Size: 1016
+Installed-Size: 1068
 Filename: ./com.saihgupr.remotecompanion_1.0.4_iphoneos-arm64.deb
-Size: 244058
-MD5sum: 5570d081048ace9a3a1d91e627766c26
-SHA1: 81769ec2ebaf334a385d7af03d9db3593419dbee
-SHA256: 1dbb4cb030e4a541da5694008a3bc79d5184bd2ff4ee45e163cdeb70357cd2f2
+Size: 251046
+MD5sum: 9ef1c3a46162b42c6377a8e0eff7cc0e
+SHA1: d00aaa36aac6e7a178d6d20d495cfb66d3e5fb2a
+SHA256: e68ad13ef1325079259227c1fce5cfc5b8d3b0c4a9f8b8936c269129c5f1d234
 

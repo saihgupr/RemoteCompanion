@@ -31,11 +31,10 @@ void SRLog(NSString *format, ...) {
     NSString *logStr = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
     
-    // Always NSLog immediately (it's relatively fast and good for realtime)
-    // Actually, even NSLog can be slow if it floods. Let's keep it for now.
-    NSLog(@"[SpringRemote] %@", logStr);
-    
     dispatch_async(g_logQueue, ^{
+        // NSLog inside queue to prevent blocking the calling thread
+        NSLog(@"[SpringRemote] %@", logStr);
+        
         if (!g_logFile) {
             g_logFile = fopen("/tmp/springremote.log", "a");
         }
@@ -43,7 +42,6 @@ void SRLog(NSString *format, ...) {
         if (g_logFile) {
             NSString *timestamp = [g_logDateFormatter stringFromDate:[NSDate date]];
             fprintf(g_logFile, "[%s] %s\n", [timestamp UTF8String], [logStr UTF8String]);
-            // Optional: fflush(g_logFile); // Remove flush for better speed, or do it periodically
         }
     });
 }
@@ -2629,6 +2627,11 @@ static BOOL g_volIsReplaying = NO; // Recursion guard for replay
 static NSTimer *g_volDownTimer = nil;
 static BOOL g_volDownTriggered = NO;
 
+// Combo Detection
+static BOOL g_volUpIsDown = NO;
+static BOOL g_volDownIsDown = NO;
+static BOOL g_volBothTriggered = NO;
+
 static NSTimer *g_lockButtonTimer = nil;
 static BOOL g_lockButtonTriggered = NO;
 static NSTimer *g_systemPowerOffTimer = nil; // New for dual-stage
@@ -2650,6 +2653,24 @@ static void trigger_haptic() {
         return;
     }
 
+    g_volUpIsDown = YES;
+    
+    // Check if both are down for simultaneous press
+    if (g_volDownIsDown && !g_volBothTriggered) {
+        load_trigger_config();
+        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue]) {
+            g_volBothTriggered = YES;
+            // Invalidate other timers to prevent individual hold triggers
+            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+            
+            trigger_haptic();
+            RCExecuteTrigger(@"volume_both_press");
+            SRLog(@"[SpringRemote] Volume Up+Down Combo Fired!");
+            return;
+        }
+    }
+
     load_trigger_config();
     if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_up_hold"][@"enabled"] boolValue]) {
         g_volUpTriggered = NO;
@@ -2666,6 +2687,14 @@ static void trigger_haptic() {
 }
 
 - (void)volumeIncreasePressUp {
+    g_volUpIsDown = NO;
+    if (g_volBothTriggered) {
+        // Reset both triggered flag when both are released (or just one?)
+        // Let's reset when both are up to avoid spamming or re-triggering accidentally
+        if (!g_volDownIsDown) g_volBothTriggered = NO;
+        return; 
+    }
+
     if (g_volIsReplaying) {
         %orig;
         return;
@@ -2696,6 +2725,24 @@ static void trigger_haptic() {
         return;
     }
 
+    g_volDownIsDown = YES;
+
+    // Check if both are down for simultaneous press
+    if (g_volUpIsDown && !g_volBothTriggered) {
+        load_trigger_config();
+        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue]) {
+            g_volBothTriggered = YES;
+            // Invalidate other timers
+            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+            
+            trigger_haptic();
+            RCExecuteTrigger(@"volume_both_press");
+            SRLog(@"[SpringRemote] Volume Up+Down Combo Fired (from Down)!");
+            return;
+        }
+    }
+
     load_trigger_config();
     if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_down_hold"][@"enabled"] boolValue]) {
         g_volDownTriggered = NO;
@@ -2712,6 +2759,12 @@ static void trigger_haptic() {
 }
 
 - (void)volumeDecreasePressUp {
+    g_volDownIsDown = NO;
+    if (g_volBothTriggered) {
+        if (!g_volUpIsDown) g_volBothTriggered = NO;
+        return;
+    }
+
     if (g_volIsReplaying) {
         %orig;
         return;

@@ -5,6 +5,7 @@
 @interface RCSettingsViewController () <UIDocumentPickerDelegate>
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) UILabel *versionLabel;
+@property (nonatomic, strong) UILabel *appTitleLabel;
 @property (nonatomic, strong) UISwitch *masterSwitch;
 @property (nonatomic, strong) UISwitch *tcpSwitch;
 @property (nonatomic, assign) BOOL isExporting;
@@ -44,18 +45,33 @@
     
     [self.view addSubview:self.versionLabel];
     
+    // Setup App Title Label
+    self.appTitleLabel = [[UILabel alloc] init];
+    self.appTitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.appTitleLabel.textAlignment = NSTextAlignmentCenter;
+    self.appTitleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold]; // Bold to match headers
+    self.appTitleLabel.textColor = [UIColor secondaryLabelColor]; // Match opacity of Volume Buttons header
+    self.appTitleLabel.text = @"RemoteCompanion";
+    
+    [self.view addSubview:self.appTitleLabel];
+    
     // Constraints
     [NSLayoutConstraint activateConstraints:@[
         // Table View: Top, Left, Right, Bottom-to-Label
         [self.tableView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
         [self.tableView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.tableView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [self.tableView.bottomAnchor constraintEqualToAnchor:self.versionLabel.topAnchor constant:-8], // Padding above label
+        [self.tableView.bottomAnchor constraintEqualToAnchor:self.appTitleLabel.topAnchor constant:-8], // Padding above title
+        
+        // App Title Label
+        [self.appTitleLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.appTitleLabel.bottomAnchor constraintEqualToAnchor:self.versionLabel.topAnchor constant:0], // Stack directly on top
+        [self.appTitleLabel.heightAnchor constraintEqualToConstant:20],
         
         // Version Label: Centered, Pinned to Bottom Guide
         [self.versionLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [self.versionLabel.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-8], // Padding from bottom
-        [self.versionLabel.heightAnchor constraintEqualToConstant:20]
+        [self.versionLabel.heightAnchor constraintEqualToConstant:16]
     ]];
 }
 

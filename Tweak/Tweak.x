@@ -2883,6 +2883,9 @@ static void RC_ProcessHomeClick();
 // Signature must match IOHIDEventSystemClientEventCallback:
 // void (*)(void *target, void *refcon, IOHIDEventQueueRef queue, IOHIDEventRef event)
 // We use void* for queue to avoid dependency on IOHIDEventQueue type if missing.
+static NSTimeInterval g_lastHIDTime = 0;
+static BOOL g_hidButtonDown = NO; // State tracking
+
 static void handle_hid_event(void* target, void* refcon, void* queue, IOHIDEventRef event) {
     if (IOHIDEventGetType(event) == 3) { // kIOHIDEventTypeKeyboard
         // usagePage and usage are implicitly int in GetIntegerValue
@@ -2892,11 +2895,30 @@ static void handle_hid_event(void* target, void* refcon, void* queue, IOHIDEvent
         
         // Home Button (Consumer Page 0x0C, Usage 0x40)
         if (usagePage == 0x0C && usage == 0x40) {
-            if (down == 0) { // UP Event
-                 SRLog(@"[SpringRemote] 🕹️ HID HOME BUTTON UP detected!");
-                 RC_ProcessHomeClick();
-            } else {
-                 SRLog(@"[SpringRemote] 🕹️ HID HOME BUTTON DOWN detected");
+            NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+            
+            if (down) { // DOWN Event
+                if (!g_hidButtonDown) {
+                    // Valid fresh press
+                    g_hidButtonDown = YES;
+                    SRLog(@"[SpringRemote] 🕹️ HID DOWN (Valid Start)");
+                } else {
+                    SRLog(@"[SpringRemote] 🚫 HID Duplicate DOWN Ignored");
+                }
+            } else { // UP Event
+                if (g_hidButtonDown) {
+                    // Valid release after press
+                    if (now - g_lastHIDTime > 0.05) { // 50ms Debounce
+                        g_hidButtonDown = NO;
+                        g_lastHIDTime = now;
+                        SRLog(@"[SpringRemote] 🕹️ HID UP (Counted!)");
+                        RC_ProcessHomeClick();
+                    } else {
+                        SRLog(@"[SpringRemote] 🚫 HID UP too fast (Debounced)");
+                    }
+                } else {
+                    SRLog(@"[SpringRemote] 🚫 HID Phantom UP Ignored (No matching Down)");
+                }
             }
         }
     }

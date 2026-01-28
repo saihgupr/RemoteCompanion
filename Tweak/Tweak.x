@@ -2627,10 +2627,10 @@ static BOOL g_volIsReplaying = NO; // Recursion guard for replay
 static NSTimer *g_volDownTimer = nil;
 static BOOL g_volDownTriggered = NO;
 
-// Combo Detection
-static BOOL g_volUpIsDown = NO;
-static BOOL g_volDownIsDown = NO;
-static BOOL g_volBothTriggered = NO;
+// Combo Detection (Tracked via HID now for reliability)
+static BOOL g_hidVolUpIsDown = NO;
+static BOOL g_hidVolDownIsDown = NO;
+static BOOL g_hidVolBothTriggered = NO;
 
 static NSTimer *g_lockButtonTimer = nil;
 static BOOL g_lockButtonTriggered = NO;
@@ -2653,22 +2653,10 @@ static void trigger_haptic() {
         return;
     }
 
-    g_volUpIsDown = YES;
-    
-    // Check if both are down for simultaneous press
-    if (g_volDownIsDown && !g_volBothTriggered) {
-        load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue]) {
-            g_volBothTriggered = YES;
-            // Invalidate other timers to prevent individual hold triggers
-            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
-            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
-            
-            trigger_haptic();
-            RCExecuteTrigger(@"volume_both_press");
-            SRLog(@"[SpringRemote] Volume Up+Down Combo Fired!");
-            return;
-        }
+    // Suppress if combo was already fired via HID
+    if (g_hidVolBothTriggered) {
+        SRLog(@"[SpringRemote] Suppressing Vol Up (Combo Active)");
+        return;
     }
 
     load_trigger_config();
@@ -2687,11 +2675,8 @@ static void trigger_haptic() {
 }
 
 - (void)volumeIncreasePressUp {
-    g_volUpIsDown = NO;
-    if (g_volBothTriggered) {
-        // Reset both triggered flag when both are released (or just one?)
-        // Let's reset when both are up to avoid spamming or re-triggering accidentally
-        if (!g_volDownIsDown) g_volBothTriggered = NO;
+    if (g_hidVolBothTriggered) {
+        // Handled by HID reset
         return; 
     }
 
@@ -2725,22 +2710,10 @@ static void trigger_haptic() {
         return;
     }
 
-    g_volDownIsDown = YES;
-
-    // Check if both are down for simultaneous press
-    if (g_volUpIsDown && !g_volBothTriggered) {
-        load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue]) {
-            g_volBothTriggered = YES;
-            // Invalidate other timers
-            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
-            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
-            
-            trigger_haptic();
-            RCExecuteTrigger(@"volume_both_press");
-            SRLog(@"[SpringRemote] Volume Up+Down Combo Fired (from Down)!");
-            return;
-        }
+    // Suppress if combo was already fired via HID
+    if (g_hidVolBothTriggered) {
+        SRLog(@"[SpringRemote] Suppressing Vol Down (Combo Active)");
+        return;
     }
 
     load_trigger_config();
@@ -2759,9 +2732,8 @@ static void trigger_haptic() {
 }
 
 - (void)volumeDecreasePressUp {
-    g_volDownIsDown = NO;
-    if (g_volBothTriggered) {
-        if (!g_volUpIsDown) g_volBothTriggered = NO;
+    if (g_hidVolBothTriggered) {
+        // Handled by HID reset
         return;
     }
 
@@ -2977,31 +2949,55 @@ static void handle_hid_event(void* target, void* refcon, void* queue, IOHIDEvent
         int usage = IOHIDEventGetIntegerValue(event, 0x30001);     // kIOHIDEventFieldKeyboardUsage
         int down = IOHIDEventGetIntegerValue(event, 0x30002);      // kIOHIDEventFieldKeyboardDown
         
-        // Home Button (Consumer Page 0x0C, Usage 0x40)
-        if (usagePage == 0x0C && usage == 0x40) {
-            NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-            
-            if (down) { // DOWN Event
-                if (!g_hidButtonDown) {
-                    // Valid fresh press
-                    g_hidButtonDown = YES;
-                    SRLog(@"[SpringRemote] 🕹️ HID DOWN (Valid Start)");
-                } else {
-                    SRLog(@"[SpringRemote] 🚫 HID Duplicate DOWN Ignored");
-                }
-            } else { // UP Event
-                if (g_hidButtonDown) {
-                    // Valid release after press
-                    if (now - g_lastHIDTime > 0.05) { // 50ms Debounce
-                        g_hidButtonDown = NO;
-                        g_lastHIDTime = now;
-                        SRLog(@"[SpringRemote] 🕹️ HID UP (Counted!)");
-                        RC_ProcessHomeClick();
-                    } else {
-                        SRLog(@"[SpringRemote] 🚫 HID UP too fast (Debounced)");
+        // Consumer Page (0x0C)
+        if (usagePage == 0x0C) {
+            // Volume Buttons
+            if (usage == 0xE9 || usage == 0xEA) {
+                if (usage == 0xE9) g_hidVolUpIsDown = !!down;
+                if (usage == 0xEA) g_hidVolDownIsDown = !!down;
+                
+                if (g_hidVolUpIsDown && g_hidVolDownIsDown) {
+                    if (!g_hidVolBothTriggered) {
+                        load_trigger_config();
+                        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue]) {
+                            g_hidVolBothTriggered = YES;
+                            SRLog(@"[SpringRemote] 🕹️ HID Volume Combo DETECTED!");
+                            
+                            // Invalidate standard timers
+                            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+                            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+                            
+                            trigger_haptic();
+                            RCExecuteTrigger(@"volume_both_press");
+                        }
                     }
-                } else {
-                    SRLog(@"[SpringRemote] 🚫 HID Phantom UP Ignored (No matching Down)");
+                } else if (!g_hidVolUpIsDown && !g_hidVolDownIsDown) {
+                    // Both released
+                    if (g_hidVolBothTriggered) {
+                        SRLog(@"[SpringRemote] 🕹️ HID Volume Combo RESET");
+                        g_hidVolBothTriggered = NO;
+                    }
+                }
+            }
+            
+            // Home Button (Usage 0x40)
+            if (usage == 0x40) {
+                NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+                
+                if (down) { // DOWN Event
+                    if (!g_hidButtonDown) {
+                        g_hidButtonDown = YES;
+                        SRLog(@"[SpringRemote] 🕹️ HID DOWN (Valid Start)");
+                    }
+                } else { // UP Event
+                    if (g_hidButtonDown) {
+                        if (now - g_lastHIDTime > 0.05) { // 50ms Debounce
+                            g_hidButtonDown = NO;
+                            g_lastHIDTime = now;
+                            SRLog(@"[SpringRemote] 🕹️ HID UP (Counted!)");
+                            RC_ProcessHomeClick();
+                        }
+                    }
                 }
             }
         }

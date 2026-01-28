@@ -759,7 +759,7 @@ static void RC_CheckAndFire() {
         // Final logic check on timeout
         if (g_homeClickCount == 4 && quadEnabled) triggerKey = @"trigger_home_quadruple_click"; // Catch-all if immediate missed
         else if (g_homeClickCount == 3) triggerKey = @"trigger_home_triple_click";
-        else if (g_homeClickCount == 2) triggerKey = @"trigger_home_double_tap";
+        else if (g_homeClickCount == 2) triggerKey = @"trigger_home_double_click"; // UPDATED: Double Click (Press)
         
         if (triggerKey && masterEnabled) {
             BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
@@ -2995,13 +2995,73 @@ static void setup_hid_listener() {
 
 
 
-// REMOVED: SBReachabilityManager (Dead Code / Unreliable)
+// --- Reachability / Double Tap Logic ---
+%hook SBReachabilityManager
+
+- (void)toggleReachability {
+    SRLog(@"[SpringRemote] 👆 SBReachabilityManager toggleReachability called");
+    load_trigger_config();
+    BOOL master = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL enabled = master && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue]; // Double Tap (Touch)
+
+    if (enabled) {
+        SRLog(@"[SpringRemote] ✅ Custom Double Tap (Touch) Triggered");
+        trigger_haptic();
+        RCExecuteTrigger(@"trigger_home_double_tap");
+        return; // Suppress system Reachability
+    }
+    
+    SRLog(@"[SpringRemote] Passing through system Reachability");
+    %orig;
+}
+
+%end
 
 
-// [Removed unused biometric hooks]
+// --- Reliable Double Tap (Touch) Logic ---
+// Strategy: Hook biometric/authentication controllers which handle the sensor directly.
 
+%hook SBFUserAuthenticationController
 
-// --- Cleanup: Removed failed biometric logic ---
+// This often catches the sensor "match" or "tap" event
+- (void)handleMesaEvent:(id)arg1 {
+    // Arg1 might be an event object or integer.
+    // We'll log it for now but assume if this fires specifically for Reachability logic elsewhere,
+    // we might need to be careful.
+    // Actually, let's hook a higher level: SBReachabilityTrigger? No.
+    // Let's hook the specific method that DETECTS the match.
+    %orig;
+}
+
+// Only available on some iOS versions
+- (void)handleBiometricEvent:(unsigned long long)arg1 {
+    SRLog(@"[SpringRemote] 🧬 handleBiometricEvent: %llu", arg1);
+    
+    // 21 usually means "Mesa Match" or "Keep Alive"
+    // 10 might be "Touch Down"
+    // We need to be specific.
+    // Instead of raw events, let's try SBHomeHardwareButton again with a specific target.
+    %orig;
+}
+%end
+
+%hook SBHomeHardwareButton
+// This is the specific method for "Double Tap" (Touch) on TouchID devices
+- (void)handleDoubleTap:(id)arg1 {
+    SRLog(@"[SpringRemote] 👆 SBHomeHardwareButton handleDoubleTap called!");
+    load_trigger_config();
+    BOOL master = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL enabled = master && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+
+    if (enabled) {
+        SRLog(@"[SpringRemote] ✅ Custom Double Tap Triggered");
+        trigger_haptic();
+        RCExecuteTrigger(@"trigger_home_double_tap");
+        return; // Suppress original
+    }
+    %orig;
+}
+%end
 
 // [Removed unused SBHomeHardwareButton hook]
 

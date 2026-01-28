@@ -65,7 +65,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         NSArray *allKeys = @[@"volume_up_hold", @"volume_down_hold", @"power_double_tap", @"power_long_press", 
                              @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", 
                              @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_home_double_tap",
-                             @"trigger_home_triple_click", @"trigger_home_quadruple_click",
+                             @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_home_double_click",
                              @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", 
                              @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"];
         
@@ -106,6 +106,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                 @"trigger_home_double_tap": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_triple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_quadruple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"trigger_home_double_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_left_swipe_up": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_left_swipe_down": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_right_swipe_up": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
@@ -190,6 +191,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"trigger_home_double_tap": @"Home Button (Double Tap)",
         @"trigger_home_triple_click": @"Home Button (Triple Click)",
         @"trigger_home_quadruple_click": @"Home Button (Quadruple Click)",
+        @"trigger_home_double_click": @"Home Button (Double Click)",
         @"trigger_edge_left_swipe_up": @"Left Edge Swipe Up",
         @"trigger_edge_left_swipe_down": @"Left Edge Swipe Down",
         @"trigger_edge_right_swipe_up": @"Right Edge Swipe Up",

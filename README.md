@@ -3,13 +3,12 @@
 Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, apps, and system actions from your computer or directly from the RemoteCompanion app.
 
 > [!NOTE] 
-> **What's New in v1.0.4**
-> - **Apple Pay Fix**: Resolved a conflict causing Apple Pay "System Failure" by optimizing logging performance.
-> - **Volume Combo Trigger**: Added support for **Volume Up + Down** (simultaneous press), powered by the raw HID listener for maximum reliability.
-> - **Home Button Triggers**: Added support for **Double Click** (Press) and improved Triple/Quadruple click detection.
-> - **Open App Picker**: Easily select any installed app from a searchable list to add to your trigger sequences.
-> - **Connectivity Control**: New `wifi toggle` and `bluetooth toggle` commands with polished icons.
-
+> **What's New in v1.1**
+> - **New Hardware Triggers**: Added **Volume Up + Down** combo and **Home Button Double, Triple, & Quadruple Click**.
+> - **Smart App Picker**: Search and select any installed app to launch via triggers.
+> - **Connectivity Toggles**: New commands for `wifi`, `bluetooth`, `dnd`, `low power mode`, and `mute`.
+> - **Powercuts Support**: Trigger any RemoteCompanion action directly from iOS Shortcuts.
+> - **Native RC Commands**: Run `rc` commands directly from the terminal or the custom command action.
 
 <p align="center">
   <img src="images/IMG_1331.PNG" width="250" alt="RemoteCompanion Interface" />

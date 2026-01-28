@@ -2,13 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.4] - 2026-01-27
+## [1.1.0] - 2026-01-28
 
 ### Added
 - **Volume Combo Trigger**: Supported simultaneous Volume Up + Down press using a low-level HID listener for maximum responsiveness.
-- **Home Button "Double Click"**: Added support for physical double-click (press) actions.
-- **Improved Multi-Click Detection**: Re-engineered Home Button logic to better handle Triple and Quadruple clicks without interference.
+- **Home Button Triggers**: Added support for **Double Click**, **Triple Click**, and **Quadruple Click**.
+- **Improved Multi-Click Detection**: Re-engineered logic to handle rapid multi-clicks reliably without interference.
 - **Open App Action**: New application picker to launch any installed app directly from a trigger.
+- **Native RC Commands**: Run `rc` commands directly from the terminal or the Custom Command action.
 - **Connectivity Toggles**: Wi-Fi and Bluetooth toggle commands (`wifi toggle`, `bluetooth toggle`).
 
 ### Fixed
@@ -33,11 +34,9 @@ All notable changes to this project will be documented in this file.
 - **Toggle Support**: Added `toggle` command for various system features:
   - Low Power Mode (`rc lpm toggle`)
   - Do Not Disturb (`rc dnd toggle`)
-  - Flashlight (`rc flashlight toggle`)
   - Orientation Lock (`rc orientation toggle`)
   - Mute (`rc mute toggle`)
 - **Better SpringCuts Error Handling**: Added user-friendly notifications and UI alerts if SpringCuts is missing instead of silent failure.
-- **Sileo Compatibility**: Added SHA256 checksums and ZST compression to the repository metadata to fix 404 errors in Sileo.
 
 ### Fixed
 - **UI Consistency**: Fixed missing icons for new toggle commands in the action sequence list.

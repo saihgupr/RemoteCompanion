@@ -198,7 +198,26 @@ extern void SRLog(NSString *format, ...);
         self.wakeHandled = NO;
     });
     
-    SRLog(@"[NFC-WAKE] Screen wake detected - waiting 500ms before NFC...");
+    SRLog(@"[NFC-WAKE] Screen wake detected - checking config...");
+    
+    // Check if we have any NFC triggers before spinning up the radio
+    NSDictionary *config = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Documents/rc_triggers.plist"];
+    BOOL hasNFC = NO;
+    if (config && config[@"triggers"]) {
+        for (NSString *key in config[@"triggers"]) {
+            if ([key hasPrefix:@"nfc_"] && [config[@"triggers"][key][@"enabled"] boolValue]) {
+                hasNFC = YES;
+                break;
+            }
+        }
+    }
+    
+    if (!hasNFC) {
+        SRLog(@"[NFC-WAKE] No active NFC triggers found. Skipping scan to save power.");
+        return;
+    }
+
+    SRLog(@"[NFC-WAKE] Found active NFC triggers - waiting 500ms before NFC...");
     
     // Delay before starting NFC to let hardware warm up after sleep
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{

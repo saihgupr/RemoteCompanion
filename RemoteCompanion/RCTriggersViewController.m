@@ -62,10 +62,48 @@
                                              selector:@selector(handleConfigChanged:) 
                                                  name:RCConfigChangedNotification 
                                                object:nil];
+                                               
+    [self setupFooterView];
 }
 
-
-
+- (void)setupFooterView {
+    UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 60)];
+    
+    // App Title Label
+    UILabel *appTitleLabel = [[UILabel alloc] init];
+    appTitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    appTitleLabel.textAlignment = NSTextAlignmentCenter;
+    appTitleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    appTitleLabel.textColor = [UIColor secondaryLabelColor]; // Match opacity of Volume Buttons header
+    appTitleLabel.text = @"RemoteCompanion";
+    
+    // Version Label
+    UILabel *versionLabel = [[UILabel alloc] init];
+    versionLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    versionLabel.textAlignment = NSTextAlignmentCenter;
+    versionLabel.font = [UIFont systemFontOfSize:13];
+    versionLabel.textColor = [UIColor secondaryLabelColor];
+    
+    NSDictionary *infoDict = [[NSBundle mainBundle] infoDictionary];
+    NSString *version = [infoDict objectForKey:@"CFBundleShortVersionString"];
+    versionLabel.text = [NSString stringWithFormat:@"v%@", version];
+    
+    [footerView addSubview:appTitleLabel];
+    [footerView addSubview:versionLabel];
+    
+    [NSLayoutConstraint activateConstraints:@[
+        // Stack Title on top of Version
+        [appTitleLabel.centerXAnchor constraintEqualToAnchor:footerView.centerXAnchor],
+        [appTitleLabel.topAnchor constraintEqualToAnchor:footerView.topAnchor constant:10],
+        [appTitleLabel.heightAnchor constraintEqualToConstant:20],
+        
+        [versionLabel.centerXAnchor constraintEqualToAnchor:footerView.centerXAnchor],
+        [versionLabel.topAnchor constraintEqualToAnchor:appTitleLabel.bottomAnchor constant:0],
+        [versionLabel.heightAnchor constraintEqualToConstant:16]
+    ]];
+    
+    self.tableView.tableFooterView = footerView;
+}
 - (void)handleConfigChanged:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self reloadTableData];

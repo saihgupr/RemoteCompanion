@@ -4,6 +4,9 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 
 > [!NOTE] 
 > **What's New in v1.0.3**
+> - **Home Button Triggers**: Added support for **Double Click** (Press) and significantly improved reliability for Triple and Quadruple clicks.
+> - **Open App Picker**: Easily select any installed app from a searchable list to add to your trigger sequences.
+> - **Connectivity Control**: New `wifi toggle` and `bluetooth toggle` commands with polished icons.
 > - **Shortcuts Support**: Trigger any action from Apple Shortcuts using Powercuts (Run shell command).
 > - **Custom Commands**: Use `rc open Music` or any `rc` command directly in the "Custom Command" action to open apps or trigger triggers.
 

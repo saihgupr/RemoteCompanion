@@ -2,7 +2,12 @@
 #import "RCConfigManager.h"
 #import "RCActionPickerViewController.h"
 #import "RCShortcutPickerViewController.h"
+#import "RCAppPickerViewController.h"
 #import "RCTextInputViewController.h"
+
+@interface UIImage (Private)
++ (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleIdentifier format:(int)format scale:(CGFloat)scale;
+@end
 
 @interface RCActionsViewController ()
 @property (nonatomic, strong) NSString *triggerKey;
@@ -201,6 +206,19 @@
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentViewController:alert animated:YES completion:nil];
             });
+        } else if ([action isEqualToString:@"__OPEN_APP__"]) {
+            RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
+            appPicker.onAppSelected = ^(NSString *name, NSString *bundleId) {
+                // Save as "uiopen <bundleId>"
+                [self.actions addObject:[NSString stringWithFormat:@"uiopen %@", bundleId]];
+                [self saveActions];
+                [self.tableView reloadData];
+            };
+            
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:appPicker];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentViewController:nav animated:YES completion:nil];
+            });
         } else if ([action isEqualToString:@"__LUA_SCRIPT__"]) {
             RCTextInputViewController *inputVC = [[RCTextInputViewController alloc] init];
             inputVC.promptTitle = @"Lua Script";
@@ -337,8 +355,16 @@
     cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
     cell.textLabel.textColor = [UIColor labelColor];
     
-    cell.imageView.image = [UIImage systemImageNamed:[self iconForCommand:action]];
-    cell.imageView.tintColor = [UIColor secondaryLabelColor];
+    NSString *iconName = [self iconForCommand:action];
+    if ([iconName hasPrefix:@"USER_APP:"]) {
+        NSString *bundleId = [iconName substringFromIndex:9];
+        // Use private API to get icon
+        cell.imageView.image = [UIImage _applicationIconImageForBundleIdentifier:bundleId format:0 scale:[UIScreen mainScreen].scale];
+        cell.imageView.tintColor = nil; // Keep original colors
+    } else {
+        cell.imageView.image = [UIImage systemImageNamed:iconName];
+        cell.imageView.tintColor = [UIColor secondaryLabelColor];
+    }
     
     cell.showsReorderControl = YES;
     

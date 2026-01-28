@@ -73,7 +73,8 @@
         @[
             @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
             @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
-            @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
+            @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT__", @"icon": @"command" },
+            @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
             @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
             @{ @"name": @"Do Not Disturb On", @"command": @"dnd on", @"icon": @"moon.fill" },
             @{ @"name": @"Do Not Disturb Off", @"command": @"dnd off", @"icon": @"moon" },

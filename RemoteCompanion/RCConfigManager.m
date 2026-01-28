@@ -415,6 +415,24 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             result = [[cmd substringFromIndex:4] lastPathComponent];
         } else if ([cmd hasPrefix:@"spotify "]) {
             result = @"Spotify";
+        } else if ([cmd hasPrefix:@"uiopen "]) {
+            NSString *bundleId = [cmd substringFromIndex:7];
+            Class LSProxy = NSClassFromString(@"LSApplicationProxy");
+            if (LSProxy) {
+                id app = [LSProxy performSelector:@selector(applicationProxyForIdentifier:) withObject:bundleId];
+                if (app) {
+                    NSString *appName = [app performSelector:@selector(localizedName)];
+                    if (appName) {
+                        result = [NSString stringWithFormat:@"Open %@", appName];
+                    } else {
+                       result = [NSString stringWithFormat:@"Open %@", bundleId];
+                    }
+                } else {
+                    result = [NSString stringWithFormat:@"Open %@", bundleId];
+                }
+            } else {
+                result = [NSString stringWithFormat:@"Open %@", bundleId];
+            }
         } else {
             result = cmd;
         }
@@ -439,6 +457,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmd hasPrefix:@"brightness "]) return @"sun.max.fill";
     if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua "]) return @"scroll.fill";
     if ([cmd hasPrefix:@"spotify "]) return @"music.note";
+    if ([cmd hasPrefix:@"uiopen "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:7]];
     
     NSDictionary *icons = @{
         @"play": @"play.fill",

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.0] - 2026-01-28
+## [1.0.4] - 2026-01-28
 
 ### Added
 - **Volume Combo Trigger**: Supported simultaneous Volume Up + Down press using a low-level HID listener for maximum responsiveness.

@@ -6,7 +6,7 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 > **What's New in v1.1**
 > - **New Hardware Triggers**: Added **Volume Up + Down** combo and **Home Button Double, Triple, & Quadruple Click**.
 > - **Smart App Picker**: Search and select any installed app to launch via triggers.
-> - **Connectivity Toggles**: New commands for `wifi`, `bluetooth`, `dnd`, `low power mode`, and `mute`.
+> - **Connectivity Toggles**: New commands for `wifi`, `bluetooth`, `dnd`, `low power mode`, `orientation lock`, and `mute`.
 > - **Powercuts Support**: Trigger any RemoteCompanion action directly from iOS Shortcuts.
 > - **Native RC Commands**: Run `rc` commands directly from the terminal or the custom command action.
 
@@ -84,7 +84,7 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 ## Getting Started
 
 ### 1. Requirements
-- A **Rootless Jailbroken Device** (iOS 15+)
+- A **Rootless Jailbroken Device** (iOS 15+). Tested on iOS 15, 16, and 17.
 - The `RemoteCompanion` tweak installed.
 
 ### 2. Installation Options

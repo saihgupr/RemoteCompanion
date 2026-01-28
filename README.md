@@ -55,7 +55,7 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 - `rc spotify play` - Resume Spotify playback.
 
 ### Connectivity
-- `rc wifi [on|off]` / `rc bluetooth [on|off]`
+- `rc wifi [on|off|toggle]` / `rc bluetooth [on|off|toggle]`
 - `rc bluetooth [connect|disconnect] <name>` - Manage paired devices.
 - `rc airplay list` - See speakers and their UIDs.
 - `rc airplay connect <UID|Name>` / `rc airplay disconnect`

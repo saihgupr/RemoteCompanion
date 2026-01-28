@@ -332,4 +332,164 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     return YES;
 }
 
+#pragma mark - Command Helpers
+
+- (NSString *)nameForCommand:(NSString *)cmd truncate:(BOOL)shouldTruncate {
+    NSDictionary *names = @{
+        @"play": @"Play",
+        @"pause": @"Pause",
+        @"playpause": @"Play/Pause",
+        @"next": @"Next Track",
+        @"prev": @"Previous Track",
+        @"volume up": @"Volume Up",
+        @"volume down": @"Volume Down",
+        @"flashlight": @"Flashlight Toggle",
+        @"flashlight on": @"Flashlight On",
+        @"flashlight off": @"Flashlight Off",
+        @"flashlight toggle": @"Flashlight Toggle",
+        @"rotate lock": @"Rotate Lock",
+        @"rotate unlock": @"Rotate Unlock",
+        @"rotate toggle": @"Rotate Toggle",
+        @"wifi on": @"WiFi On",
+        @"wifi off": @"WiFi Off",
+        @"wifi toggle": @"WiFi Toggle",
+        @"bluetooth on": @"Bluetooth On",
+        @"bluetooth off": @"Bluetooth Off",
+        @"bluetooth toggle": @"Bluetooth Toggle",
+        @"bt toggle": @"Bluetooth Toggle",
+        @"haptic": @"Haptic Feedback",
+        @"screenshot": @"Screenshot",
+        @"lock": @"Lock Device",
+        @"lock toggle": @"Lock Toggle",
+        @"lock status": @"Lock Status",
+        @"dnd on": @"DND On",
+        @"dnd off": @"DND Off",
+        @"dnd toggle": @"DND Toggle",
+        @"lpm on": @"LPM On",
+        @"lpm off": @"LPM Off",
+        @"lpm toggle": @"LPM Toggle",
+        @"anc on": @"ANC On",
+        @"anc off": @"ANC Off",
+        @"anc transparency": @"Transparency Mode",
+        @"airplay disconnect": @"Disconnect AirPlay",
+        @"airplane on": @"Airplane On",
+        @"airplane off": @"Airplane Off",
+        @"airplane toggle": @"Airplane Toggle",
+        @"low power on": @"LPM On",
+        @"low power off": @"LPM Off",
+        @"low power mode on": @"LPM On",
+        @"low power mode off": @"LPM Off",
+        @"low power toggle": @"LPM Toggle",
+        @"low power mode toggle": @"LPM Toggle",
+        @"mute toggle": @"Mute Toggle"
+    };
+    
+    NSString *result = names[cmd];
+    
+    if (!result) {
+        if ([cmd hasPrefix:@"exec "]) {
+            result = [cmd substringFromIndex:5];
+        } else if ([cmd hasPrefix:@"delay "]) {
+            result = [NSString stringWithFormat:@"Delay %@s", [cmd substringFromIndex:6]];
+        } else if ([cmd hasPrefix:@"bt connect "]) {
+            result = [NSString stringWithFormat:@"Connect BT: %@", [cmd substringFromIndex:11]];
+        } else if ([cmd hasPrefix:@"bluetooth connect "]) {
+            result = [NSString stringWithFormat:@"Connect BT: %@", [cmd substringFromIndex:18]];
+        } else if ([cmd hasPrefix:@"bt disconnect "]) {
+            result = [NSString stringWithFormat:@"Disconnect BT: %@", [cmd substringFromIndex:14]];
+        } else if ([cmd hasPrefix:@"bluetooth disconnect "]) {
+            result = [NSString stringWithFormat:@"Disconnect BT: %@", [cmd substringFromIndex:21]];
+        } else if ([cmd hasPrefix:@"airplay connect "]) {
+            result = [NSString stringWithFormat:@"Connect AirPlay: %@", [cmd substringFromIndex:16]];
+        } else if ([cmd hasPrefix:@"set-vol "]) {
+            result = [NSString stringWithFormat:@"Set Vol: %@", [cmd substringFromIndex:8]];
+        } else if ([cmd hasPrefix:@"brightness "]) {
+            result = [NSString stringWithFormat:@"Set Brightness: %@", [cmd substringFromIndex:11]];
+        } else if ([cmd hasPrefix:@"shortcut:"]) {
+            result = [NSString stringWithFormat:@"Shortcut: %@", [cmd substringFromIndex:9]];
+        } else if ([cmd hasPrefix:@"Lua "]) {
+            result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:4]];
+        } else if ([cmd hasPrefix:@"lua_eval "]) {
+            result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:9]];
+        } else if ([cmd hasPrefix:@"lua "]) {
+            result = [[cmd substringFromIndex:4] lastPathComponent];
+        } else if ([cmd hasPrefix:@"spotify "]) {
+            result = @"Spotify";
+        } else {
+            result = cmd;
+        }
+    }
+    
+    // Final truncation to keep the detail labels from overflowing
+    if (shouldTruncate && result.length > 25) {
+        result = [[result substringToIndex:22] stringByAppendingString:@"..."];
+    }
+    
+    return result;
+}
+
+- (NSString *)iconForCommand:(NSString *)cmd {
+    if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";
+    if ([cmd hasPrefix:@"delay "]) return @"timer";
+    if ([cmd hasPrefix:@"bt connect "] || [cmd hasPrefix:@"bluetooth connect "]) return @"link";
+    if ([cmd hasPrefix:@"bt disconnect "] || [cmd hasPrefix:@"bluetooth disconnect "]) return @"xmark.circle";
+    if ([cmd hasPrefix:@"airplay connect "]) return @"airplayaudio";
+    if ([cmd hasPrefix:@"shortcut:"]) return @"command";
+    if ([cmd hasPrefix:@"set-vol "]) return @"speaker.wave.3.fill";
+    if ([cmd hasPrefix:@"brightness "]) return @"sun.max.fill";
+    if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua "]) return @"scroll.fill";
+    if ([cmd hasPrefix:@"spotify "]) return @"music.note";
+    
+    NSDictionary *icons = @{
+        @"play": @"play.fill",
+        @"pause": @"pause.fill",
+        @"playpause": @"playpause.fill",
+        @"next": @"forward.fill",
+        @"prev": @"backward.fill",
+        @"volume up": @"speaker.wave.3.fill",
+        @"volume down": @"speaker.wave.1.fill",
+        @"flashlight": @"flashlight.on.fill",
+        @"flashlight on": @"flashlight.on.fill",
+        @"flashlight off": @"flashlight.off.fill",
+        @"flashlight toggle": @"flashlight.on.fill",
+        @"rotate lock": @"lock.rotation",
+        @"rotate unlock": @"lock.rotation.open",
+        @"rotate toggle": @"lock.rotation",
+        @"wifi on": @"wifi",
+        @"wifi off": @"wifi.slash",
+        @"wifi toggle": @"wifi.circle.fill",
+        @"bluetooth on": @"bolt.horizontal.fill",
+        @"bluetooth off": @"bolt.horizontal",
+        @"bluetooth toggle": @"bolt.horizontal.circle.fill",
+        @"bt toggle": @"bolt.horizontal.circle.fill",
+        @"airplane on": @"airplane",
+        @"airplane off": @"airplane",
+        @"airplane toggle": @"airplane",
+        @"haptic": @"hand.tap.fill",
+        @"screenshot": @"camera.fill",
+        @"lock": @"lock.fill",
+        @"lock toggle": @"lock.circle",
+        @"lock status": @"lock.circle",
+        @"dnd on": @"moon.fill",
+        @"dnd off": @"moon",
+        @"dnd toggle": @"moon.circle.fill",
+        @"lpm on": @"battery.25",
+        @"lpm off": @"battery.100",
+        @"lpm toggle": @"battery.25",
+        @"low power on": @"battery.25",
+        @"low power off": @"battery.100",
+        @"low power toggle": @"battery.25",
+        @"low power mode on": @"battery.25",
+        @"low power mode off": @"battery.100",
+        @"low power mode toggle": @"battery.25",
+        @"anc on": @"ear.badge.checkmark",
+        @"anc off": @"ear",
+        @"anc transparency": @"waveform.circle.fill",
+        @"airplay disconnect": @"airplayaudio.badge.exclamationmark",
+        @"mute toggle": @"speaker.slash.fill"
+    };
+    
+    return icons[cmd] ?: @"circle.fill";
+}
+
 @end

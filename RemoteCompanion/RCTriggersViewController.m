@@ -15,86 +15,8 @@
 @implementation RCTriggersViewController
 
 // Helper to get short friendly names for command strings
-- (NSString *)shortNameForCommand:(NSString *)cmd {
-    return [self nameForCommand:cmd truncate:YES];
-}
-
 - (NSString *)nameForCommand:(NSString *)cmd truncate:(BOOL)shouldTruncate {
-    NSDictionary *names = @{
-        @"play": @"Play",
-        @"pause": @"Pause",
-        @"playpause": @"Play/Pause",
-        @"next": @"Next",
-        @"prev": @"Previous",
-        @"volume up": @"Volume Up",
-        @"volume down": @"Volume Down",
-        @"flashlight": @"Flashlight",
-        @"flashlight on": @"Flash On",
-        @"flashlight off": @"Flash Off",
-        @"rotate lock": @"Rotate Lock",
-        @"rotate unlock": @"Rotate Unlock",
-        @"wifi on": @"WiFi On",
-        @"wifi off": @"WiFi Off",
-        @"bluetooth on": @"BT On",
-        @"bluetooth off": @"BT Off",
-        @"bluetooth toggle": @"BT Toggle",
-        @"wifi toggle": @"WiFi Toggle",
-        @"haptic": @"Haptic",
-        @"screenshot": @"Screenshot",
-        @"lock": @"Lock",
-        @"dnd on": @"DND On",
-        @"dnd off": @"DND Off",
-        @"lpm on": @"LPM On",
-        @"lpm off": @"LPM Off",
-        @"anc on": @"ANC",
-        @"anc off": @"ANC Off",
-        @"anc transparency": @"Transparency",
-        @"airplay disconnect": @"AirPlay Off",
-        @"airplane on": @"Airplane On",
-        @"airplane off": @"Airplane Off",
-        @"airplane toggle": @"Airplane Toggle",
-        @"low power on": @"LPM On",
-        @"low power off": @"LPM Off",
-        @"low power mode on": @"LPM On",
-        @"low power mode off": @"LPM Off",
-        @"lock status": @"Lock Status",
-        @"lock toggle": @"Lock Toggle",
-        @"bluetooth disconnect": @"BT Disconnect"
-    };
-    
-    NSString *result = names[cmd];
-    
-    if (!result) {
-        if ([cmd hasPrefix:@"exec "]) {
-            result = [cmd substringFromIndex:5];
-        } else if ([cmd hasPrefix:@"delay "]) {
-            result = [NSString stringWithFormat:@"⏱%@s", [cmd substringFromIndex:6]];
-        } else if ([cmd hasPrefix:@"bt connect "]) {
-            result = [NSString stringWithFormat:@"BT: %@", [cmd substringFromIndex:11]];
-        } else if ([cmd hasPrefix:@"bt disconnect "]) {
-            result = [NSString stringWithFormat:@"BT Disconnect: %@", [cmd substringFromIndex:14]];
-        } else if ([cmd hasPrefix:@"airplay connect "]) {
-            result = [NSString stringWithFormat:@"AirPlay: %@", [cmd substringFromIndex:16]];
-        } else if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua "]) {
-            int prefixLen = [cmd hasPrefix:@"Lua "] ? 4 : ([cmd hasPrefix:@"lua_eval "] ? 9 : 4);
-            result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:prefixLen]];
-        } else if ([cmd hasPrefix:@"set-vol "]) {
-            result = [NSString stringWithFormat:@"Set Vol: %@", [cmd substringFromIndex:8]];
-        } else if ([cmd hasPrefix:@"brightness "]) {
-            result = [NSString stringWithFormat:@"Set Brightness: %@", [cmd substringFromIndex:11]];
-        } else if ([cmd hasPrefix:@"spotify "]) {
-            result = @"Spotify";
-        } else {
-            result = cmd;
-        }
-    }
-    
-    // Final truncation to keep the detail labels from overflowing
-    if (shouldTruncate && result.length > 18) {
-        result = [[result substringToIndex:15] stringByAppendingString:@"..."];
-    }
-    
-    return result;
+    return [[RCConfigManager sharedManager] nameForCommand:cmd truncate:shouldTruncate];
 }
 
 - (void)viewDidLoad {
@@ -286,7 +208,7 @@
         } else {
             NSMutableArray *shortNames = [NSMutableArray array];
             for (NSString *action in actions) {
-                [shortNames addObject:[self shortNameForCommand:action]];
+                [shortNames addObject:[self nameForCommand:action truncate:YES]];
             }
             cell.detailTextLabel.text = [shortNames componentsJoinedByString:@" > "];
         }

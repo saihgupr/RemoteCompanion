@@ -19,6 +19,10 @@
 - (NSArray<NSString *> *)nfcTriggerKeys;
 - (void)saveConfig;
 
+// Command Helpers
+- (NSString *)nameForCommand:(NSString *)cmd truncate:(BOOL)shouldTruncate;
+- (NSString *)iconForCommand:(NSString *)cmd;
+
 // Backup/Restore
 - (NSData *)exportConfigAsJSON;
 - (BOOL)importConfigFromJSON:(NSData *)jsonData error:(NSError **)error;

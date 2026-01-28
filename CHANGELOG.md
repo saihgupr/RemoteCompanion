@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2026-01-27
+
+### Added
+- **Volume Combo Trigger**: Supported simultaneous Volume Up + Down press using a low-level HID listener for maximum responsiveness.
+- **Home Button "Double Click"**: Added support for physical double-click (press) actions.
+- **Improved Multi-Click Detection**: Re-engineered Home Button logic to better handle Triple and Quadruple clicks without interference.
+- **Open App Action**: New application picker to launch any installed app directly from a trigger.
+- **Connectivity Toggles**: Wi-Fi and Bluetooth toggle commands (`wifi toggle`, `bluetooth toggle`).
+
+### Fixed
+- **Apple Pay Conflict**: Fixed "System Failure" when using Apple Pay by moving logging to an asynchronous background queue, eliminating main-thread blocking.
+- **UI Consistency**: Fixed missing labels and sections for new triggers in the app.
+
 ## [1.0.3] - 2026-01-22
 
 ### Added

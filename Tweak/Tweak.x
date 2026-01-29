@@ -2569,6 +2569,10 @@ static void trigger_haptic() {
                     RCExecuteTrigger(@"volume_up_hold");
                 }
             }];
+        } else {
+            g_volIsReplaying = YES;
+            [self volumeIncreasePressDownWithModifiers:arg1];
+            g_volIsReplaying = NO;
         }
     });
 }
@@ -2603,6 +2607,10 @@ static void trigger_haptic() {
             if (g_volUpTriggered) {
                 g_volUpTriggered = NO;
             }
+        } else {
+            g_volIsReplaying = YES;
+            [self volumeIncreasePressUp];
+            g_volIsReplaying = NO;
         }
     });
 }
@@ -2632,6 +2640,10 @@ static void trigger_haptic() {
                     RCExecuteTrigger(@"volume_down_hold");
                 }
             }];
+        } else {
+            g_volIsReplaying = YES;
+            [self volumeDecreasePressDownWithModifiers:arg1];
+            g_volIsReplaying = NO;
         }
     });
 }
@@ -2666,6 +2678,10 @@ static void trigger_haptic() {
             if (g_volDownTriggered) {
                 g_volDownTriggered = NO;
             }
+        } else {
+            g_volIsReplaying = YES;
+            [self volumeDecreasePressUp];
+            g_volIsReplaying = NO;
         }
     });
 }

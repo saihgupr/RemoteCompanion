@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0~beta2] - 2026-01-29
+
+### Fixed
+- **Volume Button Regression**: Fixed an issue where volume buttons became unresponsive to native clicks/holds when no custom volume triggers were assigned. The system now correctly passes through events when triggers are disabled.
+
 ## [2.0.0~beta1] - 2026-01-29
 
 ### Added

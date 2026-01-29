@@ -25,11 +25,11 @@
 	<key>CFBundleName</key>
 	<string>RemoteCompanion</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.0~beta1</string>
+	<string>2.0.0~beta2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>2.0.0~beta1</string>
+	<string>2.0.0~beta2</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>MinimumOSVersion</key>

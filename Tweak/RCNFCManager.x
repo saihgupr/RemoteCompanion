@@ -188,7 +188,8 @@ extern void SRLog(NSString *format, ...);
 - (void)handleScreenWake {
     // Prevent duplicate handling within short window
     if (self.wakeHandled) {
-        SRLog(@"[NFC-WAKE] Wake already handled recently, skipping");
+        // [NFC-WAKE] Wake already handled recently, skipping
+    // SRLog(@"[NFC-WAKE] Wake already handled recently, skipping");
         return;
     }
     self.wakeHandled = YES;
@@ -198,11 +199,11 @@ extern void SRLog(NSString *format, ...);
         self.wakeHandled = NO;
     });
     
-    SRLog(@"[NFC-WAKE] Screen wake detected - waiting 500ms before NFC...");
+    // SRLog(@"[NFC-WAKE] Screen wake detected - waiting 500ms before NFC...");
     
     // Delay before starting NFC to let hardware warm up after sleep
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
-        SRLog(@"[NFC-WAKE] Delay complete, starting NFC scan");
+        // SRLog(@"[NFC-WAKE] Delay complete, starting NFC scan");
         [self startScanning];
     });
 }
@@ -240,7 +241,7 @@ static NSString *sr_hexStringFromData(NSData *data) {
     if (uidData) {
         NSString *uidString = sr_hexStringFromData(uidData);
         NSString *triggerKey = [NSString stringWithFormat:@"nfc_%@", uidString];
-        SRLog(@"Tag UID: %@ -> Trigger Key: %@", uidString, triggerKey);
+        // SRLog(@"Tag UID: %@ -> Trigger Key: %@", uidString, triggerKey);
         
         dispatch_async(dispatch_get_main_queue(), ^{
             SRLog(@"Executing trigger: %@", triggerKey);
@@ -257,7 +258,7 @@ static NSString *sr_hexStringFromData(NSData *data) {
             }
         });
     } else {
-        SRLog(@"Could not read UID");
+        // SRLog(@"Could not read UID");
         if ([session isKindOfClass:[NFCTagReaderSession class]]) {
             [(NFCTagReaderSession *)session invalidateSessionWithErrorMessage:@"Unknown ID"];
         } else if ([session isKindOfClass:[NFCNDEFReaderSession class]]) {
@@ -269,24 +270,24 @@ static NSString *sr_hexStringFromData(NSData *data) {
 // MARK: - NFCTagReaderSessionDelegate
 
 - (void)tagReaderSession:(NFCTagReaderSession *)session didDetectTags:(NSArray<__kindof id<NFCTag>> *)tags {
-    SRLog(@"Tag Detected (Tag Session): %lu tags found", (unsigned long)tags.count);
+    // SRLog(@"Tag Detected (Tag Session): %lu tags found", (unsigned long)tags.count);
     if (tags.count > 0) {
         id<NFCTag> tag = tags.firstObject;
-        SRLog(@"Connecting to tag type: %ld", (long)tag.type);
+        // SRLog(@"Connecting to tag type: %ld", (long)tag.type);
         [session connectToTag:tag completionHandler:^(NSError * _Nullable error) {
             if (error) {
-                SRLog(@"Connection to tag failed: %@", error);
+                // SRLog(@"Connection to tag failed: %@", error);
                 [session invalidateSessionWithErrorMessage:@"Connection failed"];
                 return;
             }
-            SRLog(@"Connected to tag successfully");
+            // SRLog(@"Connected to tag successfully");
             [self processTag:tag session:session];
         }];
     }
 }
 
 - (void)tagReaderSession:(NFCTagReaderSession *)session didInvalidateWithError:(NSError *)error {
-    SRLog(@"Tag Session Invalidated: %@", error);
+    // SRLog(@"Tag Session Invalidated: %@", error);
     if (session == self.tagSession) self.isScanning = NO;
 }
 
@@ -295,24 +296,24 @@ static NSString *sr_hexStringFromData(NSData *data) {
 // MARK: - NFReaderSessionDelegate (Private)
 
 - (void)readerSession:(id)session didDetectTags:(NSArray *)tags connectedTagIndex:(id)index {
-    SRLog(@"Private API (3-arg): didDetectTags count=%lu", (unsigned long)tags.count);
+    // SRLog(@"Private API (3-arg): didDetectTags count=%lu", (unsigned long)tags.count);
     [self readerSession:session didDetectTags:tags];
 }
 
 - (void)didDetectTags:(NSArray *)tags connectedTagIndex:(id)index {
-    SRLog(@"Private API (short 2-arg): didDetectTags count=%lu", (unsigned long)tags.count);
+    // SRLog(@"Private API (short 2-arg): didDetectTags count=%lu", (unsigned long)tags.count);
     [self readerSession:nil didDetectTags:tags];
 }
 
 - (void)didDetectTags:(NSArray *)tags {
-    SRLog(@"Private API (short 1-arg): didDetectTags count=%lu", (unsigned long)tags.count);
+    // SRLog(@"Private API (short 1-arg): didDetectTags count=%lu", (unsigned long)tags.count);
     [self readerSession:nil didDetectTags:tags];
 }
 
 - (void)readerSession:(id)session didDetectTags:(NSArray *)tags {
-    SRLog(@"Private API (2-arg): didDetectTags count=%lu", (unsigned long)tags.count);
+    // SRLog(@"Private API (2-arg): didDetectTags count=%lu", (unsigned long)tags.count);
     for (id tag in tags) {
-        SRLog(@"Detected private tag: %@", tag);
+        // SRLog(@"Detected private tag: %@", tag);
         NSData *uidData = nil;
         
 #pragma clang diagnostic push
@@ -329,7 +330,7 @@ static NSString *sr_hexStringFromData(NSData *data) {
         if (uidData) {
             NSString *uidString = sr_hexStringFromData(uidData);
             NSString *triggerKey = [NSString stringWithFormat:@"nfc_%@", uidString];
-            SRLog(@"Private Tag UID: %@ -> Trigger Key: %@", uidString, triggerKey);
+            // SRLog(@"Private Tag UID: %@ -> Trigger Key: %@", uidString, triggerKey);
             
             dispatch_async(dispatch_get_main_queue(), ^{
                 // Haptic Feedback
@@ -338,18 +339,18 @@ static NSString *sr_hexStringFromData(NSData *data) {
                 [self stopScanning];
             });
         } else {
-            SRLog(@"Could not extract UID from private tag: %@", tag);
+            // SRLog(@"Could not extract UID from private tag: %@", tag);
         }
     }
 }
 
 - (void)didEndUnexpectedly {
-    SRLog(@"Private API (short): didEndUnexpectedly");
+    // SRLog(@"Private API (short): didEndUnexpectedly");
     [self readerSessionDidEndUnexpectedly:nil];
 }
 
 - (void)readerSessionDidEndUnexpectedly:(id)session {
-    SRLog(@"Private NFC Session ended unexpectedly");
+    // SRLog(@"Private NFC Session ended unexpectedly");
     if (session == self.privateSession) self.isScanning = NO;
 }
 
@@ -363,7 +364,7 @@ static NSString *sr_hexStringFromData(NSData *data) {
 %hook CSCoverSheetViewController
 - (void)viewWillAppear:(BOOL)animated {
     %orig;
-    SRLog(@"[NFC-WAKE] CSCoverSheetViewController viewWillAppear");
+    // SRLog(@"[NFC-WAKE] CSCoverSheetViewController viewWillAppear");
     [[RCNFCManager sharedInstance] handleScreenWake];
 }
 %end
@@ -371,7 +372,7 @@ static NSString *sr_hexStringFromData(NSData *data) {
 %hook SBBacklightController
 - (void)turnOnScreenIsUserAction:(BOOL)isUserAction {
     %orig;
-    SRLog(@"[NFC-WAKE] SBBacklightController turnOnScreenIsUserAction: %d", isUserAction);
+    // SRLog(@"[NFC-WAKE] SBBacklightController turnOnScreenIsUserAction: %d", isUserAction);
     if (isUserAction) {
         [[RCNFCManager sharedInstance] handleScreenWake];
     }
@@ -382,7 +383,7 @@ static NSString *sr_hexStringFromData(NSData *data) {
 %hook SBScreenWakeAnimationController
 - (void)_handleAnimationCompletionIfNeeded {
     %orig;
-    SRLog(@"[NFC-WAKE] SBScreenWakeAnimationController _handleAnimationCompletionIfNeeded");
+    // SRLog(@"[NFC-WAKE] SBScreenWakeAnimationController _handleAnimationCompletionIfNeeded");
     [[RCNFCManager sharedInstance] handleScreenWake];
 }
 %end
@@ -391,7 +392,7 @@ static NSString *sr_hexStringFromData(NSData *data) {
 %hook SBLockScreenManager
 - (void)_handleBacklightLevelWillChange:(id)notification {
     %orig;
-    SRLog(@"[NFC-WAKE] SBLockScreenManager _handleBacklightLevelWillChange");
+    // SRLog(@"[NFC-WAKE] SBLockScreenManager _handleBacklightLevelWillChange");
     [[RCNFCManager sharedInstance] handleScreenWake];
 }
 %end
@@ -399,7 +400,7 @@ static NSString *sr_hexStringFromData(NSData *data) {
 #import <notify.h>
 
 static void stop_nfc_callback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
-    SRLog(@"[NFC] Received stop_nfc notification - yielding to app");
+    // SRLog(@"[NFC] Received stop_nfc notification - yielding to app");
     [[RCNFCManager sharedInstance] stopScanning];
 }
 

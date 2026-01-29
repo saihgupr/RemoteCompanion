@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.0~beta3] - 2026-01-29
 
+### Added
+- **Search in Action Picker**: Added a search bar to the Action Selection menu, allowing users to quickly find actions by name or command.
+
 ### Fixed
 - **Ringer Trigger**: Fixed an issue where ringer actions would fire on respring/reboot based on the current switch position. Actions now only fire when the state actually changes.
 

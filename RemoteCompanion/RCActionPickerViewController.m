@@ -1,8 +1,10 @@
 #import "RCActionPickerViewController.h"
 
-@interface RCActionPickerViewController ()
+@interface RCActionPickerViewController () <UISearchResultsUpdating>
 @property (nonatomic, strong) NSArray<NSString *> *sectionTitles;
 @property (nonatomic, strong) NSArray<NSArray<NSDictionary *> *> *sections;
+@property (nonatomic, strong) NSArray<NSDictionary *> *filteredActions;
+@property (nonatomic, strong) UISearchController *searchController;
 @end
 
 @implementation RCActionPickerViewController
@@ -25,6 +27,15 @@
         initWithBarButtonSystemItem:UIBarButtonSystemItemCancel
         target:self
         action:@selector(cancel)];
+    
+    // Setup Search
+    self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
+    self.searchController.searchResultsUpdater = self;
+    self.searchController.obscuresBackgroundDuringPresentation = NO;
+    self.searchController.searchBar.placeholder = @"Search Actions";
+    self.navigationItem.searchController = self.searchController;
+    self.navigationItem.hidesSearchBarWhenScrolling = NO;
+    self.definesPresentationContext = YES;
     
     // Categories and actions
     // Each action: @{ @"name": display name, @"command": rc command }
@@ -107,21 +118,35 @@
 #pragma mark - Table View Data Source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        return 1;
+    }
     return _sections.count;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        return @"Search Results";
+    }
     return _sectionTitles[section];
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        return self.filteredActions.count;
+    }
     return _sections[section].count;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ActionCell" forIndexPath:indexPath];
     
-    NSDictionary *action = _sections[indexPath.section][indexPath.row];
+    NSDictionary *action;
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        action = self.filteredActions[indexPath.row];
+    } else {
+        action = _sections[indexPath.section][indexPath.row];
+    }
     cell.textLabel.text = action[@"name"];
     cell.textLabel.font = [UIFont systemFontOfSize:17];
     
@@ -138,7 +163,12 @@
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     
-    NSDictionary *action = _sections[indexPath.section][indexPath.row];
+    NSDictionary *action;
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        action = self.filteredActions[indexPath.row];
+    } else {
+        action = _sections[indexPath.section][indexPath.row];
+    }
     NSString *command = action[@"command"];
     
     if ([command isEqualToString:@"__BT_DISCONNECT__"]) {
@@ -221,6 +251,26 @@
     [alert addAction:okAction];
     
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+
+
+#pragma mark - Search
+
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
+    NSString *text = searchController.searchBar.text;
+    if (text.length == 0) {
+        self.filteredActions = @[];
+    } else {
+        NSMutableArray *allActions = [NSMutableArray array];
+        for (NSArray *section in self.sections) {
+            [allActions addObjectsFromArray:section];
+        }
+        
+        NSPredicate *pred = [NSPredicate predicateWithFormat:@"name CONTAINS[cd] %@ OR command CONTAINS[cd] %@", text, text];
+        self.filteredActions = [allActions filteredArrayUsingPredicate:pred];
+    }
+    [self.tableView reloadData];
 }
 
 @end

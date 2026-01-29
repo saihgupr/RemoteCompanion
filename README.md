@@ -12,7 +12,7 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 
 <p align="center">
   <img src="images/IMG_1331-1.PNG" width="250" alt="RemoteCompanion Interface" />
-  <img src="images/IMG_1332-1.PNG" width="250" alt="Settings View" />
+  <img src="images/IMG_1332-2.PNG" width="250" alt="Settings View" />
   <img src="images/IMG_1334.PNG" width="250" alt="Action Picker" />
 </p>
 <p align="center">

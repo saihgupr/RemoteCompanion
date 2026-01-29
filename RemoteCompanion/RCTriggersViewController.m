@@ -135,6 +135,9 @@
     [sections addObject:@[@"trigger_home_double_tap", @"trigger_home_double_click", @"trigger_home_triple_click", @"trigger_home_quadruple_click"]];
     [titles addObject:@"Home Button"];
     
+    [sections addObject:@[@"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle"]];
+    [titles addObject:@"Ringer Switch"];
+    
     // NFC Section
     NSMutableArray *nfcKeys = [[[RCConfigManager sharedManager] nfcTriggerKeys] mutableCopy];
     // Add a placeholder key for the "Add New" button

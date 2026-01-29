@@ -68,7 +68,10 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                              @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_home_double_click",
                              @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", 
                              @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down",
-                             @"volume_both_press"];
+                             @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", 
+                             @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down",
+                             @"volume_both_press",
+                             @"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle"];
         
         BOOL needsSave = NO;
         for (NSString *key in allKeys) {
@@ -112,7 +115,10 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                 @"trigger_edge_left_swipe_down": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_right_swipe_up": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_right_swipe_down": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
-                @"volume_both_press": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy]
+                @"volume_both_press": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"trigger_ringer_mute": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"trigger_ringer_unmute": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"trigger_ringer_toggle": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy]
             } mutableCopy]
         } mutableCopy];
     }
@@ -198,7 +204,10 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"trigger_edge_left_swipe_up": @"Left Edge Swipe Up",
         @"trigger_edge_left_swipe_down": @"Left Edge Swipe Down",
         @"trigger_edge_right_swipe_up": @"Right Edge Swipe Up",
-        @"trigger_edge_right_swipe_down": @"Right Edge Swipe Down"
+        @"trigger_edge_right_swipe_down": @"Right Edge Swipe Down",
+        @"trigger_ringer_mute": @"Ringer Muted (Silent Mode On)",
+        @"trigger_ringer_unmute": @"Ringer Unmuted (Silent Mode Off)",
+        @"trigger_ringer_toggle": @"Ringer Toggled (Any Change)"
     };
     
     if ([triggerKey hasPrefix:@"nfc_"]) {

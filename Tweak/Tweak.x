@@ -2523,6 +2523,25 @@ static void trigger_haptic() {
 
 // --- SAFE VOLUME HOLD IMPLEMENTATION ---
 
+%hook SBRingerControl
+
+-(void)setRingerMuted:(BOOL)muted {
+    %orig;
+
+    SRLog(@"[SpringRemote] SBRingerControl setRingerMuted: %d", muted);
+    
+    // Fire generic toggle status
+    RCExecuteTrigger(@"trigger_ringer_toggle");
+
+    if (muted) {
+        RCExecuteTrigger(@"trigger_ringer_mute");
+    } else {
+        RCExecuteTrigger(@"trigger_ringer_unmute");
+    }
+}
+
+%end
+
 %hook SBVolumeHardwareButtonActions
 
 - (void)volumeIncreasePressDownWithModifiers:(long long)arg1 {

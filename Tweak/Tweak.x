@@ -2498,7 +2498,6 @@ static void trigger_haptic() {
 %hook SBVolumeHardwareButtonActions
 
 - (void)volumeIncreasePressDownWithModifiers:(long long)arg1 {
-    SRLog(@"[SpringRemote] 🔊 Vol Up Press Down (H). Combo? UP=%d DOWN=%d", g_volUpIsDown, g_volDownIsDown);
     if (g_volIsReplaying) {
         %orig;
         return;
@@ -2512,19 +2511,7 @@ static void trigger_haptic() {
         BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
         BOOL holdEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_up_hold"][@"enabled"] boolValue];
 
-        // Check for combo (secondary check in main thread)
-        if (g_volDownIsDown && comboEnabled && !g_volComboTriggered) {
-             SRLog(@"[SpringRemote] 🔊 Vol Combo (Up Down) - Hook Sync");
-             g_volComboTriggered = YES;
-             if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
-             if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
-             trigger_haptic();
-             RCExecuteTrigger(@"volume_both_press");
-             return;
-        }
-
         if (holdEnabled || comboEnabled) {
-            g_volUpTriggered = NO;
             if (g_volUpTimer) [g_volUpTimer invalidate];
             g_volUpTimer = [NSTimer scheduledTimerWithTimeInterval:0.35 repeats:NO block:^(NSTimer *timer) {
                 if (g_volComboTriggered) return;
@@ -2540,7 +2527,6 @@ static void trigger_haptic() {
 }
 
 - (void)volumeIncreasePressUp {
-    SRLog(@"[SpringRemote] 🔊 Vol Up Press Up (H). Combo=%d", g_volComboTriggered);
     g_volUpIsDown = NO;
     if (g_volIsReplaying) {
         %orig;
@@ -2575,7 +2561,6 @@ static void trigger_haptic() {
 }
 
 - (void)volumeDecreasePressDownWithModifiers:(long long)arg1 {
-    SRLog(@"[SpringRemote] 🔊 Vol Down Press Down (H). Combo? UP=%d DOWN=%d", g_volUpIsDown, g_volDownIsDown);
     if (g_volIsReplaying) {
         %orig;
         return;
@@ -2589,19 +2574,7 @@ static void trigger_haptic() {
         BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
         BOOL holdEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_down_hold"][@"enabled"] boolValue];
 
-        // Check for combo
-        if (g_volUpIsDown && comboEnabled && !g_volComboTriggered) {
-             SRLog(@"[SpringRemote] 🔊 Vol Combo (Down Down) - Hook Sync");
-             g_volComboTriggered = YES;
-             if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
-             if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
-             trigger_haptic();
-             RCExecuteTrigger(@"volume_both_press");
-             return;
-        }
-
         if (holdEnabled || comboEnabled) {
-            g_volDownTriggered = NO;
             if (g_volDownTimer) [g_volDownTimer invalidate];
             g_volDownTimer = [NSTimer scheduledTimerWithTimeInterval:0.35 repeats:NO block:^(NSTimer *timer) {
                 if (g_volComboTriggered) return;
@@ -2617,7 +2590,6 @@ static void trigger_haptic() {
 }
 
 - (void)volumeDecreasePressUp {
-    SRLog(@"[SpringRemote] 🔊 Vol Down Press Up (H). Combo=%d", g_volComboTriggered);
     g_volDownIsDown = NO;
     if (g_volIsReplaying) {
         %orig;
@@ -2785,17 +2757,11 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
             if (usage == kHIDUsage_Csmr_VolumeIncrement) g_volUpIsDown = !!down;
             if (usage == kHIDUsage_Csmr_VolumeDecrement) g_volDownIsDown = !!down;
             
-            SRLog(@"[SpringRemote-HID] 🕹️ Vol Button: %s [%s] (States: UP=%d DOWN=%d)", 
-                  (usage == kHIDUsage_Csmr_VolumeIncrement ? "UP" : "DOWN"), 
-                  (down ? "DOWN" : "UP"), 
-                  g_volUpIsDown, g_volDownIsDown);
-
             if (g_volUpIsDown && g_volDownIsDown) {
                 if (!g_volComboTriggered) {
                     load_trigger_config();
                     if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue]) {
                         g_volComboTriggered = YES;
-                        SRLog(@"[SpringRemote-HID] 🚀 Volume Combo TRIGGERED!");
                         
                         // Invalidate standard timers in Main Thread
                         dispatch_async(dispatch_get_main_queue(), ^{
@@ -2808,7 +2774,6 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                 }
             } else if (!g_volUpIsDown && !g_volDownIsDown) {
                 if (g_volComboTriggered) {
-                    SRLog(@"[SpringRemote-HID] 🕹️ Volume Combo RESET");
                     g_volComboTriggered = NO;
                 }
             }

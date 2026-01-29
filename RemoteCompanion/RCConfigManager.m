@@ -283,6 +283,11 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     NSLog(@"[RCConfigManager] Notifications posted");
 }
 
+- (void)stopBackgroundNFC {
+    NSLog(@"[RCConfigManager] Signaling to stop background NFC scanning");
+    notify_post("com.pizzaman.rc.stop_nfc");
+}
+
 #pragma mark - Backup/Restore
 
 - (NSData *)exportConfigAsJSON {

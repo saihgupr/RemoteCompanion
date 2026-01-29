@@ -13,39 +13,6 @@
 #import <mach/mach_time.h>
 #import "native_curl.h"
 
-// --- Debug Logger (Plan S - Async/Fast) ---
-static FILE *g_logFile = NULL;
-static NSDateFormatter *g_logDateFormatter = nil;
-static dispatch_queue_t g_logQueue = nil;
-
-void SRLog(NSString *format, ...) {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        g_logQueue = dispatch_queue_create("com.pizzaman.rc.logqueue", DISPATCH_QUEUE_SERIAL);
-        g_logDateFormatter = [[NSDateFormatter alloc] init];
-        [g_logDateFormatter setDateFormat:@"yyyy-MM-dd HH:mm:ss.SSS"];
-    });
-
-    va_list args;
-    va_start(args, format);
-    NSString *logStr = [[NSString alloc] initWithFormat:format arguments:args];
-    va_end(args);
-    
-    dispatch_async(g_logQueue, ^{
-        // NSLog inside queue to prevent blocking the calling thread
-        NSLog(@"[SpringRemote] %@", logStr);
-        
-        if (!g_logFile) {
-            g_logFile = fopen("/tmp/springremote.log", "a");
-        }
-        
-        if (g_logFile) {
-            NSString *timestamp = [g_logDateFormatter stringFromDate:[NSDate date]];
-            fprintf(g_logFile, "[%s] %s\n", [timestamp UTF8String], [logStr UTF8String]);
-        }
-    });
-}
-
 // WorkflowKit interfaces
 @interface WFWorkflowDescriptor : NSObject
 - (instancetype)initWithName:(NSString *)name;
@@ -203,7 +170,6 @@ extern Boolean MRMediaRemoteSendCommandToApp(MRMediaRemoteCommand command, NSDic
 // SBWiFiManager API
 @interface SBWiFiManager : NSObject
 + (instancetype)sharedInstance;
-- (BOOL)wiFiEnabled;
 - (void)setWiFiEnabled:(BOOL)enabled;
 @end
 
@@ -364,7 +330,26 @@ static float sr_previous_volume = -1.0f;
 
 
 // File-based logging helper
-
+void SRLog(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+    
+    NSLog(@"[RemoteCommand] %@", message);
+    
+    NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] %@\n", [NSDate date], message];
+    NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
+    if (fileHandle) {
+        @try {
+            [fileHandle seekToEndOfFile];
+            [fileHandle writeData:[logMsg dataUsingEncoding:NSUTF8StringEncoding]];
+            [fileHandle closeFile];
+        } @catch (NSException *e) {}
+    } else {
+        [logMsg writeToFile:@"/tmp/remotecommand.log" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    }
+}
 
 // Add DND Toggle Helper
 // Helper to inspect current state
@@ -651,10 +636,6 @@ static void send_notification(NSString *title, NSString *message, BOOL urgent) {
 static NSDictionary *g_triggerConfig = nil;
 static NSString *g_resolvedConfigPath = nil;
 
-// Moved from later in file to fix scope
-static NSTimer *g_homeClickTimer = nil;
-static NSInteger g_homeClickCount = 0;
-
 // Find config file - check shared path first, then search app containers
 static NSString *find_config_path() {
     NSFileManager *fm = [NSFileManager defaultManager];
@@ -680,101 +661,25 @@ static NSString *find_config_path() {
     return nil;
 }
 
-// Forward declaration for haptic and trigger execution
-static void trigger_haptic();
-void RCExecuteTrigger(NSString *triggerKey);
-
-// Actual implementation that reads from disk
-static void reload_trigger_config() {
+static void load_trigger_config() {
     @autoreleasepool {
+        // Find the config file
         g_resolvedConfigPath = find_config_path();
+        
         if (g_resolvedConfigPath) {
             g_triggerConfig = [NSDictionary dictionaryWithContentsOfFile:g_resolvedConfigPath];
             if (g_triggerConfig) {
-                 SRLog(@"[SpringRemote] Loaded config from %@", g_resolvedConfigPath);
+                SRLog(@"[SpringRemote] Loaded trigger config from %@: masterEnabled=%@, triggers=%lu",
+                      g_resolvedConfigPath,
+                      g_triggerConfig[@"masterEnabled"],
+                      (unsigned long)[g_triggerConfig[@"triggers"] count]);
+            } else {
+                SRLog(@"[SpringRemote] Failed to parse config at %@", g_resolvedConfigPath);
             }
+        } else {
+            SRLog(@"[SpringRemote] No trigger config found at shared path or in app containers");
         }
     }
-}
-
-// Lazy wrapper - only loads if nil
-static void load_trigger_config() {
-    if (g_triggerConfig) return;
-    reload_trigger_config();
-}
-
-// --- Refactored Home Button Logic (RC_ProcessHomeClick) ---
-// --- Refactored Home Button Logic (RC_ProcessHomeClick) ---
-
-// Forward Declaration
-static void RC_CheckAndFire();
-
-static void RC_ProcessHomeClick() {
-    g_homeClickCount++;
-    SRLog(@"[SpringRemote] 🔵 CLICK DETECTED (Up)! Count: %ld", (long)g_homeClickCount);
-    RC_CheckAndFire();
-}
-
-
-
-static void RC_CheckAndFire() {
-    // 1. Reset existing timer
-    if (g_homeClickTimer) {
-        [g_homeClickTimer invalidate];
-        g_homeClickTimer = nil;
-    }
-    
-    // 2. Load Config
-    load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL quadEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"trigger_home_quadruple_click"][@"enabled"] boolValue];
-
-    
-    // 3. IMMEDIATE FIRE CHECK (Quadruple)
-    // If we have >= 4 clicks, fire immediately!
-    if (quadEnabled && g_homeClickCount >= 4) {
-        SRLog(@"[SpringRemote] 🚀 QUAD CLICK (4+) REACHED! Firing immediately.");
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            trigger_haptic();
-            RCExecuteTrigger(@"trigger_home_quadruple_click");
-        });
-        
-        g_homeClickCount = 0; // Reset Sequence
-        return;
-    }
-    
-    // 4. Determine Timeout (End of Sequence)
-    NSTimeInterval timeout = 0.35; 
-    if (quadEnabled) timeout = 0.55; // Slightly longer if waiting for potentially missed click
-    
-    // 5. Schedule Timer on CommonModes
-    g_homeClickTimer = [NSTimer timerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
-        g_homeClickTimer = nil;
-        SRLog(@"[SpringRemote] 🔵 SEQUENCE ENDED. Final count: %ld", (long)g_homeClickCount);
-        
-        NSString *triggerKey = nil;
-        
-        // Final logic check on timeout
-        if (g_homeClickCount == 4 && quadEnabled) triggerKey = @"trigger_home_quadruple_click"; // Catch-all if immediate missed
-        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_triple_click";
-        else if (g_homeClickCount == 2) triggerKey = @"trigger_home_double_click"; // UPDATED: Double Click (Press)
-        
-        if (triggerKey && masterEnabled) {
-            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-            if (enabled) {
-                SRLog(@"[SpringRemote] ✅ FIRING TRIGGER: %@", triggerKey);
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    trigger_haptic();
-                    RCExecuteTrigger(triggerKey);
-                });
-            }
-        }
-        
-        g_homeClickCount = 0; // Reset Sequence
-    }];
-    
-    [[NSRunLoop mainRunLoop] addTimer:g_homeClickTimer forMode:NSRunLoopCommonModes];
 }
 static void update_simulation_observers();
 
@@ -787,7 +692,7 @@ static void update_edge_gestures();
 static void config_changed_callback(CFNotificationCenterRef center, void *observer,
                                     CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     SRLog(@"[SpringRemote] Config changed notification received, reloading...");
-    reload_trigger_config(); // FORCE reload
+    load_trigger_config();
     update_simulation_observers();
     update_edge_gestures(); // Dynamically add/remove gesture recognizers
 }
@@ -1043,10 +948,6 @@ static NSString *execute_lua_script(NSString *scriptPath) {
 }
 
 static NSString *evaluate_lua_code(NSString *code) {
-    // DIAGNOSTIC: Log call stack to find who's calling this
-    SRLog(@"[SpringRemote] 🔍 evaluate_lua_code CALLED");
-    SRLog(@"[SpringRemote] 🔍 Call stack: %@", [NSThread callStackSymbols]);
-    
     lua_State *L = setup_lua_environment();
     if (!L) return @"[SpringRemote] Error: Could not create Lua state";
     
@@ -1065,21 +966,6 @@ static NSString *evaluate_lua_code(NSString *code) {
 
 static NSString *handle_command(NSString *cmd) {
     NSString *cleanCmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    
-    // Recursive stripping of 'sudo ' and 'rc ' prefixes for compatibility
-    BOOL stripped = YES;
-    while (stripped) {
-        stripped = NO;
-        if ([cleanCmd hasPrefix:@"sudo "]) {
-            cleanCmd = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            stripped = YES;
-        }
-        if ([cleanCmd hasPrefix:@"rc "]) {
-            cleanCmd = [[cleanCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            stripped = YES;
-        }
-    }
-    
     SRLog(@"Received command: %@", cleanCmd);
     
     // Debug hex dump of command
@@ -1960,14 +1846,6 @@ static NSString *handle_command(NSString *cmd) {
              }
         }
         return @"Error: AVSystemController failed.\n";
-    } else if ([cleanCmd hasPrefix:@"uiopen "]) {
-        NSString *bundleId = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        NSLog(@"[RemoteCommand] UIOPEN Bundle ID: %@", bundleId);
-        dispatch_async(dispatch_get_main_queue(), ^{
-             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
-             [service openApplication:bundleId withOptions:nil completion:nil];
-        });
-        return [NSString stringWithFormat:@"Opened %@", bundleId];
     } else if ([cleanCmd hasPrefix:@"open "]) {
         // Open app by name or Bundle ID
         NSString *appName = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -2012,7 +1890,6 @@ static NSString *handle_command(NSString *cmd) {
                 [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
             }
         });
-        return [NSString stringWithFormat:@"Opened %@\n", appName];
     } else if ([cleanCmd isEqualToString:@"bluetooth-on"] || [cleanCmd isEqualToString:@"bt-on"] || [cleanCmd isEqualToString:@"bluetooth on"] || [cleanCmd isEqualToString:@"bt on"]) {
         void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
         if (btHandle) {
@@ -2124,28 +2001,6 @@ static NSString *handle_command(NSString *cmd) {
             return @"Airplane Mode OFF\n";
         }
         return @"Error: RadiosPreferences not found\n";
-    } else if ([cleanCmd isEqualToString:@"wifi toggle"]) {
-        SBWiFiManager *manager = [objc_getClass("SBWiFiManager") sharedInstance];
-        if (manager) {
-            BOOL current = [manager wiFiEnabled];
-            [manager setWiFiEnabled:!current];
-            SRLog(@"[SpringRemote] WiFi Toggled: %d -> %d", current, !current);
-            return [NSString stringWithFormat:@"WiFi Toggled: %@\n", !current ? @"ON" : @"OFF"];
-        }
-        return @"Error: SBWiFiManager not found\n";
-    } else if ([cleanCmd isEqualToString:@"bluetooth toggle"] || [cleanCmd isEqualToString:@"bt toggle"]) {
-        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
-        if (btHandle) {
-            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
-            if (BluetoothManagerClass) {
-                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
-                BOOL current = [btManager enabled];
-                [btManager setEnabled:!current];
-                SRLog(@"[SpringRemote] Bluetooth Toggled: %d -> %d", current, !current);
-                return [NSString stringWithFormat:@"Bluetooth Toggled: %@\n", !current ? @"ON" : @"OFF"];
-            }
-        }
-        return @"Error: BluetoothManager failed\n";
     } else if ([cleanCmd isEqualToString:@"airplane"] || [cleanCmd isEqualToString:@"airplane toggle"]) {
         SRLog(@"[SpringRemote] Executing airplane toggle...");
         dlopen("/System/Library/PrivateFrameworks/AppSupport.framework/AppSupport", RTLD_NOW);
@@ -2352,13 +2207,6 @@ static NSString *handle_command(NSString *cmd) {
         return nil;
     } else if ([cleanCmd hasPrefix:@"exec "]) {
         NSString *shellCmd = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        // If the custom command itself starts with 'rc ', handle it internally
-        if ([shellCmd hasPrefix:@"rc "]) {
-            NSString *inner = [[shellCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            return handle_command(inner);
-        }
-        
         SRLog(@"[SpringRemote] Processing command: %@", shellCmd);
         
         if ([shellCmd hasPrefix:@"curl "]) {
@@ -2519,8 +2367,8 @@ static NSString *handle_command(NSString *cmd) {
 static void start_server() {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         // Server starts always, but will refuse commands if disabled in config
-        int server_fd = 0;
-        int new_socket = 0;
+        
+        int server_fd, new_socket;
         struct sockaddr_in address;
         int opt = 1;
         int addrlen = sizeof(address);
@@ -2531,50 +2379,51 @@ static void start_server() {
         int num_ports = sizeof(ports) / sizeof(ports[0]);
         int bound_port = 0;
 
-        // Try to bind to a port
+        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+            SRLog(@"[RemoteCommand] ERROR: Failed to create socket");
+            return;
+        }
+
+        // Set both SO_REUSEADDR and SO_REUSEPORT for faster rebind after respring
+        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+            SRLog(@"[RemoteCommand] WARNING: Failed to set SO_REUSEADDR");
+        }
+        #ifdef SO_REUSEPORT
+        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt))) {
+            SRLog(@"[RemoteCommand] WARNING: Failed to set SO_REUSEPORT");
+        }
+        #endif
+
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = INADDR_ANY;
+        
+        // Try each port until one works
         for (int i = 0; i < num_ports; i++) {
-            // Create a fresh socket for each attempt
-            if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-                SRLog(@"[SpringRemote] ERROR: Failed to create socket");
-                continue;
-            }
-
-            // Set SO_REUSEADDR to allow restart after crash/respring (TIME_WAIT).
-            // CRITICAL: We DO NOT use SO_REUSEPORT anymore. This ensures that if a 'zombie' 
-            // process is still holding the port, bind() will FAIL, causing us to move to 
-            // the next port (e.g. 1235) instead of silently attaching to a broken port.
-            if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-                SRLog(@"[SpringRemote] WARNING: Failed to set SO_REUSEADDR");
-            }
-
-            address.sin_family = AF_INET;
-            address.sin_addr.s_addr = INADDR_ANY;
             address.sin_port = htons(ports[i]);
             
-            // Try to bind
             if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
-                // Try to listen
-                if (listen(server_fd, 3) < 0) {
-                    SRLog(@"[SpringRemote] Listen failed on port %d (errno: %d), closing and trying next...", ports[i], errno);
-                    close(server_fd);
-                    server_fd = 0;
-                    continue; // Try next port
-                }
-                
                 bound_port = ports[i];
-                SRLog(@"[SpringRemote] SUCCESS: Server listening on port %d", bound_port);
-                break; // Found our port!
+                SRLog(@"[RemoteCommand] Successfully bound to port %d", bound_port);
+                break;
             } else {
-                SRLog(@"[SpringRemote] Failed to bind port %d (errno: %d), trying next...", ports[i], errno);
-                close(server_fd); // Clean up and try next
-                server_fd = 0;
+                SRLog(@"[RemoteCommand] Failed to bind to port %d (errno: %d - %s), trying next...", 
+                      ports[i], errno, strerror(errno));
             }
         }
         
-        if (bound_port == 0 || server_fd == 0) {
-            SRLog(@"[SpringRemote] FATAL: Failed to bind to any port (1234-1238)!");
+        if (bound_port == 0) {
+            SRLog(@"[RemoteCommand] ERROR: Failed to bind to any port!");
+            close(server_fd);
             return;
         }
+        
+        if (listen(server_fd, 3) < 0) {
+            SRLog(@"[RemoteCommand] ERROR: Failed to listen (errno: %d)", errno);
+            close(server_fd);
+            return;
+        }
+
+        SRLog(@"[RemoteCommand] Server listening on port %d", bound_port);
 
         while (1) {
             if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) continue;
@@ -2627,11 +2476,6 @@ static BOOL g_volIsReplaying = NO; // Recursion guard for replay
 static NSTimer *g_volDownTimer = nil;
 static BOOL g_volDownTriggered = NO;
 
-// Combo Detection (Tracked via HID now for reliability)
-static BOOL g_hidVolUpIsDown = NO;
-static BOOL g_hidVolDownIsDown = NO;
-static BOOL g_hidVolBothTriggered = NO;
-
 static NSTimer *g_lockButtonTimer = nil;
 static BOOL g_lockButtonTriggered = NO;
 static NSTimer *g_systemPowerOffTimer = nil; // New for dual-stage
@@ -2653,12 +2497,6 @@ static void trigger_haptic() {
         return;
     }
 
-    // Suppress if combo was already fired via HID
-    if (g_hidVolBothTriggered) {
-        SRLog(@"[SpringRemote] Suppressing Vol Up (Combo Active)");
-        return;
-    }
-
     load_trigger_config();
     if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_up_hold"][@"enabled"] boolValue]) {
         g_volUpTriggered = NO;
@@ -2675,11 +2513,6 @@ static void trigger_haptic() {
 }
 
 - (void)volumeIncreasePressUp {
-    if (g_hidVolBothTriggered) {
-        // Handled by HID reset
-        return; 
-    }
-
     if (g_volIsReplaying) {
         %orig;
         return;
@@ -2710,12 +2543,6 @@ static void trigger_haptic() {
         return;
     }
 
-    // Suppress if combo was already fired via HID
-    if (g_hidVolBothTriggered) {
-        SRLog(@"[SpringRemote] Suppressing Vol Down (Combo Active)");
-        return;
-    }
-
     load_trigger_config();
     if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_down_hold"][@"enabled"] boolValue]) {
         g_volDownTriggered = NO;
@@ -2732,11 +2559,6 @@ static void trigger_haptic() {
 }
 
 - (void)volumeDecreasePressUp {
-    if (g_hidVolBothTriggered) {
-        // Handled by HID reset
-        return;
-    }
-
     if (g_volIsReplaying) {
         %orig;
         return;
@@ -2898,250 +2720,50 @@ static void trigger_haptic() {
 }
 %end
 
-// --- Home Button Multi-Click Detection (Plan G - System Hooks) ---
-// We no longer need manual timers/counters as we hook the system's own click counter.
+// --- Reachability (Home Button Double Tap) ---
 
-// Forward declarations
-@interface SBHomeHardwareButton : NSObject
-- (void)initialButtonDown:(id)arg1;
-- (void)initialButtonUp:(id)arg1;
-- (void)singlePressUp;
-- (void)doublePressUp;
-- (void)triplePressUp;
-- (void)_setHomeButtonPressClickCount:(long long)arg1;
-- (void)_performHomeButtonPressWithClickCount:(long long)arg1;
-@end
-
-@interface AXSpringBoardServer : NSObject
-+ (id)server;
-- (void)toggleAccessibilityShortcut;
-@end
-
-
-
-
-// --- IOHID Definitions ---
-#import <IOKit/IOKitLib.h>
-#include <IOKit/hid/IOHIDEventSystemClient.h>
-#include <IOKit/hid/IOHIDEvent.h>
-
-// IOHID Definitions
-// Header includes are sufficient for most types. 
-// We only manually declare what is missing.
-
-// Missing from some SDKs
-extern IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
-
-// Forward Declaration needed for ProcessRawClick
-static void RC_ProcessHomeClick(); 
-
-// Raw HID Callback
-// Signature must match IOHIDEventSystemClientEventCallback:
-// void (*)(void *target, void *refcon, IOHIDEventQueueRef queue, IOHIDEventRef event)
-// We use void* for queue to avoid dependency on IOHIDEventQueue type if missing.
-static NSTimeInterval g_lastHIDTime = 0;
-static BOOL g_hidButtonDown = NO; // State tracking
-
-static void handle_hid_event(void* target, void* refcon, void* queue, IOHIDEventRef event) {
-    if (IOHIDEventGetType(event) == 3) { // kIOHIDEventTypeKeyboard
-        // usagePage and usage are implicitly int in GetIntegerValue
-        int usagePage = IOHIDEventGetIntegerValue(event, 0x30000); // kIOHIDEventFieldKeyboardUsagePage
-        int usage = IOHIDEventGetIntegerValue(event, 0x30001);     // kIOHIDEventFieldKeyboardUsage
-        int down = IOHIDEventGetIntegerValue(event, 0x30002);      // kIOHIDEventFieldKeyboardDown
-        
-        // Consumer Page (0x0C)
-        if (usagePage == 0x0C) {
-            // Volume Buttons
-            if (usage == 0xE9 || usage == 0xEA) {
-                if (usage == 0xE9) g_hidVolUpIsDown = !!down;
-                if (usage == 0xEA) g_hidVolDownIsDown = !!down;
-                
-                if (g_hidVolUpIsDown && g_hidVolDownIsDown) {
-                    if (!g_hidVolBothTriggered) {
-                        load_trigger_config();
-                        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue]) {
-                            g_hidVolBothTriggered = YES;
-                            SRLog(@"[SpringRemote] 🕹️ HID Volume Combo DETECTED!");
-                            
-                            // Invalidate standard timers
-                            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
-                            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
-                            
-                            trigger_haptic();
-                            RCExecuteTrigger(@"volume_both_press");
-                        }
-                    }
-                } else if (!g_hidVolUpIsDown && !g_hidVolDownIsDown) {
-                    // Both released
-                    if (g_hidVolBothTriggered) {
-                        SRLog(@"[SpringRemote] 🕹️ HID Volume Combo RESET");
-                        g_hidVolBothTriggered = NO;
-                    }
-                }
-            }
-            
-            // Home Button (Usage 0x40)
-            if (usage == 0x40) {
-                NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-                
-                if (down) { // DOWN Event
-                    if (!g_hidButtonDown) {
-                        g_hidButtonDown = YES;
-                        SRLog(@"[SpringRemote] 🕹️ HID DOWN (Valid Start)");
-                    }
-                } else { // UP Event
-                    if (g_hidButtonDown) {
-                        if (now - g_lastHIDTime > 0.05) { // 50ms Debounce
-                            g_hidButtonDown = NO;
-                            g_lastHIDTime = now;
-                            SRLog(@"[SpringRemote] 🕹️ HID UP (Counted!)");
-                            RC_ProcessHomeClick();
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-static IOHIDEventSystemClientRef g_hidClient = NULL;
-
-static void setup_hid_listener() {
-    SRLog(@"[SpringRemote] 🔌 Setting up Raw HID Listener...");
-    g_hidClient = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
-    if (g_hidClient) {
-        IOHIDEventSystemClientRegisterEventCallback(g_hidClient, (IOHIDEventSystemClientEventCallback)handle_hid_event, NULL, NULL);
-        IOHIDEventSystemClientScheduleWithRunLoop(g_hidClient, CFRunLoopGetMain(), kCFRunLoopDefaultMode);
-        SRLog(@"[SpringRemote] ✅ HID Listener Active!");
-    } else {
-        SRLog(@"[SpringRemote] ❌ Failed to create HID Client");
-    }
-}
-
-// --- Home Button Handling (Plan H - Raw HID) ---
-// We now rely on the HID Listener (above) for counting.
-// SBHomeHardwareButton is used ONLY for strict suppression.
-
-%hook SBHomeHardwareButton
-
-// Disable manual counting here - we use HID now
-- (void)initialButtonDown:(id)arg1 { %orig; }
-- (void)initialButtonUp:(id)arg1 { %orig; }
-
-// Remove Legacy Sync Logic - HID doesn't need it
-- (void)_performHomeButtonPressWithClickCount:(long long)clickCount {
-    SRLog(@"[SpringRemote] 🔴 _performHomeButtonPressWithClickCount: %lld (Ignored for Triggering)", clickCount);
-    %orig;
-}
-
-// Strict Suppression of System Actions
-- (void)doublePressUp {
-    SRLog(@"[SpringRemote] 🟡 SYSTEM doublePressUp");
-    load_trigger_config();
-    BOOL master = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL shouldSuppress = master && [g_triggerConfig[@"triggers"][@"trigger_home_triple_click"][@"enabled"] boolValue];
-
-    if (shouldSuppress) {
-        SRLog(@"[SpringRemote] ❌ SUPPRESSING system doublePressUp");
-        return;
-    }
-    SRLog(@"[SpringRemote] ✅ ALLOWING system doublePressUp");
-    %orig;
-}
-
-- (void)triplePressUp {
-    SRLog(@"[SpringRemote] 🟡 SYSTEM triplePressUp");
-    load_trigger_config();
-    BOOL master = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL shouldSuppress = master && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
-
-    if (master) {
-        // Critical for "7 Clicks" fix:
-        // [Sync moved to _performHomeButtonPressWithClickCount]
-    }
-
-    if (shouldSuppress) {
-        SRLog(@"[SpringRemote] ❌ SUPPRESSING system triplePressUp");
-        return;
-    }
-    SRLog(@"[SpringRemote] ✅ ALLOWING system triplePressUp");
-    %orig;
-}
-
-%end
-
-// iOS 15 FIX: SBHomeHardwareButton doesn't work, so use Reachability as tap detector
-// Reachability is called on each double tap - we'll count these and determine multi-click
-
-
-
-// --- Reachability / Double Tap Logic ---
 %hook SBReachabilityManager
 
++ (id)sharedInstance {
+    return %orig;
+}
+
 - (void)toggleReachability {
-    SRLog(@"[SpringRemote] 👆 SBReachabilityManager toggleReachability called");
+    SRLog(@"[SpringRemote] SBReachabilityManager toggleReachability (Double Tap detected)");
+    
+    // Execute our trigger
     load_trigger_config();
-    BOOL master = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL enabled = master && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue]; // Double Tap (Touch)
-
-    if (enabled) {
-        SRLog(@"[SpringRemote] ✅ Custom Double Tap (Touch) Triggered");
+    NSDictionary *trigger = g_triggerConfig[@"triggers"][@"trigger_home_double_tap"];
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL triggerEnabled = [trigger[@"enabled"] boolValue];
+    
+    if (masterEnabled && triggerEnabled) {
+        SRLog(@"[SpringRemote] Home Double Tap Trigger Fired! Suppressing default Reachability.");
+        
+        // Haptic feedback
         trigger_haptic();
+        
+        // Execute Actions
         RCExecuteTrigger(@"trigger_home_double_tap");
-        return; // Suppress system Reachability
+        
+        // SUPPRESS default Reachability behavior
+        return;
     }
     
-    SRLog(@"[SpringRemote] Passing through system Reachability");
+    // If trigger disabled, behave normally
     %orig;
 }
 
-%end
-
-
-// --- Reliable Double Tap (Touch) Logic ---
-// Strategy: Hook biometric/authentication controllers which handle the sensor directly.
-
-%hook SBFUserAuthenticationController
-
-// This often catches the sensor "match" or "tap" event
-- (void)handleMesaEvent:(id)arg1 {
-    // Arg1 might be an event object or integer.
-    // We'll log it for now but assume if this fires specifically for Reachability logic elsewhere,
-    // we might need to be careful.
-    // Actually, let's hook a higher level: SBReachabilityTrigger? No.
-    // Let's hook the specific method that DETECTS the match.
-    %orig;
-}
-
-// Only available on some iOS versions
-- (void)handleBiometricEvent:(unsigned long long)arg1 {
-    SRLog(@"[SpringRemote] 🧬 handleBiometricEvent: %llu", arg1);
-    
-    // 21 usually means "Mesa Match" or "Keep Alive"
-    // 10 might be "Touch Down"
-    // We need to be specific.
-    // Instead of raw events, let's try SBHomeHardwareButton again with a specific target.
+- (void)_handleSignificantUserInteraction {
+    SRLog(@"[SpringRemote] SBReachabilityManager _handleSignificantUserInteraction");
     %orig;
 }
 %end
 
-%hook SBHomeHardwareButton
-// This is the specific method for "Double Tap" (Touch) on TouchID devices
-- (void)handleDoubleTap:(id)arg1 {
-    SRLog(@"[SpringRemote] 👆 SBHomeHardwareButton handleDoubleTap called!");
-    load_trigger_config();
-    BOOL master = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL enabled = master && [g_triggerConfig[@"triggers"][@"trigger_home_double_tap"][@"enabled"] boolValue];
+// [Removed unused biometric hooks]
 
-    if (enabled) {
-        SRLog(@"[SpringRemote] ✅ Custom Double Tap Triggered");
-        trigger_haptic();
-        RCExecuteTrigger(@"trigger_home_double_tap");
-        return; // Suppress original
-    }
-    %orig;
-}
-%end
+
+// --- Cleanup: Removed failed biometric logic ---
 
 // [Removed unused SBHomeHardwareButton hook]
 
@@ -3164,7 +2786,7 @@ static BOOL g_statusBarTouchActive = NO;
 %hook UIApplication
 
 - (void)sendEvent:(UIEvent *)event {
-    // Process touch events for status bar gestures
+    // Only process touch events
     if (event.type == UIEventTypeTouches) {
         UITouch *touch = [[event allTouches] anyObject];
         
@@ -3518,7 +3140,6 @@ static void update_edge_gestures() {
         load_trigger_config();
         register_config_observer();
         register_simulation_observers();
-        setup_hid_listener(); // Start RAW HID Listener
         start_server();
         
         // Conditionally register edge gestures based on config

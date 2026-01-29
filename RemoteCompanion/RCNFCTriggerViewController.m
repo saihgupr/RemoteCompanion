@@ -38,6 +38,9 @@
         self.ndefSession = nil;
     }
     
+    // Stop background NFC scanning in the tweak to avoid "Resource Unavailable"
+    [[RCConfigManager sharedManager] stopBackgroundNFC];
+    
     if ([NFCTagReaderSession readingAvailable]) {
         // Preferred: Raw Tag Reading
         self.tagSession = [[NFCTagReaderSession alloc] initWithPollingOption:(NFCPollingISO14443 | NFCPollingISO15693) delegate:self queue:dispatch_get_main_queue()];

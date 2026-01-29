@@ -18,6 +18,7 @@
 - (void)renameTrigger:(NSString *)triggerKey toName:(NSString *)newName;
 - (NSArray<NSString *> *)nfcTriggerKeys;
 - (void)saveConfig;
+- (void)stopBackgroundNFC;
 
 // Command Helpers
 - (NSString *)nameForCommand:(NSString *)cmd truncate:(BOOL)shouldTruncate;

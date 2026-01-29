@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 - **Open App Action**: Fixed "Open App" action failing by restoring the missing `uiopen` command handler in the Tweak.
 - **Custom Command Repair**: Fixed "Custom Command" actions failing when using `rc <command>` by intercepting the `rc` prefix and executing it internally.
 
+### Added
+- **Respring Action**: Added a native "Respring Device" action to the UI and improved the `respring` command reliability by using `killall backboardd`.
+
 ## [1.1.0] - 2026-01-29
 
 ### Added

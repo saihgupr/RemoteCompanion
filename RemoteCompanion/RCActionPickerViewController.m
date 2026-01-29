@@ -79,6 +79,7 @@
             @{ @"name": @"Do Not Disturb On", @"command": @"dnd on", @"icon": @"moon.fill" },
             @{ @"name": @"Do Not Disturb Off", @"command": @"dnd off", @"icon": @"moon" },
             @{ @"name": @"Do Not Disturb Toggle", @"command": @"dnd toggle", @"icon": @"moon.circle.fill" },
+            @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
             @{ @"name": @"Lock Status", @"command": @"lock status", @"icon": @"lock.circle" },
             @{ @"name": @"Low Power Mode On", @"command": @"low power on", @"icon": @"battery.25" },
             @{ @"name": @"Low Power Mode Off", @"command": @"low power off", @"icon": @"battery.100" },

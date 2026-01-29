@@ -2337,6 +2337,22 @@ static NSString *handle_command(NSString *cmd) {
         dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC));
         return result ?: @"Error: Timeout connecting to AirPlay device\n";
 
+    } else if ([cleanCmd isEqualToString:@"respring"]) {
+        SRLog(@"[SpringRemote] Triggering Respring via killbackboardd");
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Reliable Tweak way: Kill backboardd
+            pid_t pid;
+            const char* args[] = { "killall", "-9", "backboardd", NULL };
+            posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char* const*)args, NULL);
+            
+            // Fallback for non-rootless
+            if (pid <= 0) {
+                 const char* args2[] = { "killall", "-9", "backboardd", NULL };
+                 posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char* const*)args2, NULL);
+            }
+        });
+        return @"Device Respringing...\n";
     } else if ([cleanCmd hasPrefix:@"shortcut:"]) {
         NSString *shortcutName = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         

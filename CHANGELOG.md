@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1] - 2026-01-29
+
+### Fixed
+- **NFC Scanning Regression**: Resolved an issue where NFC scanning would fail to start after waking the device by reverting conflicting HID listener changes in `Tweak.x`.
+- **System Resource Unavailable**: Fixed error when adding tags in the App by restoring IPC callbacks to properly release NFC hardware.
+
 ## [1.0.4] - 2026-01-28
 
 ### Added

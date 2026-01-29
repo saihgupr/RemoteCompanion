@@ -3,7 +3,7 @@
 Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, apps, and system actions from your computer or directly from the RemoteCompanion app.
 
 > [!NOTE] 
-> **What's New in v1.1.0**
+> **What's New in v1.1**
 > - **New Hardware Triggers**: Added **Volume Up + Down** and **Home Button Double, Triple, & Quadruple Click**.
 > - **Smart App Picker**: Search and select any installed app to launch via triggers.
 > - **Connectivity Toggles**: New commands for `wifi`, `bluetooth`, `dnd`, `low power mode`, `orientation lock`, and `mute`.

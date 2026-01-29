@@ -2217,7 +2217,11 @@ static NSString *handle_command(NSString *cmd) {
         NSString *shellCmd = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         SRLog(@"[SpringRemote] Processing command: %@", shellCmd);
         
-        if ([shellCmd hasPrefix:@"curl "]) {
+        if ([shellCmd hasPrefix:@"rc "]) {
+             NSString *internalCmd = [shellCmd substringFromIndex:3];
+             SRLog(@"[SpringRemote] Intercepting 'rc' command, executing internally: %@", internalCmd);
+             return handle_command(internalCmd);
+        } else if ([shellCmd hasPrefix:@"curl "]) {
             SRLog(@"[SpringRemote] Detected curl command, using native implementation");
             perform_native_curl(shellCmd);
             return [NSString stringWithFormat:@"Executing via native curl: %@\n", shellCmd];

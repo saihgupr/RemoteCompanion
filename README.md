@@ -18,7 +18,7 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 <p align="center">
   <img src="images/IMG_1336.PNG" width="250" alt="Bluetooth Control" />
   <img src="images/IMG_1338.PNG" width="250" alt="Haptic Settings" />
-  <img src="images/IMG_1333-1.PNG" width="250" alt="Trigger Config" />
+  <img src="images/IMG_1333-2.PNG" width="250" alt="Trigger Config" />
 </p>
 
 ## Features
@@ -32,7 +32,7 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 - `rc play` / `rc pause` / `rc playpause` / `rc next` / `rc prev`
 - `rc volume 0-100` - Set volume.
 - `rc volume` - Get current volume percentage.
-- `rc mute [on|off|status]` - Control media mute state.
+- `rc mute [on|off|toggle|status]` - Control media mute state.
 - `rc anc [on|off|transparency]` - Control headphone ANC (requires Sonitus).
 
 ### Device Control
@@ -41,7 +41,7 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 - `rc button [power|lock|home|volup|voldown|mute]` - Simulate physical buttons.
 - `rc brightness 0-100` - Set screen brightness.
 - `rc flashlight [on|off|toggle]` - Control the torch.
-- `rc rotate [lock|unlock|status]` - Orientation lock control.
+- `rc rotate [lock|unlock|toggle|status]` - Orientation lock control.
 - `rc dnd [on|off|toggle]` - Toggle Do Not Disturb.
 - `rc low power mode [on|off|toggle]` - Toggle battery saver.
 - `rc airplane [on|off|toggle]` - Control Airplane Mode.
@@ -88,7 +88,7 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 - The `RemoteCompanion` tweak installed.
 
 ### 2. Installation Options
-- **Repository (Recommended)**: Add `https://saihgupr.github.io/RemoteCompanion` to Zebra, or tap [Add Repo](zbra://sources/add/https://saihgupr.github.io/RemoteCompanion) to add it automatically.
+- **Repository (Recommended)**: Add `https://saihgupr.github.io/RemoteCompanion` to Zebra, or click [Add to Zebra](zbra://sources/add/https://saihgupr.github.io/RemoteCompanion)
 - **Manual Install**: Download the `.deb` from [Releases](https://github.com/saihgupr/RemoteCompanion/releases).
 - **Build from Source**: `cd Tweak && make package install`.
 

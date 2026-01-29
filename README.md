@@ -86,9 +86,15 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 - The `RemoteCompanion` tweak installed.
 
 ### 2. Installation Options
-- **Repository (Recommended)**: Add `https://saihgupr.github.io/RemoteCompanion` to Zebra, or use zbra://sources/add/https://saihgupr.github.io/RemoteCompanion
-- **Manual Install**: Download the `.deb` from [Releases](https://github.com/saihgupr/RemoteCompanion/releases).
-- **Build from Source**: `cd Tweak && make package install`.
+
+#### Option 1: Repository (Recommended)
+Add `https://saihgupr.github.io/RemoteCompanion` to Zebra, or use `zbra://sources/add/https://saihgupr.github.io/RemoteCompanion`
+
+#### Option 2: Manual Install
+Download the `.deb` from [Releases](https://github.com/saihgupr/RemoteCompanion/releases).
+
+#### Option 3: Build from Source
+`cd Tweak && make package install`.
 
 ### 3. Usage Options
 Choose the control method that best fits your needs:

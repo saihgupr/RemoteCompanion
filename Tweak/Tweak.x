@@ -2523,11 +2523,28 @@ static void trigger_haptic() {
 
 // --- SAFE VOLUME HOLD IMPLEMENTATION ---
 
+
+static int g_lastRingerState = -1;
+
 %hook SBRingerControl
 
 -(void)setRingerMuted:(BOOL)muted {
     %orig;
 
+    if (g_lastRingerState == -1) {
+        // First initialization (respring/reboot) - just track state, don't fire
+        SRLog(@"[SpringRemote] SBRingerControl Initial State: %d", muted);
+        g_lastRingerState = (int)muted;
+        return;
+    }
+
+    if (g_lastRingerState == (int)muted) {
+        // State hasn't changed, ignore
+        return;
+    }
+
+    // State changed
+    g_lastRingerState = (int)muted;
     SRLog(@"[SpringRemote] SBRingerControl setRingerMuted: %d", muted);
     
     // Fire generic toggle status

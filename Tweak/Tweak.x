@@ -1846,6 +1846,14 @@ static NSString *handle_command(NSString *cmd) {
              }
         }
         return @"Error: AVSystemController failed.\n";
+    } else if ([cleanCmd hasPrefix:@"uiopen "]) {
+        NSString *bundleId = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSLog(@"[RemoteCommand] UIOPEN Bundle ID: %@", bundleId);
+        dispatch_async(dispatch_get_main_queue(), ^{
+             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
+             [service openApplication:bundleId withOptions:nil completion:nil];
+        });
+        return [NSString stringWithFormat:@"Opened %@", bundleId];
     } else if ([cleanCmd hasPrefix:@"open "]) {
         // Open app by name or Bundle ID
         NSString *appName = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];

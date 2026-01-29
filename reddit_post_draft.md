@@ -1,5 +1,5 @@
 # Title
-[Update] [Free Release] RemoteCompanion v1.1 - The Activator replacement for modern rootless jailbreaks. Now with Volume/Home combos.
+[Update] [Free Release] RemoteCompanion v1.1 - The Activator replacement for modern rootless jailbreaks. Now with Improved Home Button Gestures.
 
 # Body
 RemoteCompanion brings fast, scriptable system control and automation to modern rootless jailbreaks. 
@@ -7,7 +7,7 @@ RemoteCompanion brings fast, scriptable system control and automation to modern 
 I've just released v1.1 which adds several highly requested hardware triggers and better connectivity controls.
 
 **What's New in v1.1:**
-- New Hardware Triggers: Volume Up + Down combo and Home Button clicks (Double, Triple, and Quadruple).
+- New Hardware Triggers: Home Button clicks (Double, Triple, and Quadruple).
 - Smart App Picker: Search and select any installed app directly within the trigger config.
 - Connectivity Toggles: Dedicated actions for Wi-Fi, Bluetooth, DND, Low Power Mode, Orientation Lock, and Mute.
 - Powercuts Support: Full compatibility with Powercuts to trigger any RemoteCompanion action directly from iOS Shortcuts.

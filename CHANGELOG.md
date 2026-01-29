@@ -11,7 +11,6 @@ All notable changes to this project will be documented in this file.
 ## [1.0.4] - 2026-01-28
 
 ### Added
-- **Volume Combo Trigger**: Supported simultaneous Volume Up + Down press using a low-level HID listener for maximum responsiveness.
 - **Home Button Triggers**: Added support for **Double Click**, **Triple Click**, and **Quadruple Click**.
 - **Improved Multi-Click Detection**: Re-engineered logic to handle rapid multi-clicks reliably without interference.
 - **Open App Action**: New application picker to launch any installed app directly from a trigger.

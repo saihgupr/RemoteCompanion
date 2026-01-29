@@ -174,14 +174,13 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 }
 
 - (NSArray<NSString *> *)allTriggerKeys {
-    return @[@"volume_up_hold", @"volume_down_hold", @"volume_both_press", @"power_double_tap", @"power_long_press", @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_home_double_tap", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"];
+    return @[@"volume_up_hold", @"volume_down_hold", @"power_double_tap", @"power_long_press", @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_home_double_tap", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"];
 }
 
 - (NSString *)displayNameForTrigger:(NSString *)triggerKey {
     NSDictionary *names = @{
         @"volume_up_hold": @"Volume Up Hold",
         @"volume_down_hold": @"Volume Down Hold",
-        @"volume_both_press": @"Volume Up + Down (Both)",
         @"power_double_tap": @"Power Double-Tap",
         @"power_long_press": @"Power Long Press",
         @"trigger_statusbar_left_hold": @"Status Bar Left Hold",

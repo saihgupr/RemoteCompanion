@@ -2489,30 +2489,12 @@ static void trigger_haptic() {
     AudioServicesPlaySystemSound(1520);
 }
 
-// --- SAFE VOLUME COMBO & HOLD IMPLEMENTATION ---
-
-static BOOL g_volUpPressed = NO;
-static BOOL g_volDownPressed = NO;
+// --- SAFE VOLUME HOLD IMPLEMENTATION ---
 
 %hook SBVolumeHardwareButtonActions
 
 - (void)volumeIncreasePressDownWithModifiers:(long long)arg1 {
-    g_volUpPressed = YES;
-    
-    // 1. Check for Combo
-    if (g_volDownPressed) {
-        load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_combo"][@"enabled"] boolValue]) {
-            SRLog(@"[SpringRemote] Volume Combo Triggered (Up+Down)");
-            trigger_haptic();
-            RCExecuteTrigger(@"volume_combo");
-            g_volUpPressed = NO;
-            g_volDownPressed = NO;
-            return; 
-        }
-    }
-
-    // 2. Existing Hold Logic
+    // 1. Existing Hold Logic
     if (g_volIsReplaying) {
         %orig;
         return;
@@ -2534,8 +2516,6 @@ static BOOL g_volDownPressed = NO;
 }
 
 - (void)volumeIncreasePressUp {
-    g_volUpPressed = NO;
-    
     // Existing Hold Logic
     if (g_volIsReplaying) {
         %orig;
@@ -2562,22 +2542,7 @@ static BOOL g_volDownPressed = NO;
 }
 
 - (void)volumeDecreasePressDownWithModifiers:(long long)arg1 {
-    g_volDownPressed = YES;
-    
-    // 1. Check for Combo
-    if (g_volUpPressed) {
-        load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_combo"][@"enabled"] boolValue]) {
-            SRLog(@"[SpringRemote] Volume Combo Triggered (Down+Up)");
-            trigger_haptic();
-            RCExecuteTrigger(@"volume_combo");
-            g_volUpPressed = NO;
-            g_volDownPressed = NO;
-            return; 
-        }
-    }
-
-    // 2. Existing Hold Logic
+    // 1. Existing Hold Logic
     if (g_volIsReplaying) {
         %orig;
         return;
@@ -2599,8 +2564,6 @@ static BOOL g_volDownPressed = NO;
 }
 
 - (void)volumeDecreasePressUp {
-    g_volDownPressed = NO;
-    
     // Existing Hold Logic
     if (g_volIsReplaying) {
         %orig;

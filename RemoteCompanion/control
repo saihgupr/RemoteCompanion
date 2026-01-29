@@ -1,0 +1,9 @@
+Package: com.saihgupr.remotecompanion
+Name: RemoteCompanion
+Version: 1.1.0
+Architecture: iphoneos-arm64
+Description: Companion app for RemoteCommand notifications
+Maintainer: Saihgupr
+Author: Saihgupr
+Section: Utilities
+Depends: firmware (>= 15.0)

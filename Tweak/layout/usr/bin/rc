@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Simple RC client for iPhone (Localhost)
+# Connects to the Tweak running on port 1234
+# Usage: rc <command>
+
+if [ -z "$1" ]; then
+    echo "Usage: rc <command>"
+    exit 1
+fi
+
+# Construct command string
+CMD="$@"
+
+# Find netcat path (Rootless vs Rootful)
+NC_PATH="nc"
+if [ -f "/var/jb/usr/bin/nc" ]; then
+    NC_PATH="/var/jb/usr/bin/nc"
+elif [ -f "/usr/bin/nc" ]; then
+    NC_PATH="/usr/bin/nc"
+fi
+
+# Try ports 1234-1238
+for PORT in 1234 1235 1236 1237 1238; do
+    # Use netcat to send command AND read response
+    # -w 2: Wait max 2 seconds for response/connection
+    if echo -n "$CMD" | $NC_PATH -w 2 127.0.0.1 $PORT 2>/dev/null; then
+        # If nc exits with 0, connection was successful
+        exit 0
+    fi
+done
+
+echo "Error: RemoteCommand server not running or reachable (checked ports 1234-1238)"
+exit 1

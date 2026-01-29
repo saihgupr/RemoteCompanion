@@ -1,0 +1,156 @@
+#!/bin/bash
+
+IP="iphone.local"
+PORT="1234"
+NTFY_TOPIC="remotecommand-notify"
+
+# Handle notify command separately (uses ntfy.sh for true push notifications)
+if [[ "$1" == "notify" ]]; then
+    shift  # Remove "notify" from args
+    
+    # Defaults
+    TITLE="RemoteCommand"
+    BODY=""
+    ICON=""  # Optional icon URL
+    PRIORITY="high"   # high (4) = time-sensitive, instant Watch delivery
+    
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--title)
+                TITLE="$2"
+                shift 2
+                ;;
+            -m|--message)
+                BODY="$2"
+                shift 2
+                ;;
+            -i|--icon)
+                ICON="$2"
+                shift 2
+                ;;
+            -p|--priority)
+                PRIORITY="$2"  # min, low, default, high, urgent
+                shift 2
+                ;;
+            *)
+                # Fallback: treat as positional (title, then body)
+                if [[ -z "$BODY" && -n "$TITLE" && "$TITLE" != "RemoteCommand" ]]; then
+                    BODY="$1"
+                else
+                    TITLE="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    curl -s -H "Title: $TITLE" -H "Icon: $ICON" -H "Priority: $PRIORITY" -d "$BODY" "ntfy.sh/$NTFY_TOPIC" > /dev/null
+    echo "Notification sent: $TITLE"
+    exit 0
+fi
+
+if [ -z "$1" ]; then
+    echo "Usage: rc <command> [arg]"
+    echo ""
+    echo "Implemented Commands:"
+    echo "  play, pause       - Media Control"
+    echo "  vol-up, vol-down  - Volume Control"
+    echo "  set-vol <0-100>   - Set Volume"
+    echo "  shortcut \"Name\"   - Run a Shortcut (e.g. rc shortcut \"Turn Lights On\")"
+    echo "  ping              - Play Alert Sound"
+    echo "  respring          - Restart SpringBoard"
+    echo "  bt on/off         - Turn Bluetooth On/Off"
+    echo "  bt-connect <name> - Connect to paired Bluetooth device"
+    echo "  bt-disconnect <name> - Disconnect Bluetooth device"
+    echo "  wifi on/off       - Turn WiFi On/Off"
+    echo "  airplane on/off   - Turn Airplane Mode On/Off"
+    echo "  brightness <0-100> - Set screen brightness"
+    echo "  haptic            - Trigger haptic tap"
+    echo "  flash on/off      - Turn flashlight on/off"
+    echo "  rotate lock/unlock - Toggle orientation lock"
+    echo "  is-locked         - Check if device is locked"
+    echo "  notify \"Title\" \"Body\" - Send push notification (via ntfy)"
+    echo "  dnd on/off/debug   - Toggle Do Not Disturb or inspect state"
+    echo ""
+    exit 1
+fi
+
+# Construct the command string while preserving quotes for arguments with spaces
+CMD=""
+if [ "$#" -eq 1 ]; then
+    # If only one argument is provided, assume it is the full pre-constructed command string
+    # This happens often with Home Assistant shell_command: cmd: '...'
+    CMD="$1"
+else
+    # Construct the command string from multiple arguments
+    # Quote arguments that contain spaces
+    for arg in "$@"; do
+        if [[ "$arg" == *" "* ]]; then
+            CMD="$CMD \"$arg\""
+        else
+            CMD="$CMD $arg"
+        fi
+    done
+    CMD=$(echo "$CMD" | sed 's/^ //')
+fi
+
+# Map user-friendly commands to protocol commands
+
+if [[ "$CMD" == "vol-up" || "$CMD" == "volup" || "$CMD" == "volume up" || "$CMD" == "vol up" ]]; then
+    CMD="button volup"
+elif [[ "$CMD" == "vol-down" || "$CMD" == "voldown" || "$CMD" == "volume down" || "$CMD" == "vol down" ]]; then
+    CMD="button voldown"
+elif [[ "$CMD" == "power" ]]; then
+    CMD="button power"
+elif [[ "$CMD" == "home" ]]; then
+    CMD="button home"
+elif [[ "$CMD" == "mute" ]]; then
+    CMD="button mute"
+elif [[ "$CMD" == "siri" ]]; then
+    CMD="button siri"
+elif [[ "$CMD" == "respring" ]]; then
+    echo "Respringing device..."
+    # Determine IP - verify if RC_IPHONE_IP is set or default to iphone.local
+    TARGET_IP="${RC_IPHONE_IP:-iphone.local}"
+    
+    if [ -n "$COMMON_PASSWORD" ]; then
+        sshpass -p "$COMMON_PASSWORD" ssh -o StrictHostKeyChecking=no mobile@$TARGET_IP "sbreload"
+    else
+        # Fallback to keys or manual password entry
+        ssh -o StrictHostKeyChecking=no mobile@$TARGET_IP "sbreload"
+    fi
+    exit 0
+elif [[ "$CMD" == "shortcut "* ]]; then
+    # Convert "shortcut Name" to "shortcut:Name"
+    CMD="shortcut:${CMD#shortcut }"
+fi
+
+# Send command to the SpringRemote tweak on the iPhone
+IP="${RC_IPHONE_IP:-iphone.local}"
+
+# 1. FAST PATH: Direct TCP Connection
+# Try ports 1234-1238 directly. This is instant if it works.
+PORTS=(1234 1235 1236 1237 1238)
+for PORT in "${PORTS[@]}"; do
+    if timeout 0.2 bash -c "echo > /dev/tcp/$IP/$PORT" 2>/dev/null; then
+        # Found open port, send command
+        echo -n "$CMD" | nc -w 2 "$IP" "$PORT"
+        if [ $? -eq 0 ]; then
+            exit 0
+        fi
+    fi
+done
+
+# 2. ROBUST PATH: SSH Tunnel
+# If direct connection failed (firewall/zombies), try SSH.
+# Slower, but bypasses most network issues.
+for PORT in 1234 1235 1236 1237 1238; do
+     ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no mobile@$IP "echo -n '$CMD' | /var/jb/usr/bin/nc -w 2 127.0.0.1 $PORT" 2>/dev/null
+     if [ $? -eq 0 ]; then
+         exit 0
+     fi
+done
+
+echo "Error: Cannot connect to iPhone at $IP. Checked ports 1234-1238 via Direct TCP and SSH." >&2
+exit 1

@@ -3053,37 +3053,55 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
     int type = IOHIDEventGetType(event);
     
     if (type == 29) { // Biometric Event (Finger on sensor)
-        // Watchdog Logic for "Hold"
-        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+        // Toggle Logic for "Hold" (Fire by itself after 1.0s)
+        // Assumption: Sensor sends event on DOWN ... (Silence) ... and UP.
         
+        // Log raw event for debugging
+        int bioType = IOHIDEventGetIntegerValue(event, 0x1D0000); 
+        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+        SRLog(@"[SpringRemote-Bio] Event Type 29 (BioType=%d)", bioType);
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            // 1. Initialize Start Time if needed
-            if (g_bioFingerDownTime == 0) {
-                g_bioFingerDownTime = now;
+            load_trigger_config();
+            BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"touchid_hold"][@"enabled"] boolValue];
+            if (!enabled) return;
+
+            // STATE-BASED TOGGLE LOGIC:
+            NSTimeInterval diff = (g_bioFingerDownTime == 0) ? 0 : (now - g_bioFingerDownTime);
+            BOOL isStale = (diff > 5.0); // If >5s, assume we missed a lift event and reset.
+
+            if (g_bioFingerDownTime != 0 && !isStale) {
+                // STATE = DOWN. This event must be LIFT.
+                // Cancel timer if running.
+                if (g_bioWatchdogTimer) {
+                    [g_bioWatchdogTimer invalidate];
+                    g_bioWatchdogTimer = nil;
+                    SRLog(@"[SpringRemote-Bio] Lift Detected (Timer Canceled)");
+                } else {
+                    SRLog(@"[SpringRemote-Bio] Lift Detected (After Fire)");
+                }
+                g_bioFingerDownTime = 0; // Reset State to UP.
                 g_bioHoldTriggered = NO;
-                SRLog(@"[SpringRemote-Bio] Finger DOWN Detected (Watchdog Started)");
-            }
-            
-            // 2. Refresh Watchdog (Finger is still here)
-            if (g_bioWatchdogTimer) {
-                [g_bioWatchdogTimer invalidate];
-            }
-            // If no events for 1.0s, assume finger lifted
-            g_bioWatchdogTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:NO block:^(NSTimer *timer) {
-                g_bioFingerDownTime = 0;
-                g_bioHoldTriggered = NO;
-                SRLog(@"[SpringRemote-Bio] Watchdog Expired (Finger Lifted)");
-            }];
-            
-            // 3. Check for Hold Trigger
-            NSTimeInterval duration = now - g_bioFingerDownTime;
-            if (duration > 0.5 && !g_bioHoldTriggered) {
-                SRLog(@"[SpringRemote-Bio] 👆 TOUCH ID HOLD TRIGGERED!");
-                g_bioHoldTriggered = YES;
-                trigger_haptic();
-                RCExecuteTrigger(@"touchid_hold");
+
+            } else {
+                // STATE = UP (or Stale). This event must be DOWN.
+                // Start Timer!
+                g_bioFingerDownTime = now; // Set State to DOWN.
+                SRLog(@"[SpringRemote-Bio] Finger Down (Timer Started 1.0s)%@", isStale ? @" [STALE RESET]" : @"");
+                
+                if (g_bioWatchdogTimer) [g_bioWatchdogTimer invalidate];
+                g_bioWatchdogTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:NO block:^(NSTimer *timer) {
+                    SRLog(@"[SpringRemote-Bio] 👆 TIMER FIRED (Hold Verified)");
+                    g_bioWatchdogTimer = nil; // Timer is done.
+                    // DO NOT reset g_bioFingerDownTime here! 
+                    // We need it to remain set so the future Lift event is handled correctly.
+                    
+                    trigger_haptic();
+                    RCExecuteTrigger(@"touchid_hold");
+                }];
             }
         });
+
     }
     
     // Log Biometric/Mesa events specifically?

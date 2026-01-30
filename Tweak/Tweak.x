@@ -3135,6 +3135,18 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                     g_hidButtonDown = YES;
                     g_lastHIDTime = now;
                     SRLog(@"[SpringRemote-HID] 🕹️ Home DOWN");
+                    
+                    // SUPPRESS TOUCH ID HOLD:
+                    // If user is clicking, they are not "Holding" for the gesture.
+                    // Suppress bio events for 1.5s (covers triple clicks).
+                    g_bioIgnoreUntil = now + 1.5;
+                    // Also cancel any pending hold timer
+                    if (g_bioWatchdogTimer) {
+                        [g_bioWatchdogTimer invalidate];
+                        g_bioWatchdogTimer = nil;
+                    }
+                    g_bioFingerDownTime = 0;
+                    g_bioHoldTriggered = NO;
                 }
             } else { // UP
                 if (g_hidButtonDown) {

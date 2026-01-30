@@ -2,11 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.0.0~beta5] - 2026-01-30
+## [2.0.0~beta4] - 2026-01-30
 
 ### Added
 - **Siri Activation**: Added the `button siri` command and a native "Activate Siri" action in the Action Picker. Uses a robust multi-stage activation sequence (HID + Programmatic Fallbacks) for maximum reliability on iOS 15+.
 - **Power + Volume Triggers**: Added support for **Power + Volume Up** and **Power + Volume Down** combos.
+- **Shortcuts Picker Search**: Added a search bar to the "Select Shortcut" screen, making it easier to find specific shortcuts in your library.
+- **UI Polish**: Shortcuts picker icons now match the system accent color (grey).
 
 ### Fixed
 - **Rootless Injection (iOS 15)**: Fixed a critical architecture mismatch in the Tweak control file (`iphoneos-arm` -> `iphoneos-arm64`) that prevented the tweak from loading on rootless jailbreaks.

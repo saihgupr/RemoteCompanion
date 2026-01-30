@@ -2665,6 +2665,13 @@ static NSTimer *g_systemPowerOffTimer = nil; // New for dual-stage
 static BOOL g_forceSystemLongPress = NO;     // New for dual-stage
 static BOOL g_powerIsDown = NO;
 static BOOL g_powerVolComboTriggered = NO;
+
+// Biometric / Touch ID Globals
+static NSTimeInterval g_bioFingerDownTime = 0;
+static BOOL g_bioHoldTriggered = NO;
+static NSTimer *g_bioWatchdogTimer = nil;
+
+
 // static NSTimeInterval g_lastPowerUpTime = 0; // Removed unused variable
 
 
@@ -3043,10 +3050,53 @@ static void RC_CheckAndFirePower() {
 }
 
 static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientRef service, IOHIDEventRef event) {
-    if (IOHIDEventGetType(event) == kIOHIDEventTypeKeyboard) {
+    int type = IOHIDEventGetType(event);
+    
+    if (type == 29) { // Biometric Event (Finger on sensor)
+        // Watchdog Logic for "Hold"
+        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // 1. Initialize Start Time if needed
+            if (g_bioFingerDownTime == 0) {
+                g_bioFingerDownTime = now;
+                g_bioHoldTriggered = NO;
+                SRLog(@"[SpringRemote-Bio] Finger DOWN Detected (Watchdog Started)");
+            }
+            
+            // 2. Refresh Watchdog (Finger is still here)
+            if (g_bioWatchdogTimer) {
+                [g_bioWatchdogTimer invalidate];
+            }
+            // If no events for 1.0s, assume finger lifted
+            g_bioWatchdogTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:NO block:^(NSTimer *timer) {
+                g_bioFingerDownTime = 0;
+                g_bioHoldTriggered = NO;
+                SRLog(@"[SpringRemote-Bio] Watchdog Expired (Finger Lifted)");
+            }];
+            
+            // 3. Check for Hold Trigger
+            NSTimeInterval duration = now - g_bioFingerDownTime;
+            if (duration > 0.5 && !g_bioHoldTriggered) {
+                SRLog(@"[SpringRemote-Bio] 👆 TOUCH ID HOLD TRIGGERED!");
+                g_bioHoldTriggered = YES;
+                trigger_haptic();
+                RCExecuteTrigger(@"touchid_hold");
+            }
+        });
+    }
+    
+    // Log Biometric/Mesa events specifically?
+    // kIOHIDEventTypeBiometric = 29?
+    // Let's just log everything that isn't accelerometer (usually high freq)
+    // Accelerometer is... often type 13?
+    
+    if (type == kIOHIDEventTypeKeyboard) {
         int usagePage = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardUsagePage);
         int usage = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardUsage);
         int down = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardDown);
+        
+        // SRLog(@"[SpringRemote-HID] KEYBOARD (1) -> Page: 0x%X Usage: 0x%X Down: %d", usagePage, usage, down);
         
         // Home Button (Page 0x0C, Usage 0x40)
         if (usagePage == kHIDPage_Consumer && usage == kHIDUsage_Csmr_Menu) {
@@ -3785,4 +3835,5 @@ static void update_edge_gestures() {
         SRLog(@"[SpringRemote] Initialization Complete.");
     });
 }
+
 

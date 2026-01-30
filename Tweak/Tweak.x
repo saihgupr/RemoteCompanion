@@ -2671,6 +2671,7 @@ static NSTimeInterval g_bioFingerDownTime = 0;
 static BOOL g_bioHoldTriggered = NO;
 static NSTimer *g_bioWatchdogTimer = nil;
 static NSTimeInterval g_bioIgnoreUntil = 0;
+static BOOL g_bioWasLocked = NO;
 
 
 // static NSTimeInterval g_lastPowerUpTime = 0; // Removed unused variable
@@ -3078,35 +3079,77 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
 
             if (g_bioFingerDownTime != 0 && !isStale) {
                 // STATE = DOWN. This event must be LIFT.
-                // Cancel timer if running.
-                if (g_bioWatchdogTimer) {
-                    [g_bioWatchdogTimer invalidate];
-                    g_bioWatchdogTimer = nil;
-
-                    if ([g_triggerConfig[@"triggers"][@"touchid_tap"][@"enabled"] boolValue]) {
-                        trigger_haptic();
-                        RCExecuteTrigger(@"touchid_tap");
-                    }
-                }
-                g_bioFingerDownTime = 0; // Reset State to UP.
-                g_bioHoldTriggered = NO;
                 
-                // START DEBOUNCE (Ignore subsequent events for 0.5s to squash "bouncing")
-                g_bioIgnoreUntil = now + 0.5;
+                // ADD TINY DELAY (0.1s) to lift handling to solve Race Conditions
+                // This gives our unlock hooks time to set suppression if this was a valid unlock match.
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    if (g_bioFingerDownTime == 0) return; // Already handled or reset
+
+                    // Cancel timer if running.
+                    if (g_bioWatchdogTimer) {
+                        [g_bioWatchdogTimer invalidate];
+                        g_bioWatchdogTimer = nil;
+
+                        NSTimeInterval now_lift = [[NSDate date] timeIntervalSince1970];
+                        if (now_lift < g_bioIgnoreUntil) {
+                            SRLog(@"[SpringRemote-Bio] Suppressing Tap (Finger Lift within Ignore Window)");
+                            g_bioFingerDownTime = 0;
+                            g_bioHoldTriggered = NO;
+                            return;
+                        }
+
+                        // STATE-AWARE SUPPRESSION:
+                        // If we were locked when we put our finger down, but we are now UNLOCKED, 
+                        // this was an unlock attempt. Skip the tap.
+                        Class LSMC = objc_getClass("SBLockScreenManager");
+                        SBLockScreenManager *lsm = LSMC ? [LSMC sharedInstance] : nil;
+                        BOOL currentlyLocked = lsm ? [lsm isUILocked] : NO;
+                        
+                        if (g_bioWasLocked && !currentlyLocked) {
+                            SRLog(@"[SpringRemote-Bio] Suppressing Tap (Finger Lift after Unlock Match Detected)");
+                            g_bioFingerDownTime = 0;
+                            g_bioHoldTriggered = NO;
+                            return;
+                        }
+
+                        if ([g_triggerConfig[@"triggers"][@"touchid_tap"][@"enabled"] boolValue]) {
+                            trigger_haptic();
+                            RCExecuteTrigger(@"touchid_tap");
+                        }
+                    }
+                    g_bioFingerDownTime = 0; // Reset State to UP.
+                    g_bioHoldTriggered = NO;
+                    
+                    // START DEBOUNCE (Ignore subsequent events for 0.5s to squash "bouncing")
+                    g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 0.5;
+                });
 
             } else {
                 // STATE = UP (or Stale). This event must be DOWN.
                 // Start Timer!
                 g_bioFingerDownTime = now; // Set State to DOWN.
+                
+                // Track initial lock state
+                Class LSMC = objc_getClass("SBLockScreenManager");
+                SBLockScreenManager *lsm = LSMC ? [LSMC sharedInstance] : nil;
+                g_bioWasLocked = lsm ? [lsm isUILocked] : NO;
 
                 
                 if (g_bioWatchdogTimer) [g_bioWatchdogTimer invalidate];
                 g_bioWatchdogTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
 
                     g_bioWatchdogTimer = nil; // Timer is done.
-                    // DO NOT reset g_bioFingerDownTime here! 
-                    // We need it to remain set so the future Lift event is handled correctly.
                     
+                    // STATE-AWARE SUPPRESSION (Hold):
+                    Class LSMC2 = objc_getClass("SBLockScreenManager");
+                    SBLockScreenManager *lsm2 = LSMC2 ? [LSMC2 sharedInstance] : nil;
+                    BOOL currentlyLocked2 = lsm2 ? [lsm2 isUILocked] : NO;
+                    
+                    if (g_bioWasLocked && !currentlyLocked2) {
+                        SRLog(@"[SpringRemote-Bio] Suppressing Hold (Unlock succeeded during delay)");
+                        return;
+                    }
+
                     trigger_haptic();
                     RCExecuteTrigger(@"touchid_hold");
                 }];
@@ -3171,6 +3214,21 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                     g_powerIsDown = YES;
                     lastPowerDownTime = now;
                     SRLog(@"[SpringRemote-HID] ⚡️ Power DOWN");
+                    
+                    // SUPPRESS TOUCH ID HOLD (on Power Wake/Press):
+                    // If user is pressing power, they might be waking to unlock.
+                    // Suppress bio events for 1.5s.
+                    NSTimeInterval now_power = [[NSDate date] timeIntervalSince1970];
+                    g_bioIgnoreUntil = now_power + 1.5;
+                    // Also cancel any pending hold timer
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (g_bioWatchdogTimer) {
+                            [g_bioWatchdogTimer invalidate];
+                            g_bioWatchdogTimer = nil;
+                        }
+                    });
+                    g_bioFingerDownTime = 0;
+                    g_bioHoldTriggered = NO;
 
                     // Check for simultaneous press if Volume is already down
                     if (g_volUpIsDown || g_volDownIsDown) {
@@ -3293,6 +3351,43 @@ static void setup_background_hid_listener() {
     });
 }
 
+
+%hook SBLockScreenManager
+
+- (BOOL)_attemptUnlockWithPasscode:(id)passcode mesa:(BOOL)mesa finishUIUnlock:(BOOL)finishUI {
+    BOOL result = %orig;
+    if (mesa) {
+        SRLog(@"[SpringRemote] 🧬 Biometric (Mesa) Match Detected - setting immediate suppression flag");
+        g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 2.0;
+        
+        // Cancel pending timers immediately
+        if (g_bioWatchdogTimer) {
+            [g_bioWatchdogTimer invalidate];
+            g_bioWatchdogTimer = nil;
+        }
+    }
+    return result;
+}
+
+- (void)unlockUIFromSource:(int)source withOptions:(id)options {
+    %orig;
+    SRLog(@"[SpringRemote] 🔓 Device Unlocked via SBLockScreenManager (Source: %d)", source);
+    
+    // Reset biometric state immediately upon unlock to prevent stray triggers
+    g_bioFingerDownTime = 0;
+    g_bioHoldTriggered = NO;
+    
+    if (g_bioWatchdogTimer) {
+        [g_bioWatchdogTimer invalidate];
+        g_bioWatchdogTimer = nil;
+        SRLog(@"[SpringRemote] 🔐 Cancelled pending Biometric trigger due to Unlock");
+    }
+    
+    // Brief suppression after unlock (1.0s)
+    g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 1.0;
+}
+
+%end
 
 %hook SBLockHardwareButtonActions
 

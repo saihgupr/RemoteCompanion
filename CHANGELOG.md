@@ -7,10 +7,12 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **Siri Activation**: Added the `button siri` command and a native "Activate Siri" action in the Action Picker. Uses a robust multi-stage activation sequence (HID + Programmatic Fallbacks) for maximum reliability on iOS 15+.
 - **Power + Volume Triggers**: Added support for **Power + Volume Up** and **Power + Volume Down** combos.
+- **Touch ID Triggers**: Added support for **Single Tap** and **Hold** triggers on Touch ID devices.
 - **Shortcuts Picker Search**: Added a search bar to the "Select Shortcut" screen, making it easier to find specific shortcuts in your library.
 - **UI Polish**: Shortcuts picker icons now match the system accent color (grey).
 
 ### Fixed
+- **Touch ID Stability**: Fixed a crash related to background thread event access in the biometric handler.
 - **Rootless Injection (iOS 15)**: Fixed a critical architecture mismatch in the Tweak control file (`iphoneos-arm` -> `iphoneos-arm64`) that prevented the tweak from loading on rootless jailbreaks.
 - **Shortcuts Menu Regression**: Fixed an issue where selecting "Run Shortcut..." would immediately close the menu without showing the picker.
 - **Search Selection Bug**: Fixed a bug where selecting an action from search results in the Action Picker would fail to correctly dismiss the view.

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - 2026-01-30
+
+### Fixed
+- **Volume Button Responsiveness**: Improved reliability of native volume buttons when custom triggers are disabled.
+
 ## [1.1.1] - 2026-01-29
 
 ### Fixed

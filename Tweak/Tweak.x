@@ -3061,7 +3061,9 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
 
         dispatch_async(dispatch_get_main_queue(), ^{
             load_trigger_config();
-            BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"touchid_hold"][@"enabled"] boolValue];
+            BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
+                ([g_triggerConfig[@"triggers"][@"touchid_hold"][@"enabled"] boolValue] || 
+                 [g_triggerConfig[@"triggers"][@"touchid_tap"][@"enabled"] boolValue]);
             if (!enabled) return;
 
             // DEBOUNCE CHECK:
@@ -3081,6 +3083,10 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                     [g_bioWatchdogTimer invalidate];
                     g_bioWatchdogTimer = nil;
 
+                    if ([g_triggerConfig[@"triggers"][@"touchid_tap"][@"enabled"] boolValue]) {
+                        trigger_haptic();
+                        RCExecuteTrigger(@"touchid_tap");
+                    }
                 }
                 g_bioFingerDownTime = 0; // Reset State to UP.
                 g_bioHoldTriggered = NO;

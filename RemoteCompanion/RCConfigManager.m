@@ -71,7 +71,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                              @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down",
                              @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", 
                              @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down",
-                             @"volume_both_press",
+                             @"volume_both_press", @"touchid_tap",
                              @"power_volume_up", @"power_volume_down",
                              @"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle"];
         
@@ -116,6 +116,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                 @"trigger_home_quadruple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_double_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"touchid_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"touchid_tap": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_left_swipe_up": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_left_swipe_down": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_right_swipe_up": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],

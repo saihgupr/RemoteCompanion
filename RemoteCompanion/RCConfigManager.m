@@ -409,7 +409,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"low power mode off": @"LPM Off",
         @"low power toggle": @"LPM Toggle",
         @"low power mode toggle": @"LPM Toggle",
-        @"mute toggle": @"Mute Toggle"
+        @"mute toggle": @"Mute Toggle",
+        @"siri": @"Activate Siri"
     };
     
     NSString *result = names[cmd];
@@ -534,7 +535,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"anc off": @"ear",
         @"anc transparency": @"waveform.circle.fill",
         @"airplay disconnect": @"airplayaudio.badge.exclamationmark",
-        @"mute toggle": @"speaker.slash.fill"
+        @"mute toggle": @"speaker.slash.fill",
+        @"siri": @"mic.fill"
     };
     
     return icons[cmd] ?: @"circle.fill";

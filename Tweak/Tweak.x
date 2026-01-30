@@ -23,6 +23,12 @@
 - (void)start;
 @end
 
+@interface SBAssistantController : NSObject
++ (id)sharedInstance;
+- (void)handleVoiceAssistantButtonWithSource:(long long)arg1 direct:(BOOL)arg2;
+- (void)handleVoiceAssistantButtonWithSource:(long long)arg1;
+@end
+
 // Lua interpreter
 #include "lua.h"
 #include "lauxlib.h"
@@ -1324,9 +1330,31 @@ static NSString *handle_command(NSString *cmd) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeDecrement, 0, 0);
         } else if ([btn isEqualToString:@"mute"]) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Mute, 0, 0);
+        } else if ([btn isEqualToString:@"siri"]) {
+            SRLog(@"[SpringRemote] Triggering Siri via button command");
+            dispatch_async(dispatch_get_main_queue(), ^{
+                Class SBAssistantControllerClass = objc_getClass("SBAssistantController");
+                if (SBAssistantControllerClass) {
+                    id assistant = [SBAssistantControllerClass sharedInstance];
+                    SRLog(@"[SpringRemote] SBAssistantController instance: %@", assistant);
+                    if ([assistant respondsToSelector:@selector(handleVoiceAssistantButtonWithSource:direct:)]) {
+                        SRLog(@"[SpringRemote] Calling handleVoiceAssistantButtonWithSource:1 direct:YES");
+                        [assistant handleVoiceAssistantButtonWithSource:1 direct:YES];
+                    } else if ([assistant respondsToSelector:@selector(handleVoiceAssistantButtonWithSource:)]) {
+                        SRLog(@"[SpringRemote] Calling handleVoiceAssistantButtonWithSource:1");
+                        [assistant handleVoiceAssistantButtonWithSource:1];
+                    } else {
+                        SRLog(@"[SpringRemote] ERROR: SBAssistantController does not respond to expected selectors");
+                    }
+                } else {
+                    SRLog(@"[SpringRemote] ERROR: SBAssistantController class not found");
+                }
+            });
         } else {
-            SRLog(@"Unknown button: %@. Supported: power, home, volup, voldown, mute", btn);
+            SRLog(@"Unknown button: %@. Supported: power, home, volup, voldown, mute, siri", btn);
         }
+    } else if ([cleanCmd isEqualToString:@"siri"]) {
+        return handle_command(@"button siri");
     } else if ([cleanCmd isEqualToString:@"is-locked"]) {
         // Query lock state
         // Use dispatch_sync to wait for result from main thread
@@ -1344,6 +1372,24 @@ static NSString *handle_command(NSString *cmd) {
             }
         });
         return [NSString stringWithFormat:@"%@\n", result];
+    } else if ([cleanCmd hasPrefix:@"debug-class "]) {
+        NSString *className = [[cleanCmd substringFromIndex:12] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        SRLog(@"[SpringRemote] Debugging class: %@", className);
+        Class cls = objc_getClass([className UTF8String]);
+        if (!cls) {
+            SRLog(@"[SpringRemote] Class not found: %@", className);
+            return @"Class not found\n";
+        }
+        
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList(cls, &count);
+        SRLog(@"[SpringRemote] Class %@ has %u methods:", className, count);
+        for (unsigned int i = 0; i < count; i++) {
+            SEL sel = method_getName(methods[i]);
+            SRLog(@"[SpringRemote]   - %@", NSStringFromSelector(sel));
+        }
+        free(methods);
+        return [NSString stringWithFormat:@"Found %u methods for %@. Check logs.\n", count, className];
     } else if ([cleanCmd isEqualToString:@"lock status"]) {
         __block NSString *result = @"error";
         dispatch_sync(dispatch_get_main_queue(), ^{

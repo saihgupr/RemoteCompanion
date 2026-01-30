@@ -1385,7 +1385,7 @@ static NSString *handle_command(NSString *cmd) {
         } else if ([btn isEqualToString:@"mute"]) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Mute, 0, 0);
         } else if ([btn isEqualToString:@"siri"]) {
-            SRLog(@"[SpringRemote] Triggering Siri Activation (Voice Command HID)");
+
             
             // Use HID Voice Command (0xCF) - Acts like a headset button, typically no "Home" side-effects
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VoiceCommand, 600000000, 0); // 0.6s hold
@@ -1395,7 +1395,7 @@ static NSString *handle_command(NSString *cmd) {
                 Class SBAssistantControllerClass = objc_getClass("SBAssistantController");
                 id assistant = [SBAssistantControllerClass sharedInstance];
                 if ([assistant respondsToSelector:@selector(isVisible)] && ![assistant isVisible]) {
-                    SRLog(@"[SpringRemote] Siri: LAST RESORT - Open com.apple.SiriViewService");
+
                     Class LSWorkspace = objc_getClass("LSApplicationWorkspace");
                     if (LSWorkspace) {
                         [[LSWorkspace defaultWorkspace] openApplicationWithBundleID:@"com.apple.SiriViewService"];
@@ -3057,10 +3057,7 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
         // Toggle Logic for "Hold" (Fire by itself after 1.0s)
         // Assumption: Sensor sends event on DOWN ... (Silence) ... and UP.
         
-        // Log raw event for debugging
-        int bioType = IOHIDEventGetIntegerValue(event, 0x1D0000); 
         NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-        SRLog(@"[SpringRemote-Bio] Event Type 29 (BioType=%d)", bioType);
 
         dispatch_async(dispatch_get_main_queue(), ^{
             load_trigger_config();
@@ -3083,9 +3080,7 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                 if (g_bioWatchdogTimer) {
                     [g_bioWatchdogTimer invalidate];
                     g_bioWatchdogTimer = nil;
-                    SRLog(@"[SpringRemote-Bio] Lift Detected (Timer Canceled)");
-                } else {
-                    SRLog(@"[SpringRemote-Bio] Lift Detected (After Fire)");
+
                 }
                 g_bioFingerDownTime = 0; // Reset State to UP.
                 g_bioHoldTriggered = NO;
@@ -3097,11 +3092,11 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                 // STATE = UP (or Stale). This event must be DOWN.
                 // Start Timer!
                 g_bioFingerDownTime = now; // Set State to DOWN.
-                SRLog(@"[SpringRemote-Bio] Finger Down (Timer Started 1.0s)%@", isStale ? @" [STALE RESET]" : @"");
+
                 
                 if (g_bioWatchdogTimer) [g_bioWatchdogTimer invalidate];
                 g_bioWatchdogTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:NO block:^(NSTimer *timer) {
-                    SRLog(@"[SpringRemote-Bio] 👆 TIMER FIRED (Hold Verified)");
+
                     g_bioWatchdogTimer = nil; // Timer is done.
                     // DO NOT reset g_bioFingerDownTime here! 
                     // We need it to remain set so the future Lift event is handled correctly.
@@ -3134,7 +3129,7 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                 if (!g_hidButtonDown) {
                     g_hidButtonDown = YES;
                     g_lastHIDTime = now;
-                    SRLog(@"[SpringRemote-HID] 🕹️ Home DOWN");
+
                     
                     // SUPPRESS TOUCH ID HOLD:
                     // If user is clicking, they are not "Holding" for the gesture.
@@ -3153,7 +3148,7 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                     if (now - g_lastHIDTime > 0.05) { // 50ms Debounce
                         g_hidButtonDown = NO;
                         g_lastHIDTime = now;
-                        SRLog(@"[SpringRemote-HID] 🕹️ Home UP");
+
                         RC_ProcessHomeClick();
                     }
                 }

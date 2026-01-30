@@ -90,7 +90,7 @@
         @[
             @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
             @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
-            @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT__", @"icon": @"command" },
+            @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
             @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
             @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
             @{ @"name": @"Do Not Disturb On", @"command": @"dnd on", @"icon": @"moon.fill" },
@@ -181,17 +181,7 @@
     }
     NSString *command = action[@"command"];
     
-    if ([command isEqualToString:@"__BT_DISCONNECT__"]) {
-        // [Existing BT Disconnect Logic] - Wait, I haven't implemented that yet in this file,
-        // but I should probably leave placeholders or check if I need to copy logic.
-        // Actually, looking at previous steps, I only changed the ICON in the list.
-        // The previous implementation used RCShortcutPickerViewController logic for shortcuts.
-        // For BT Disconnect, I likely need a picker too? 
-        // Wait, the user request for BT disconnect was just about the icon in the displayed action list.
-        // But if I select "Disconnect Bluetooth...", does it work? 
-        // The implementation plan for that was in a previous session or skipped?
-        // Let's focus on Volume/Brightness first.
-    }
+
 
     if ([command isEqualToString:@"__SET_VOLUME__"] || [command isEqualToString:@"__SET_BRIGHTNESS__"]) {
         [self handleValueInputForCommand:command];
@@ -199,22 +189,7 @@
     }
     
     // Existing special handlers
-    if ([command isEqualToString:@"__SHORTCUT__"]) {
-        // ... (Shortcut logic is likely handled elsewhere or I need to import headers)
-        // Checking my file view, I don't see shortcut logic in this file?
-        // Ah, RCActionPickerViewController just returns the command?
-        // No, for "Run Shortcut...", it launches RCShortcutPickerViewController?
-        // Let's look at the file content I viewed earlier. It has "Run Shortcut..." mapping to __SHORTCUT__?
-        // I need to be careful not to break existing logic.
-        // Re-reading view_file output:
-        // 67: @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT__", @"icon": @"command" }
-        // 130: NSDictionary *action = _sections[indexPath.section][indexPath.row];
-        // 131: NSString *command = action[@"command"];
-        // 133: if (self.onActionSelected) { self.onActionSelected(command); }
-        // So the parent controller handles "__SHORTCUT__".
-        // I can do the same for __SET_VOLUME__, OR handle it here and return the final string.
-        // Handling here is better UX (picker stays on top of parent).
-    }
+
     
     if (self.onActionSelected) {
         self.onActionSelected(command);

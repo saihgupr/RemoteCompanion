@@ -23,10 +23,16 @@
 - (void)start;
 @end
 
+@interface SiriPresentationOptions : NSObject
+- (void)setWakeScreen:(BOOL)arg1;
+- (void)setHideOtherWindowsDuringAppearance:(BOOL)arg1;
+@end
+
 @interface SBAssistantController : NSObject
 + (id)sharedInstance;
-- (void)handleVoiceAssistantButtonWithSource:(long long)arg1 direct:(BOOL)arg2;
+- (BOOL)isVisible;
 - (void)handleVoiceAssistantButtonWithSource:(long long)arg1;
+- (void)handleVoiceAssistantButtonWithSource:(long long)arg1 direct:(BOOL)arg2;
 - (void)_presentForMainScreenAnimated:(BOOL)arg1 options:(id)arg2 completion:(id)arg3;
 - (void)handleSiriButtonDownWithSource:(long long)arg1;
 - (void)handleSiriButtonUpWithSource:(long long)arg1;
@@ -59,10 +65,6 @@ static void (*_IOHIDEventSystemClientDispatchEvent)(IOHIDEventSystemClientRef cl
 - (void)consumeInitialPressDown;
 - (void)consumeSinglePressUp;
 - (void)consumeLongPress;
-@end
-
-@interface SiriPresentationOptions : NSObject
-- (void)setWakeScreen:(BOOL)arg1;
 @end
 
 // Global captured instances
@@ -114,6 +116,7 @@ static void (*_IOHIDEventSetSenderID)(IOHIDEventRef event, uint64_t senderID);
 #define kHIDUsage_GD_SystemSleep 0x82
 #define kHIDUsage_Csmr_Power     0x30
 #define kHIDUsage_Csmr_Menu      0x40 // Home button usually
+#define kHIDUsage_Csmr_VoiceCommand 0xCF
 #define kHIDPage_KeyboardOrKeypad 0x07
 #define kHIDUsage_Csmr_VolumeIncrement 0xE9
 #define kHIDUsage_Csmr_VolumeDecrement 0xEA
@@ -1382,61 +1385,20 @@ static NSString *handle_command(NSString *cmd) {
         } else if ([btn isEqualToString:@"mute"]) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Mute, 0, 0);
         } else if ([btn isEqualToString:@"siri"]) {
-            SRLog(@"[SpringRemote] Triggering Siri Activation");
+            SRLog(@"[SpringRemote] Triggering Siri Activation (Voice Command HID)");
             
-            // Simulating a real Home Button Long Press via HID (most reliable)
-            SRLog(@"[SpringRemote] Siri: Attempting HID Long Press (1500ms)");
-            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Menu, 1500000000, 0); // 1.5s
+            // Use HID Voice Command (0xCF) - Acts like a headset button, typically no "Home" side-effects
+            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VoiceCommand, 600000000, 0); // 0.6s hold
             
-            // Optional: fallback to programmatic triggers if needed
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            // Fallback: Bundle Launch (Reliable but loses context)
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 Class SBAssistantControllerClass = objc_getClass("SBAssistantController");
-                if (SBAssistantControllerClass) {
-                    id assistant = [SBAssistantControllerClass sharedInstance];
-                    if ([assistant respondsToSelector:@selector(isVisible)] && ![assistant isVisible]) {
-                        SRLog(@"[SpringRemote] Siri: Not visible after HID, attempting interaction consumption...");
-                        
-                        for (id interaction in siriInteractions) {
-                            if ([interaction respondsToSelector:@selector(consumeLongPress)]) {
-                                SRLog(@"[SpringRemote] Siri: Calling consumeLongPress on interaction: %@", interaction);
-                                [interaction consumeLongPress];
-                            }
-                        }
-
-                        // Fallback sequence
-                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                            if ([assistant respondsToSelector:@selector(isVisible)] && ![assistant isVisible]) {
-                                SRLog(@"[SpringRemote] Siri: Still not visible, trying handleVoiceAssistantButtonWithSource (1, 9, 2)...");
-                                int sources[] = {1, 9, 2};
-                                for (int i = 0; i < 3; i++) {
-                                    if ([assistant respondsToSelector:@selector(handleVoiceAssistantButtonWithSource:direct:)]) {
-                                        [assistant handleVoiceAssistantButtonWithSource:sources[i] direct:YES];
-                                    } else if ([assistant respondsToSelector:@selector(handleVoiceAssistantButtonWithSource:)]) {
-                                        [assistant handleVoiceAssistantButtonWithSource:sources[i]];
-                                    }
-                                }
-                            }
-                        });
-
-                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                            if ([assistant respondsToSelector:@selector(isVisible)] && ![assistant isVisible]) {
-                                SRLog(@"[SpringRemote] Siri: LAST RESORT - Open com.apple.SiriViewService");
-                                Class LSWorkspace = objc_getClass("LSApplicationWorkspace");
-                                if (LSWorkspace) {
-                                    [[LSWorkspace defaultWorkspace] openApplicationWithBundleID:@"com.apple.SiriViewService"];
-                                }
-                            }
-                        });
-                        
-                        // Ultra last resort if still nothing
-                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                             if ([assistant respondsToSelector:@selector(isVisible)] && ![assistant isVisible]) {
-                                 SRLog(@"[SpringRemote] Siri: ULTRA LAST RESORT - _presentForMainScreenAnimated");
-                                 if ([assistant respondsToSelector:@selector(_presentForMainScreenAnimated:options:completion:)]) {
-                                     [assistant _presentForMainScreenAnimated:YES options:nil completion:nil];
-                                 }
-                             }
-                        });
+                id assistant = [SBAssistantControllerClass sharedInstance];
+                if ([assistant respondsToSelector:@selector(isVisible)] && ![assistant isVisible]) {
+                    SRLog(@"[SpringRemote] Siri: LAST RESORT - Open com.apple.SiriViewService");
+                    Class LSWorkspace = objc_getClass("LSApplicationWorkspace");
+                    if (LSWorkspace) {
+                        [[LSWorkspace defaultWorkspace] openApplicationWithBundleID:@"com.apple.SiriViewService"];
                     }
                 }
             });

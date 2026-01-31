@@ -23,10 +23,15 @@
     [super viewDidLoad];
     
     self.title = @"Select Shortcut";
+    // Enable Large Titles
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.navigationController.navigationBar.tintColor = [UIColor labelColor];
+    
     self.view.backgroundColor = [UIColor systemBackgroundColor];
-    self.navigationController.navigationBar.tintColor = [UIColor systemGrayColor];
     
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ShortcutCell"];
+    self.tableView.rowHeight = 60; // Consistent sizing
     
     // Setup Search
     self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];

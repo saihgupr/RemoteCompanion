@@ -281,9 +281,12 @@
             cell.detailTextLabel.text = [shortNames componentsJoinedByString:@" > "];
         }
         cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+        // Use Monospace font for commands for better readability of code/IDs
+        cell.detailTextLabel.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
     } else {
         cell.detailTextLabel.text = @"Not configured";
         cell.detailTextLabel.textColor = [UIColor tertiaryLabelColor];
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:13]; // Regular font for placeholder
     }
     
     cell.accessoryView = nil;

@@ -3564,58 +3564,7 @@ static void setup_background_hid_listener() {
 }
 %end
 
-// --- Reachability (Home Button Double Tap) ---
 
-%hook SBReachabilityManager
-
-+ (id)sharedInstance {
-    return %orig;
-}
-
-- (void)toggleReachability {
-    SRLog(@"[SpringRemote] SBReachabilityManager toggleReachability (Double Tap detected)");
-    
-    // Execute our trigger
-    load_trigger_config();
-    NSDictionary *trigger = g_triggerConfig[@"triggers"][@"trigger_home_double_tap"];
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL triggerEnabled = [trigger[@"enabled"] boolValue];
-    
-        if (masterEnabled && triggerEnabled) {
-        SRLog(@"[SpringRemote] Home Double Tap Trigger Fired! Suppressing default Reachability.");
-        
-        // Suppress Touch ID triggers (Bio Lift) that might occur after this
-        // Dispatch to Main Queue to ensure it overrides pending Bio handlers
-        dispatch_async(dispatch_get_main_queue(), ^{
-             if (g_bioWatchdogTimer) {
-                 [g_bioWatchdogTimer invalidate];
-                 g_bioWatchdogTimer = nil;
-             }
-             g_bioFingerDownTime = 0;
-             g_bioHoldTriggered = NO;
-             // Set ignore window just in case
-             g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 1.0;
-        });
-        
-        // Haptic feedback
-        trigger_haptic();
-        
-        // Execute Actions
-        RCExecuteTrigger(@"trigger_home_double_tap");
-        
-        // SUPPRESS default Reachability behavior
-        return;
-    }
-    
-    // If trigger disabled, behave normally
-    %orig;
-}
-
-- (void)_handleSignificantUserInteraction {
-    SRLog(@"[SpringRemote] SBReachabilityManager _handleSignificantUserInteraction");
-    %orig;
-}
-%end
 
 // [Removed unused biometric hooks]
 

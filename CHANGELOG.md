@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.0~beta4] - 2026-01-30
 
+### Removed
+- **Volume Combo Trigger**: Removed "Volume Up + Down" trigger due to conflicts with NFC scanning logic.
+    - **Home Button (Double Tap)**: Removed this trigger to prevent conflicts with native Reachability and improve system stability. Since Double Click exists, Double Tap (Touch) was redundant and problematic.
+
 ### Added
 - **Siri Activation**: Added the `button siri` command and a native "Activate Siri" action in the Action Picker. Uses a robust multi-stage activation sequence (HID + Programmatic Fallbacks) for maximum reliability on iOS 15+.
 - **Power + Volume Triggers**: Added support for **Power + Volume Up** and **Power + Volume Down** combos.

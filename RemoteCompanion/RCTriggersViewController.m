@@ -177,25 +177,32 @@
 }
 
 - (void)addNewItem {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Add Action"
-        message:@"Functionality to add new custom triggers or NFC tags will go here."
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"New Trigger"
+        message:@"Select a trigger type to expand your RemoteCompanion setup."
         preferredStyle:UIAlertControllerStyleActionSheet];
         
-    [alert addAction:[UIAlertAction actionWithTitle:@"Scan NFC Tag" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-        // Find existing logic for adding NFC
-        [self tableView:self.tableView didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:self.sections.count - 1]]; 
-        // Crude way to trigger it, but works since we know the structure. 
-        // Better: refactor the "NFC Add" logic into a method.
+    [alert addAction:[UIAlertAction actionWithTitle:@"NFC Tag" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        [self startNFCScan];
+    }]];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Bluetooth / Power (Planned)" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        UIAlertController *soon = [UIAlertController alertControllerWithTitle:@"Coming Soon" message:@"Bluetooth and Power-state triggers are being developed for the next update!" preferredStyle:UIAlertControllerStyleAlert];
+        [soon addAction:[UIAlertAction actionWithTitle:@"Cool!" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:soon animated:YES completion:nil];
     }]];
     
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     
-    // For iPad support
     if (alert.popoverPresentationController) {
         alert.popoverPresentationController.barButtonItem = self.navigationItem.rightBarButtonItems.firstObject;
     }
     
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)startNFCScan {
+    RCNFCTriggerViewController *vc = [[RCNFCTriggerViewController alloc] init];
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
@@ -325,20 +332,7 @@
     NSString *triggerKey = _sections[indexPath.section][indexPath.row];
     
     if ([triggerKey isEqualToString:@"__ADD_NEW_NFC__"]) {
-        // Import class at runtime to avoid circular dependency header issues if any, or just forward declare.
-        // But better is to just use string class name or helper.
-        // We included "RCNFCTriggerViewController.h" in header? No, we need to import it.
-        // Assuming we add #import "RCNFCTriggerViewController.h"
-        
-        // Dynamic instantiation for now since I can't easily add import to top via replace without context
-        Class nfcVCClass = NSClassFromString(@"RCNFCTriggerViewController");
-        if (nfcVCClass) {
-            UIViewController *vc = [[nfcVCClass alloc] init];
-            [self.navigationController pushViewController:vc animated:YES];
-        } else {
-            // Fallback if class not found (should be there)
-            NSLog(@"RCNFCTriggerViewController class not found!");
-        }
+        [self startNFCScan];
         return;
     }
     

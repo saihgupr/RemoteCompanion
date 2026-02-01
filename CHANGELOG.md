@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 
 
+## [2.0.0~beta6] - 2026-02-01
+
+### Fixed
+- **Safe Mode Crash**: Resolved a race condition and main-thread violation when re-enabling triggers from Settings.
+
 ## [2.0.0~beta5] - 2026-01-31
 
 ### UI Overhaul (Visual Refresh)
@@ -15,7 +20,6 @@ All notable changes to this project will be documented in this file.
 - **Settings**: Polished the Settings page with Large Titles, consistent headers, and a **sticky footer** for version info.
 - **App Icon**: Updated with a new modern design and flattened assets to resolve system rendering artifacts.
 - **NFC Scanning Toggle**: Added a toggle in Settings to enable/disable NFC scanning, preventing conflicts with Apple Pay.
-- **Fixed Safe Mode Crash**: Resolved a race condition and main-thread violation when re-enabling triggers from Settings.
 
 ## [2.0.0~beta4] - 2026-01-30
 

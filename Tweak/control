@@ -1,7 +1,7 @@
 Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion
 Depends: mobilesubstrate, firmware (>= 15.0), netcat
-Version: 2.0.0~beta5
+Version: 2.0.0~beta6
 Architecture: iphoneos-arm64
 Description: Remote Companion App & Tweak
 Maintainer: Saihgupr

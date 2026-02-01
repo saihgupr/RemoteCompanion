@@ -93,12 +93,19 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             _config[@"tcpEnabled"] = @NO;
             [self saveConfig];
         }
+        
+        // Auto-add nfcEnabled if missing
+        if (_config[@"nfcEnabled"] == nil) {
+            _config[@"nfcEnabled"] = @YES;
+            [self saveConfig];
+        }
     } else {
         // Default config with all triggers
         NSLog(@"[RCConfigManager] Using default config");
         _config = [@{
             @"masterEnabled": @YES,
             @"tcpEnabled": @NO,
+            @"nfcEnabled": @YES,
             @"triggers": [@{
                 @"volume_up_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"volume_down_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
@@ -150,6 +157,22 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 
 - (void)setTcpEnabled:(BOOL)tcpEnabled {
     _config[@"tcpEnabled"] = @(tcpEnabled);
+    [self saveConfig];
+}
+
+- (BOOL)nfcEnabled {
+    // Default to YES if missing
+    if (!_config[@"nfcEnabled"]) {
+        return YES;
+    }
+    return [_config[@"nfcEnabled"] boolValue];
+}
+
+- (void)setNfcEnabled:(BOOL)nfcEnabled {
+    _config[@"nfcEnabled"] = @(nfcEnabled);
+    if (!nfcEnabled) {
+        [self stopBackgroundNFC];
+    }
     [self saveConfig];
 }
 
@@ -337,6 +360,10 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     // 1. Master Switch (if present)
     if (importedConfig[@"masterEnabled"]) {
         _config[@"masterEnabled"] = importedConfig[@"masterEnabled"];
+    }
+    
+    if (importedConfig[@"nfcEnabled"]) {
+        _config[@"nfcEnabled"] = importedConfig[@"nfcEnabled"];
     }
     // If missing in import, keep current local setting.
     

@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - **Action Selection**: Updated the "Add Action" screen with Large Titles, larger touch targets (60pt), and visual cues (chevrons) for actions that require input.
 - **Settings**: Polished the Settings page with Large Titles, consistent headers, and a **sticky footer** for version info.
 - **App Icon**: Updated with a new modern design and flattened assets to resolve system rendering artifacts.
+- **NFC Scanning Toggle**: Added a toggle in Settings to enable/disable NFC scanning, preventing conflicts with Apple Pay.
 
 ## [2.0.0~beta4] - 2026-01-30
 

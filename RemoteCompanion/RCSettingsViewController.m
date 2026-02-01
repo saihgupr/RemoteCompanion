@@ -8,6 +8,7 @@
 @property (nonatomic, strong) UILabel *appTitleLabel;
 @property (nonatomic, strong) UISwitch *masterSwitch;
 @property (nonatomic, strong) UISwitch *tcpSwitch;
+@property (nonatomic, strong) UISwitch *nfcSwitch;
 @property (nonatomic, assign) BOOL isExporting;
 @end
 
@@ -118,7 +119,7 @@
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 2; // Master toggle + TCP toggle
+    if (section == 0) return 3; // Master toggle + TCP toggle + NFC toggle
     return 2; // Export, Import
 }
 
@@ -139,6 +140,13 @@
             _tcpSwitch.on = [RCConfigManager sharedManager].tcpEnabled;
             [_tcpSwitch addTarget:self action:@selector(tcpToggleChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = _tcpSwitch;
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"NFC Scanning";
+            _nfcSwitch = [[UISwitch alloc] init];
+            _nfcSwitch.on = [RCConfigManager sharedManager].nfcEnabled;
+            [_nfcSwitch addTarget:self action:@selector(nfcToggleChanged:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = _nfcSwitch;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         }
     } else {
@@ -178,6 +186,10 @@
 
 - (void)tcpToggleChanged:(UISwitch *)sender {
     [RCConfigManager sharedManager].tcpEnabled = sender.on;
+}
+
+- (void)nfcToggleChanged:(UISwitch *)sender {
+    [RCConfigManager sharedManager].nfcEnabled = sender.on;
 }
 
 - (void)exportConfig {
@@ -288,6 +300,7 @@
     if (success) {
         _masterSwitch.on = [RCConfigManager sharedManager].masterEnabled;
         _tcpSwitch.on = [RCConfigManager sharedManager].tcpEnabled;
+        _nfcSwitch.on = [RCConfigManager sharedManager].nfcEnabled;
         
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Successful" message:@"Configuration restored. Return to Triggers to see changes." preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];

@@ -11,6 +11,9 @@ extern void RCExecuteTrigger(NSString *triggerKey);
 // Declare the external logging function from Tweak.x
 extern void SRLog(NSString *format, ...);
 
+// Declare the external NFC enabled check
+extern BOOL RCIsNFCEnabled();
+
 // ============ Private NearField API ============
 @class NFReaderSession, NFTag;
 
@@ -68,6 +71,11 @@ extern void SRLog(NSString *format, ...);
 }
 
 - (void)startScanning {
+    if (!RCIsNFCEnabled()) {
+        SRLog(@"[NFC] Scanning is DISABLED in settings, skipping");
+        return;
+    }
+
     if (self.isScanning) {
         SRLog(@"[NFC] Already scanning, skipping");
         return;
@@ -186,6 +194,10 @@ extern void SRLog(NSString *format, ...);
 }
 
 - (void)handleScreenWake {
+    if (!RCIsNFCEnabled()) {
+        return;
+    }
+
     // Prevent duplicate handling within short window
     if (self.wakeHandled) {
         // [NFC-WAKE] Wake already handled recently, skipping

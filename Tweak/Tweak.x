@@ -911,6 +911,17 @@ void RCExecuteTrigger(NSString *triggerKey) {
     });
 }
 
+BOOL RCIsNFCEnabled() {
+    if (!g_triggerConfig) {
+        load_trigger_config();
+    }
+    // Default to YES if missing
+    if (!g_triggerConfig[@"nfcEnabled"]) {
+        return YES;
+    }
+    return [g_triggerConfig[@"nfcEnabled"] boolValue];
+}
+
 // ============ LUA INTERPRETER ============
 
 // Lua binding: openURL(urlString)

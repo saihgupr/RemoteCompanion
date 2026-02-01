@@ -62,7 +62,7 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 
 ### Hardware Triggers (Tweak App)
 Configure these in the `RemoteCompanion` app for custom action sequences. Tip: **Long-press** any trigger in the app to instantly test and run its assigned actions.
-- **NFC Triggers**: Scan physical NFC tags to run actions. Automatically scans for tags briefly when the screen wakes.
+- **NFC Triggers**: Scan physical NFC tags to run actions. Automatically scans for tags briefly when the screen wakes. (Optional toggle **NFC Scanning** off in Settings).
 - **Ringer Switch**: Mute/Unmute toggle.
 - **Volume Buttons**: Long hold Up/Down (0.3s) or **Volume Up + Down** combo.
 - **Power Button**: Double-tap or Long-press.
@@ -154,6 +154,14 @@ service: shell_command.iphone_remote
 data:
   cmd: 'play'
 ```
+## Troubleshooting
+
+### Apple Pay Issues
+If you experience the "Updating Cards" screen or other conflicts with Apple Pay when waking your device, you can disable the background NFC scanning feature.
+1. Go to the **Settings** tab (gear icon).
+2. Toggle off **NFC Scanning**.
+
+This ensures the tweak does not attempt to access the NFC controller on wake, resolving conflicts with system services.
 
 ## Support & Feedback
 

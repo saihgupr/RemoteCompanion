@@ -37,15 +37,16 @@
     [super viewDidLoad];
     
     // Elegant grey tint
-    self.navigationController.navigationBar.tintColor = [UIColor systemGrayColor];
+    self.navigationController.navigationBar.tintColor = [UIColor labelColor];
     
     self.title = [[RCConfigManager sharedManager] displayNameForTrigger:_triggerKey];
     
-    // Add action button
+    // Setup Navigation Items
     UIBarButtonItem *addButton = [[UIBarButtonItem alloc] 
         initWithBarButtonSystemItem:UIBarButtonSystemItemAdd 
         target:self 
         action:@selector(addAction)];
+        
     self.navigationItem.rightBarButtonItem = addButton;
 
     // Add tap gesture to title if it's an NFC trigger
@@ -62,18 +63,20 @@
         self.navigationItem.titleView = titleLabel;
     }
     
-    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
+    // Enable Large Titles
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
     // Load actions
     _actions = [[[RCConfigManager sharedManager] actionsForTrigger:_triggerKey] mutableCopy];
     
-    // Enable editing for reorder
-    self.tableView.editing = YES;
-    self.tableView.allowsSelectionDuringEditing = YES;
+    // Default to NOT editing to show clean UI
+    self.tableView.editing = NO;
+    self.navigationItem.rightBarButtonItems = @[addButton, self.editButtonItem];
     
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ActionCell"];
-    self.tableView.rowHeight = 50;
+    self.tableView.rowHeight = 70; // Increased height for subtitles
 }
 
 - (void)renameTrigger {
@@ -336,8 +339,20 @@
     return _actions.count;
 }
 
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return _actions.count > 0 ? @"Action Sequence" : nil;
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    if (_actions.count == 0) return nil;
+    
+    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 40)];
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(20, 15, tableView.bounds.size.width - 40, 20)];
+    label.text = @"ACTION SEQUENCE";
+    label.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    label.textColor = [UIColor secondaryLabelColor];
+    [headerView addSubview:label];
+    return headerView;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return _actions.count > 0 ? 40.0f : 0;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
@@ -348,12 +363,56 @@
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ActionCell" forIndexPath:indexPath];
+    // Use Subtitle style
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ActionCell"];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ActionCell"];
+    }
     
     NSString *action = _actions[indexPath.row];
-    cell.textLabel.text = [self displayNameForCommand:action];
+    NSString *cleanName = [self displayNameForCommand:action];
+    NSString *subtitle = nil;
+    
+    // Logic to separate "Type" from "Value"
+    if ([action hasPrefix:@"exec "]) {
+        cell.textLabel.text = @"Terminal Command";
+        subtitle = [action substringFromIndex:5];
+    } else if ([action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
+        cell.textLabel.text = @"Lua Script";
+        subtitle = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
+    } else if ([action hasPrefix:@"delay "]) {
+        cell.textLabel.text = @"Wait";
+        subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
+    } else if ([action hasPrefix:@"shortcut:"]) {
+        cell.textLabel.text = @"Run Shortcut";
+        subtitle = [action substringFromIndex:9];
+    } else if ([action hasPrefix:@"uiopen "]) {
+        cell.textLabel.text = @"Open App";
+        subtitle = [action substringFromIndex:7];
+    } else {
+        // Standard commands
+        cell.textLabel.text = cleanName;
+        subtitle = nil;
+    }
+
     cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
     cell.textLabel.textColor = [UIColor labelColor];
+    
+    if (subtitle) {
+        cell.detailTextLabel.text = subtitle;
+        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+        
+        // Use monospace for code-like things
+        if ([action hasPrefix:@"exec "] || [action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
+            cell.detailTextLabel.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
+            cell.detailTextLabel.numberOfLines = 1;
+            cell.detailTextLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
+        } else {
+             cell.detailTextLabel.font = [UIFont systemFontOfSize:15];
+        }
+    } else {
+        cell.detailTextLabel.text = nil;
+    }
     
     NSString *iconName = [self iconForCommand:action];
     if ([iconName hasPrefix:@"USER_APP:"]) {
@@ -363,7 +422,7 @@
         cell.imageView.tintColor = nil; // Keep original colors
     } else {
         cell.imageView.image = [UIImage systemImageNamed:iconName];
-        cell.imageView.tintColor = [UIColor secondaryLabelColor];
+        cell.imageView.tintColor = [UIColor systemGrayColor];
     }
     
     cell.showsReorderControl = YES;

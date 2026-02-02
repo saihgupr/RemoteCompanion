@@ -23,6 +23,21 @@
 - (void)start;
 @end
 
+@interface SiriPresentationOptions : NSObject
+- (void)setWakeScreen:(BOOL)arg1;
+- (void)setHideOtherWindowsDuringAppearance:(BOOL)arg1;
+@end
+
+@interface SBAssistantController : NSObject
++ (id)sharedInstance;
+- (BOOL)isVisible;
+- (void)handleVoiceAssistantButtonWithSource:(long long)arg1;
+- (void)handleVoiceAssistantButtonWithSource:(long long)arg1 direct:(BOOL)arg2;
+- (void)_presentForMainScreenAnimated:(BOOL)arg1 options:(id)arg2 completion:(id)arg3;
+- (void)handleSiriButtonDownWithSource:(long long)arg1;
+- (void)handleSiriButtonUpWithSource:(long long)arg1;
+@end
+
 // Lua interpreter
 #include "lua.h"
 #include "lauxlib.h"
@@ -34,9 +49,53 @@ typedef struct __IOHIDEventSystemClient * IOHIDEventSystemClientRef;
 typedef uint32_t IOHIDEventOptionBits;
 typedef uint32_t IOOptionBits;
 
+void SRLog(NSString *format, ...);
+
 static IOHIDEventSystemClientRef (*_IOHIDEventSystemClientCreate)(CFAllocatorRef allocator);
 static IOHIDEventRef (*_IOHIDEventCreateKeyboardEvent)(CFAllocatorRef allocator, uint64_t timestamp, uint32_t usagePage, uint32_t usage, boolean_t down, IOHIDEventOptionBits flags);
 static void (*_IOHIDEventSystemClientDispatchEvent)(IOHIDEventSystemClientRef client, IOHIDEventRef event);
+
+// Forward declarations for Siri interaction
+@interface SBVoiceControlController : NSObject
+- (void)handleHomeButtonHeld;
+@end
+
+@interface SBSiriHardwareButtonInteraction : NSObject
+- (instancetype)initWithSiriButton:(id)arg1;
+- (void)consumeInitialPressDown;
+- (void)consumeSinglePressUp;
+- (void)consumeLongPress;
+@end
+
+// Global captured instances
+static SBVoiceControlController *sharedVoiceControl = nil;
+static NSHashTable *siriInteractions = nil;
+
+@interface LSApplicationWorkspace : NSObject
++ (id)defaultWorkspace;
+- (BOOL)openApplicationWithBundleID:(id)arg1;
+@end
+
+%hook SBVoiceControlController
+- (id)init {
+    id r = %orig;
+    sharedVoiceControl = r;
+    SRLog(@"[SpringRemote] Captured SBVoiceControlController init: %@", r);
+    return r;
+}
+%end
+
+%hook SBSiriHardwareButtonInteraction
+- (id)initWithSiriButton:(id)arg1 {
+    id r = %orig;
+    if (!siriInteractions) {
+        siriInteractions = [NSHashTable weakObjectsHashTable];
+    }
+    [siriInteractions addObject:r];
+    SRLog(@"[SpringRemote] Captured SBSiriHardwareButtonInteraction init: %@", r);
+    return r;
+}
+%end
 
 // Touch/Digitizer event creation
 static IOHIDEventRef (*_IOHIDEventCreateDigitizerEvent)(CFAllocatorRef allocator, uint64_t timeStamp,
@@ -57,6 +116,7 @@ static void (*_IOHIDEventSetSenderID)(IOHIDEventRef event, uint64_t senderID);
 #define kHIDUsage_GD_SystemSleep 0x82
 #define kHIDUsage_Csmr_Power     0x30
 #define kHIDUsage_Csmr_Menu      0x40 // Home button usually
+#define kHIDUsage_Csmr_VoiceCommand 0xCF
 #define kHIDPage_KeyboardOrKeypad 0x07
 #define kHIDUsage_Csmr_VolumeIncrement 0xE9
 #define kHIDUsage_Csmr_VolumeDecrement 0xEA
@@ -664,17 +724,20 @@ static NSString *find_config_path() {
 static void load_trigger_config() {
     @autoreleasepool {
         // Find the config file
-        g_resolvedConfigPath = find_config_path();
+        NSString *path = find_config_path();
         
-        if (g_resolvedConfigPath) {
-            g_triggerConfig = [NSDictionary dictionaryWithContentsOfFile:g_resolvedConfigPath];
-            if (g_triggerConfig) {
+        if (path) {
+            NSDictionary *newConfig = [NSDictionary dictionaryWithContentsOfFile:path];
+            if (newConfig) {
+                // Thread-safe update: replace the pointer
+                g_triggerConfig = newConfig;
+                g_resolvedConfigPath = path;
                 SRLog(@"[SpringRemote] Loaded trigger config from %@: masterEnabled=%@, triggers=%lu",
-                      g_resolvedConfigPath,
+                      path,
                       g_triggerConfig[@"masterEnabled"],
                       (unsigned long)[g_triggerConfig[@"triggers"] count]);
             } else {
-                SRLog(@"[SpringRemote] Failed to parse config at %@", g_resolvedConfigPath);
+                SRLog(@"[SpringRemote] Failed to parse config at %@", path);
             }
         } else {
             SRLog(@"[SpringRemote] No trigger config found at shared path or in app containers");
@@ -691,10 +754,22 @@ static void update_edge_gestures();
 
 static void config_changed_callback(CFNotificationCenterRef center, void *observer,
                                     CFStringRef name, const void *object, CFDictionaryRef userInfo) {
-    SRLog(@"[SpringRemote] Config changed notification received, reloading...");
-    load_trigger_config();
-    update_simulation_observers();
-    update_edge_gestures(); // Dynamically add/remove gesture recognizers
+    SRLog(@"[SpringRemote] Config changed notification received.");
+    
+    // Ensure config loading and UI/Gesture updates happen on the main thread
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @try {
+            SRLog(@"[SpringRemote] Reloading config on main thread...");
+            load_trigger_config();
+            SRLog(@"[SpringRemote] Config loaded. Updating simulation observers...");
+            update_simulation_observers();
+            SRLog(@"[SpringRemote] Simulation observers updated. Updating edge gestures...");
+            update_edge_gestures(); 
+            SRLog(@"[SpringRemote] Edge gestures updated. Config reload complete.");
+        } @catch (NSException *e) {
+            SRLog(@"[SpringRemote] CRITICAL ERROR in config_changed_callback: %@\nStack: %@", e, e.callStackSymbols);
+        }
+    });
 }
 
 static void register_config_observer() {
@@ -768,31 +843,35 @@ static void simulate_trigger_callback(CFNotificationCenterRef center, void *obse
 }
 
 static void update_simulation_observers() {
-    static NSMutableSet *g_registeredTriggers = nil;
-    if (!g_registeredTriggers) g_registeredTriggers = [[NSMutableSet alloc] init];
-    
-    if (!g_triggerConfig) load_trigger_config();
-    if (!g_triggerConfig) return;
-    
-    NSDictionary *triggers = g_triggerConfig[@"triggers"];
-    int count = 0;
-    for (NSString *key in triggers) {
-        if (![g_registeredTriggers containsObject:key]) {
-            NSString *notificationName = [NSString stringWithFormat:@"%s%@", kSimulateNotificationPrefix, key];
-            CFNotificationCenterAddObserver(
-                CFNotificationCenterGetDarwinNotifyCenter(),
-                NULL,
-                simulate_trigger_callback,
-                (__bridge CFStringRef)notificationName,
-                NULL,
-                CFNotificationSuspensionBehaviorDeliverImmediately
-            );
-            [g_registeredTriggers addObject:key];
-            count++;
+    @try {
+        static NSMutableSet *g_registeredTriggers = nil;
+        if (!g_registeredTriggers) g_registeredTriggers = [[NSMutableSet alloc] init];
+        
+        if (!g_triggerConfig) load_trigger_config();
+        if (!g_triggerConfig) return;
+        
+        NSDictionary *triggers = g_triggerConfig[@"triggers"];
+        int count = 0;
+        for (NSString *key in triggers) {
+            if (![g_registeredTriggers containsObject:key]) {
+                NSString *notificationName = [NSString stringWithFormat:@"%s%@", kSimulateNotificationPrefix, key];
+                CFNotificationCenterAddObserver(
+                    CFNotificationCenterGetDarwinNotifyCenter(),
+                    NULL,
+                    simulate_trigger_callback,
+                    (__bridge CFStringRef)notificationName,
+                    NULL,
+                    CFNotificationSuspensionBehaviorDeliverImmediately
+                );
+                [g_registeredTriggers addObject:key];
+                count++;
+            }
         }
-    }
-    if (count > 0) {
-        SRLog(@"Registered %d NEW simulation observers (Total: %lu)", count, (unsigned long)g_registeredTriggers.count);
+        if (count > 0) {
+            SRLog(@"Registered %d NEW simulation observers (Total: %lu)", count, (unsigned long)g_registeredTriggers.count);
+        }
+    } @catch (NSException *e) {
+         SRLog(@"[SpringRemote] ERROR in update_simulation_observers: %@", e);
     }
 }
 
@@ -849,6 +928,17 @@ void RCExecuteTrigger(NSString *triggerKey) {
             usleep(10000); 
         }
     });
+}
+
+BOOL RCIsNFCEnabled() {
+    if (!g_triggerConfig) {
+        load_trigger_config();
+    }
+    // Default to YES if missing
+    if (!g_triggerConfig[@"nfcEnabled"]) {
+        return YES;
+    }
+    return [g_triggerConfig[@"nfcEnabled"] boolValue];
 }
 
 // ============ LUA INTERPRETER ============
@@ -1324,9 +1414,29 @@ static NSString *handle_command(NSString *cmd) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeDecrement, 0, 0);
         } else if ([btn isEqualToString:@"mute"]) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Mute, 0, 0);
+        } else if ([btn isEqualToString:@"siri"]) {
+
+            
+            // Use HID Voice Command (0xCF) - Acts like a headset button, typically no "Home" side-effects
+            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VoiceCommand, 600000000, 0); // 0.6s hold
+            
+            // Fallback: Bundle Launch (Reliable but loses context)
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                Class SBAssistantControllerClass = objc_getClass("SBAssistantController");
+                id assistant = [SBAssistantControllerClass sharedInstance];
+                if ([assistant respondsToSelector:@selector(isVisible)] && ![assistant isVisible]) {
+
+                    Class LSWorkspace = objc_getClass("LSApplicationWorkspace");
+                    if (LSWorkspace) {
+                        [[LSWorkspace defaultWorkspace] openApplicationWithBundleID:@"com.apple.SiriViewService"];
+                    }
+                }
+            });
         } else {
-            SRLog(@"Unknown button: %@. Supported: power, home, volup, voldown, mute", btn);
+            SRLog(@"Unknown button: %@. Supported: power, home, volup, voldown, mute, siri", btn);
         }
+    } else if ([cleanCmd isEqualToString:@"siri"]) {
+        return handle_command(@"button siri");
     } else if ([cleanCmd isEqualToString:@"is-locked"]) {
         // Query lock state
         // Use dispatch_sync to wait for result from main thread
@@ -1344,6 +1454,77 @@ static NSString *handle_command(NSString *cmd) {
             }
         });
         return [NSString stringWithFormat:@"%@\n", result];
+    } else if ([cleanCmd hasPrefix:@"debug-class "]) {
+        NSString *className = [[cleanCmd substringFromIndex:12] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        SRLog(@"[SpringRemote] Debugging class: %@", className);
+        Class cls = objc_getClass([className UTF8String]);
+        if (!cls) {
+            SRLog(@"[SpringRemote] Class not found: %@", className);
+            return @"Class not found\n";
+        }
+        
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList(cls, &count);
+        SRLog(@"[SpringRemote] Class %@ has %u methods:", className, count);
+        for (unsigned int i = 0; i < count; i++) {
+            SEL sel = method_getName(methods[i]);
+            SRLog(@"[SpringRemote]   - %@", NSStringFromSelector(sel));
+        }
+        free(methods);
+        return [NSString stringWithFormat:@"Found %u methods for %@. Check logs.\n", count, className];
+    } else if ([cleanCmd hasPrefix:@"debug-classes "]) {
+        NSString *search = [[cleanCmd substringFromIndex:14] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        SRLog(@"[SpringRemote] Searching for classes containing: %@", search);
+        
+        int numClasses = objc_getClassList(NULL, 0);
+        if (numClasses > 0) {
+            Class *classes = (Class *)malloc(sizeof(Class) * numClasses);
+            numClasses = objc_getClassList(classes, numClasses);
+            SRLog(@"[SpringRemote] Found %d total classes. Filtering...", numClasses);
+            for (int i = 0; i < numClasses; i++) {
+                NSString *className = NSStringFromClass(classes[i]);
+                if ([className rangeOfString:search options:NSCaseInsensitiveSearch].location != NSNotFound) {
+                    SRLog(@"[SpringRemote]   * %@", className);
+                }
+            }
+            free(classes);
+        }
+        return @"Search complete. Check logs.\n";
+    } else if ([cleanCmd hasPrefix:@"debug-call "]) {
+        // debug-call ClassName selectorName
+        NSString *args = [cleanCmd substringFromIndex:11];
+        NSArray *parts = [args componentsSeparatedByString:@" "];
+        if (parts.count >= 2) {
+            NSString *className = parts[0];
+            NSString *selName = parts[1];
+            Class cls = objc_getClass([className UTF8String]);
+            if (cls) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    id target = nil;
+                    if ([cls respondsToSelector:@selector(sharedInstance)]) {
+                        target = [cls performSelector:@selector(sharedInstance)];
+                    } else if ([cls respondsToSelector:@selector(sharedController)]) {
+                        target = [cls performSelector:@selector(sharedController)];
+                    }
+                    
+                    if (target) {
+                        SEL sel = NSSelectorFromString(selName);
+                        if ([target respondsToSelector:sel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                            id result = [target performSelector:sel];
+#pragma clang diagnostic pop
+                            SRLog(@"[SpringRemote] debug-call [%@ %@] returned: %@", className, selName, result);
+                        } else {
+                            SRLog(@"[SpringRemote] debug-call: Target does not respond to %@", selName);
+                        }
+                    } else {
+                        SRLog(@"[SpringRemote] debug-call: Could not get instance for %@", className);
+                    }
+                });
+            }
+        }
+        return @"Call initiated. Check logs.\n";
     } else if ([cleanCmd isEqualToString:@"lock status"]) {
         __block NSString *result = @"error";
         dispatch_sync(dispatch_get_main_queue(), ^{
@@ -2337,6 +2518,22 @@ static NSString *handle_command(NSString *cmd) {
         dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC));
         return result ?: @"Error: Timeout connecting to AirPlay device\n";
 
+    } else if ([cleanCmd isEqualToString:@"respring"]) {
+        SRLog(@"[SpringRemote] Triggering Respring via killbackboardd");
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Reliable Tweak way: Kill backboardd
+            pid_t pid;
+            const char* args[] = { "killall", "-9", "backboardd", NULL };
+            posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char* const*)args, NULL);
+            
+            // Fallback for non-rootless
+            if (pid <= 0) {
+                 const char* args2[] = { "killall", "-9", "backboardd", NULL };
+                 posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char* const*)args2, NULL);
+            }
+        });
+        return @"Device Respringing...\n";
     } else if ([cleanCmd hasPrefix:@"shortcut:"]) {
         NSString *shortcutName = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         
@@ -2496,7 +2693,18 @@ static NSTimer *g_lockButtonTimer = nil;
 static BOOL g_lockButtonTriggered = NO;
 static NSTimer *g_systemPowerOffTimer = nil; // New for dual-stage
 static BOOL g_forceSystemLongPress = NO;     // New for dual-stage
-static NSTimeInterval g_lastPowerUpTime = 0;
+static BOOL g_powerIsDown = NO;
+static BOOL g_powerVolComboTriggered = NO;
+
+// Biometric / Touch ID Globals
+static NSTimeInterval g_bioFingerDownTime = 0;
+static BOOL g_bioHoldTriggered = NO;
+static NSTimer *g_bioWatchdogTimer = nil;
+static NSTimeInterval g_bioIgnoreUntil = 0;
+static BOOL g_bioWasLocked = NO;
+
+
+// static NSTimeInterval g_lastPowerUpTime = 0; // Removed unused variable
 
 
 
@@ -2507,12 +2715,56 @@ static void trigger_haptic() {
 
 // --- SAFE VOLUME HOLD IMPLEMENTATION ---
 
+
+static int g_lastRingerState = -1;
+
+%hook SBRingerControl
+
+-(void)setRingerMuted:(BOOL)muted {
+    %orig;
+
+    if (g_lastRingerState == -1) {
+        // First initialization (respring/reboot) - just track state, don't fire
+        SRLog(@"[SpringRemote] SBRingerControl Initial State: %d", muted);
+        g_lastRingerState = (int)muted;
+        return;
+    }
+
+    if (g_lastRingerState == (int)muted) {
+        // State hasn't changed, ignore
+        return;
+    }
+
+    // State changed
+    g_lastRingerState = (int)muted;
+    SRLog(@"[SpringRemote] SBRingerControl setRingerMuted: %d", muted);
+    
+    // Fire generic toggle status
+    RCExecuteTrigger(@"trigger_ringer_toggle");
+
+    if (muted) {
+        RCExecuteTrigger(@"trigger_ringer_mute");
+    } else {
+        RCExecuteTrigger(@"trigger_ringer_unmute");
+    }
+}
+
+%end
+
 %hook SBVolumeHardwareButtonActions
 
 - (void)volumeIncreasePressDownWithModifiers:(long long)arg1 {
     if (g_volIsReplaying) {
         %orig;
         return;
+    }
+
+    if (g_powerIsDown) {
+        load_trigger_config();
+        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"power_volume_up"][@"enabled"] boolValue]) {
+            SRLog(@"[SpringRemote] Suppressing Volume Up because Power is DOWN (Combo)");
+            return;
+        }
     }
 
     g_volUpIsDown = YES;
@@ -2584,6 +2836,14 @@ static void trigger_haptic() {
     if (g_volIsReplaying) {
         %orig;
         return;
+    }
+
+    if (g_powerIsDown) {
+        load_trigger_config();
+        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"power_volume_down"][@"enabled"] boolValue]) {
+            SRLog(@"[SpringRemote] Suppressing Volume Down because Power is DOWN (Combo)");
+            return;
+        }
     }
 
     g_volDownIsDown = YES;
@@ -2688,6 +2948,10 @@ typedef void (*IOHIDEventSystemClientEventCallback)(void* target, void* refcon, 
 
 static int g_homeClickCount = 0;
 static NSTimer *g_homeClickTimer = nil;
+
+// Power Button Multi-Click Globals
+static int g_powerClickCount = 0;
+static NSTimer *g_powerClickTimer = nil;
 static NSTimeInterval g_lastHIDTime = 0;
 static BOOL g_hidButtonDown = NO;
 static IOHIDEventSystemClientRef g_hidClient = NULL;
@@ -2752,11 +3016,210 @@ static void RC_CheckAndFire() {
     }];
 }
 
+static void RC_CheckAndFirePower();
+
+static void RC_ProcessPowerClick() {
+    // 1. Reset timer
+    if (g_powerClickTimer) {
+        [g_powerClickTimer invalidate];
+        g_powerClickTimer = nil;
+    }
+    
+    g_powerClickCount++;
+    SRLog(@"[SpringRemote-HID] ⚡️ POWER CLICK DETECTED. Count: %d", g_powerClickCount);
+    
+    // Dispatch timer scheduling to Main Thread to be safe with Timers/RunLoops
+    dispatch_async(dispatch_get_main_queue(), ^{
+        RC_CheckAndFirePower();
+    });
+}
+
+// Power Button Multi-Click Logic
+static void RC_CheckAndFirePower() {
+    // 1. Reset timer
+    if (g_powerClickTimer) {
+        [g_powerClickTimer invalidate];
+        g_powerClickTimer = nil;
+    }
+    
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL quadEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"power_quadruple_click"][@"enabled"] boolValue];
+    
+    // 3. IMMEDIATE FIRE CHECK (Quadruple)
+    if (quadEnabled && g_powerClickCount >= 4) {
+        SRLog(@"[SpringRemote] 🚀 POWER QUAD CLICK (4+) REACHED! Firing.");
+        trigger_haptic();
+        RCExecuteTrigger(@"power_quadruple_click");
+        g_powerClickCount = 0;
+        return;
+    }
+    
+    // 4. Timeout
+    NSTimeInterval timeout = 0.4; 
+    
+    // 5. Schedule Timer
+    g_powerClickTimer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
+        g_powerClickTimer = nil;
+        SRLog(@"[SpringRemote] POWER SEQUENCE ENDED. Final count: %d", g_powerClickCount);
+        
+        NSString *triggerKey = nil;
+        
+        if (g_powerClickCount == 4) triggerKey = @"power_quadruple_click"; // Backup if immediate failed or disabled? No, if disabled we land here.
+        else if (g_powerClickCount == 3) triggerKey = @"power_triple_click";
+        else if (g_powerClickCount == 2) triggerKey = @"power_double_tap";
+        
+        if (triggerKey && masterEnabled) {
+            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+            if (enabled) {
+                SRLog(@"[SpringRemote] ✅ FIRING POWER TRIGGER: %@", triggerKey);
+                trigger_haptic();
+                RCExecuteTrigger(triggerKey);
+            }
+        }
+        g_powerClickCount = 0;
+    }];
+}
+
 static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientRef service, IOHIDEventRef event) {
-    if (IOHIDEventGetType(event) == kIOHIDEventTypeKeyboard) {
+    int type = IOHIDEventGetType(event);
+    
+    if (type == 29) { // Biometric Event (Finger on sensor)
+        // Toggle Logic for "Hold" (Fire by itself after 1.0s)
+        // Assumption: Sensor sends event on DOWN ... (Silence) ... and UP.
+        
+        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            load_trigger_config();
+            BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
+                ([g_triggerConfig[@"triggers"][@"touchid_hold"][@"enabled"] boolValue] || 
+                 [g_triggerConfig[@"triggers"][@"touchid_tap"][@"enabled"] boolValue]);
+            if (!enabled) return;
+
+            // DEBOUNCE CHECK:
+            if (now < g_bioIgnoreUntil) {
+                // SRLog(@"[SpringRemote-Bio] Ignoring Event (Debounce)");
+                return;
+            }
+
+            // STATE-BASED TOGGLE LOGIC:
+            NSTimeInterval diff = (g_bioFingerDownTime == 0) ? 0 : (now - g_bioFingerDownTime);
+            BOOL isStale = (diff > 5.0); // If >5s, assume we missed a lift event and reset.
+
+            if (g_bioFingerDownTime != 0 && !isStale) {
+                // STATE = DOWN. This event must be LIFT.
+                
+                // VARIABLE DELAY:
+                // If we started on the lockscreen, we need a bigger window (0.4s) for biometrics to "win" the race.
+                // If we're already unlocked, we want it fast (0.05s) for responsiveness.
+                NSTimeInterval liftDelay = g_bioWasLocked ? 0.4 : 0.05;
+
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(liftDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    if (g_bioFingerDownTime == 0) return; // Already handled or reset
+
+                    // Cancel timer if running.
+                    if (g_bioWatchdogTimer) {
+                        [g_bioWatchdogTimer invalidate];
+                        g_bioWatchdogTimer = nil;
+
+                        NSTimeInterval now_lift = [[NSDate date] timeIntervalSince1970];
+                        if (now_lift < g_bioIgnoreUntil) {
+                            SRLog(@"[SpringRemote-Bio] Suppressing Tap (Finger Lift within Ignore Window)");
+                            g_bioFingerDownTime = 0;
+                            g_bioHoldTriggered = NO;
+                            return;
+                        }
+
+                        // STATE-AWARE SUPPRESSION:
+                        // If we were locked when we put our finger down, but we are now UNLOCKED, 
+                        // this was an unlock attempt. Skip the tap.
+                        Class LSMC = objc_getClass("SBLockScreenManager");
+                        SBLockScreenManager *lsm = LSMC ? [LSMC sharedInstance] : nil;
+                        BOOL currentlyLocked = lsm ? [lsm isUILocked] : NO;
+                        
+                        if (g_bioWasLocked && !currentlyLocked) {
+                            SRLog(@"[SpringRemote-Bio] Suppressing Tap (Finger Lift after Unlock Match Detected)");
+                            g_bioFingerDownTime = 0;
+                            g_bioHoldTriggered = NO;
+                            return;
+                        }
+
+                        if ([g_triggerConfig[@"triggers"][@"touchid_tap"][@"enabled"] boolValue]) {
+                            trigger_haptic();
+                            RCExecuteTrigger(@"touchid_tap");
+                        }
+                    }
+                    g_bioFingerDownTime = 0; // Reset State to UP.
+                    g_bioHoldTriggered = NO;
+                    
+                    // START DEBOUNCE (Ignore subsequent events for 0.5s to squash "bouncing")
+                    g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 0.5;
+                });
+
+            } else {
+                // STATE = UP (or Stale). This event must be DOWN.
+                // Start Timer!
+                g_bioFingerDownTime = now; // Set State to DOWN.
+                
+                // Track initial lock state
+                Class LSMC = objc_getClass("SBLockScreenManager");
+                SBLockScreenManager *lsm = LSMC ? [LSMC sharedInstance] : nil;
+                g_bioWasLocked = lsm ? [lsm isUILocked] : NO;
+
+                
+                if (g_bioWatchdogTimer) [g_bioWatchdogTimer invalidate];
+                g_bioWatchdogTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
+
+                    g_bioWatchdogTimer = nil; // Timer is done.
+                    
+                    // ADD DECISION WINDOW FOR HOLD (0.3s)
+                    // Similar to the Tap fix, we wait a moment on the lockscreen to let biometrics "win".
+                    NSTimeInterval holdDecisionDelay = g_bioWasLocked ? 0.3 : 0.0;
+                    
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(holdDecisionDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        // Check ignore window first
+                        if ([[NSDate date] timeIntervalSince1970] < g_bioIgnoreUntil) {
+                            SRLog(@"[SpringRemote-Bio] Suppressing Hold (Inside Ignore Window)");
+                            return;
+                        }
+
+                        // STATE-AWARE SUPPRESSION (Hold):
+                        Class LSMC2 = objc_getClass("SBLockScreenManager");
+                        SBLockScreenManager *lsm2 = LSMC2 ? [LSMC2 sharedInstance] : nil;
+                        BOOL currentlyLocked2 = lsm2 ? [lsm2 isUILocked] : NO;
+                        
+                        if (g_bioWasLocked && !currentlyLocked2) {
+                            SRLog(@"[SpringRemote-Bio] Suppressing Hold (Unlock succeeded during decision window)");
+                            return;
+                        }
+
+                        // Check if trigger is enabled and has actions BEFORE firing haptics
+                        if (g_triggerConfig) {
+                            NSDictionary *holdTrigger = g_triggerConfig[@"triggers"][@"touchid_hold"];
+                            if ([holdTrigger[@"enabled"] boolValue] && [holdTrigger[@"actions"] count] > 0) {
+                                trigger_haptic();
+                                RCExecuteTrigger(@"touchid_hold");
+                            }
+                        }
+                    });
+                }];
+            }
+        });
+
+    }
+    
+    // Log Biometric/Mesa events specifically?
+    // kIOHIDEventTypeBiometric = 29?
+    // Let's just log everything that isn't accelerometer (usually high freq)
+    // Accelerometer is... often type 13?
+    
+    if (type == kIOHIDEventTypeKeyboard) {
         int usagePage = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardUsagePage);
         int usage = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardUsage);
         int down = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardDown);
+        
+        // SRLog(@"[SpringRemote-HID] KEYBOARD (1) -> Page: 0x%X Usage: 0x%X Down: %d", usagePage, usage, down);
         
         // Home Button (Page 0x0C, Usage 0x40)
         if (usagePage == kHIDPage_Consumer && usage == kHIDUsage_Csmr_Menu) {
@@ -2766,16 +3229,96 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                 if (!g_hidButtonDown) {
                     g_hidButtonDown = YES;
                     g_lastHIDTime = now;
-                    SRLog(@"[SpringRemote-HID] 🕹️ Home DOWN");
+
+                    
+                    // SUPPRESS TOUCH ID HOLD:
+                    // If user is clicking, they are not "Holding" for the gesture.
+                    // Suppress bio events for 1.5s (covers triple clicks).
+                    g_bioIgnoreUntil = now + 1.5;
+                    
+                    // Dispatch state reset to Main Thread to ensure synchronization with Bio handlers
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (g_bioWatchdogTimer) {
+                            [g_bioWatchdogTimer invalidate];
+                            g_bioWatchdogTimer = nil;
+                        }
+                        g_bioFingerDownTime = 0;
+                        g_bioHoldTriggered = NO;
+                    });
                 }
             } else { // UP
                 if (g_hidButtonDown) {
                     if (now - g_lastHIDTime > 0.05) { // 50ms Debounce
                         g_hidButtonDown = NO;
                         g_lastHIDTime = now;
-                        SRLog(@"[SpringRemote-HID] 🕹️ Home UP");
+
                         RC_ProcessHomeClick();
                     }
+                }
+            }
+        }
+        
+        // Power Button (Page 0x0C, Usage 0x30)
+        if (usagePage == kHIDPage_Consumer && usage == kHIDUsage_Csmr_Power) {
+            NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+            static NSTimeInterval lastPowerDownTime = 0;
+
+            if (down) {
+                if (!g_powerIsDown) {
+                    g_powerIsDown = YES;
+                    lastPowerDownTime = now;
+                    SRLog(@"[SpringRemote-HID] ⚡️ Power DOWN");
+                    
+                    // SUPPRESS TOUCH ID HOLD (on Power Wake/Press):
+                    // If user is pressing power, they might be waking to unlock.
+                    // Suppress bio events for 1.5s.
+                    NSTimeInterval now_power = [[NSDate date] timeIntervalSince1970];
+                    g_bioIgnoreUntil = now_power + 1.5;
+                    // Also cancel any pending hold timer
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (g_bioWatchdogTimer) {
+                            [g_bioWatchdogTimer invalidate];
+                            g_bioWatchdogTimer = nil;
+                        }
+                    });
+                    g_bioFingerDownTime = 0;
+                    g_bioHoldTriggered = NO;
+
+                    // Check for simultaneous press if Volume is already down
+                    if (g_volUpIsDown || g_volDownIsDown) {
+                        NSString *triggerKey = g_volUpIsDown ? @"power_volume_up" : @"power_volume_down";
+                        load_trigger_config();
+                        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+                        BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+                        
+                        if (enabled && !g_powerVolComboTriggered) {
+                            SRLog(@"[SpringRemote-HID] ⚡️+🔊 POWER + VOLUME COMBINATION DETECTED (Power after Volume): %@", triggerKey);
+                            g_powerVolComboTriggered = YES;
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                 if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+                                 if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+                                 trigger_haptic();
+                                 RCExecuteTrigger(triggerKey);
+                            });
+                        }
+                    }
+                }
+            } else { // UP
+                if (g_powerIsDown) {
+                    if (now - lastPowerDownTime > 0.05) { // 50ms Debounce
+                        g_powerIsDown = NO;
+                        SRLog(@"[SpringRemote-HID] ⚡️ Power UP");
+                        
+                        // If a combo was triggered, DON'T count this as a click for multi-tap
+                        if (g_powerVolComboTriggered) {
+                            SRLog(@"[SpringRemote-HID] Combo was triggered, resetting power click count.");
+                            g_powerClickCount = 0;
+                            g_powerVolComboTriggered = NO;
+                        } else {
+                            RC_ProcessPowerClick();
+                        }
+                    }
+                    g_powerIsDown = NO; // Handle fast bounce
                 }
             }
         }
@@ -2784,6 +3327,30 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
         if (usagePage == kHIDPage_Consumer && (usage == kHIDUsage_Csmr_VolumeIncrement || usage == kHIDUsage_Csmr_VolumeDecrement)) {
             if (usage == kHIDUsage_Csmr_VolumeIncrement) g_volUpIsDown = !!down;
             if (usage == kHIDUsage_Csmr_VolumeDecrement) g_volDownIsDown = !!down;
+            
+            // Check for Power + Volume combination
+            if (down && g_powerIsDown) {
+                NSString *triggerKey = (usage == kHIDUsage_Csmr_VolumeIncrement) ? @"power_volume_up" : @"power_volume_down";
+                load_trigger_config();
+                BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+                BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+                
+                if (enabled) {
+                    SRLog(@"[SpringRemote-HID] ⚡️+🔊 POWER + VOLUME COMBINATION DETECTED: %@", triggerKey);
+                    g_powerVolComboTriggered = YES;
+                    
+                    // Invalidate standard timers in Main Thread
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                         if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+                         if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+                         trigger_haptic();
+                         RCExecuteTrigger(triggerKey);
+                    });
+                    
+                    // We might want to swallow the volume event here, but HID listener is just a listener.
+                    // The Volume hooks will also fire, we handle suppression there too.
+                }
+            }
             
             if (g_volUpIsDown && g_volDownIsDown) {
                 if (!g_volComboTriggered) {
@@ -2839,6 +3406,43 @@ static void setup_background_hid_listener() {
 }
 
 
+%hook SBLockScreenManager
+
+- (BOOL)_attemptUnlockWithPasscode:(id)passcode mesa:(BOOL)mesa finishUIUnlock:(BOOL)finishUI {
+    BOOL result = %orig;
+    if (mesa) {
+        SRLog(@"[SpringRemote] 🧬 Biometric (Mesa) Match Detected - setting immediate suppression flag");
+        g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 2.0;
+        
+        // Cancel pending timers immediately
+        if (g_bioWatchdogTimer) {
+            [g_bioWatchdogTimer invalidate];
+            g_bioWatchdogTimer = nil;
+        }
+    }
+    return result;
+}
+
+- (void)unlockUIFromSource:(int)source withOptions:(id)options {
+    %orig;
+    SRLog(@"[SpringRemote] 🔓 Device Unlocked via SBLockScreenManager (Source: %d)", source);
+    
+    // Reset biometric state immediately upon unlock to prevent stray triggers
+    g_bioFingerDownTime = 0;
+    g_bioHoldTriggered = NO;
+    
+    if (g_bioWatchdogTimer) {
+        [g_bioWatchdogTimer invalidate];
+        g_bioWatchdogTimer = nil;
+        SRLog(@"[SpringRemote] 🔐 Cancelled pending Biometric trigger due to Unlock");
+    }
+    
+    // Brief suppression after unlock (1.0s)
+    g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 1.0;
+}
+
+%end
+
 %hook SBLockHardwareButtonActions
 
 - (void)performInitialButtonDownActions {
@@ -2874,6 +3478,14 @@ static void setup_background_hid_listener() {
             }];
         }
     }
+
+    // SUPPRESSION: If a multi-click sequence is in progress, swallow the DOWN event.
+    // This stops the phone from waking/locking on subsequent clicks.
+    if (g_powerClickCount >= 1) {
+        SRLog(@"[SpringRemote] Suppressing system DOWN for click sequence (count=%d)", g_powerClickCount);
+        return;
+    }
+
     %orig;
 }
 
@@ -2898,26 +3510,19 @@ static void setup_background_hid_listener() {
         return; 
     }
 
-    // Manual Double Tap Logic
-    NSTimeInterval now = [[NSDate date] timeIntervalSinceReferenceDate];
-    NSTimeInterval diff = now - g_lastPowerUpTime;
-    
-    // Check for double tap (within 0.4s) AND basic debounce (> 0.1s to avoid duplicate calls)
-    if (diff < 0.4 && diff > 0.1) {
-        // It's a double tap!
-        load_trigger_config();
-        BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                       [g_triggerConfig[@"triggers"][@"power_double_tap"][@"enabled"] boolValue];
-        
-        if (enabled) {
-            trigger_haptic();
-            RCExecuteTrigger(@"power_double_tap");
-            SRLog(@"[SpringRemote] Power Double Tap Fired (Manual Detection)");
-            g_lastPowerUpTime = 0; // Reset
-            return; // Suppress default?
-        }
+    // SUPPRESSION: Swallow UP events for 2nd click onwards.
+    // Click 1 passes %orig so system can lock/wake normally if sequence stops.
+    if (g_powerClickCount >= 2) {
+        SRLog(@"[SpringRemote] Suppressing system UP for click #%d", g_powerClickCount);
+        return;
     }
-    g_lastPowerUpTime = now;
+
+    // SUPPRESSION: If a Power + Volume combo was triggered, swallow the Power UP as well.
+    if (g_powerVolComboTriggered) {
+        SRLog(@"[SpringRemote] Suppressing system UP because a Power + Volume combo was triggered.");
+        // g_powerVolComboTriggered will be reset in handle_hid_event UP
+        return;
+    }
 
     %orig;
 }
@@ -2940,17 +3545,32 @@ static void setup_background_hid_listener() {
 }
 
 - (void)performDoublePressActions {
-    SRLog(@"[SpringRemote] performDoublePressActions called");
+    SRLog(@"[SpringRemote] performDoublePressActions called (System)");
+    // We handle double press manually in performButtonUpPreActions to support Triple/Quad clicks.
+    // So we do NOT fire "power_double_tap" here to avoid duplicates.
+    // However, if we suppress %orig completely, we might break Wallet double-click.
+    // For now, let's just allow orig so system features work, 
+    // relying on our manual counter for OUR actions.
+    
+    // Logic: If we have a configured double tap action, our manual handler will fire it.
+    // If not, this does nothing related to us.
+    
+    /*
     load_trigger_config();
     BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
                    [g_triggerConfig[@"triggers"][@"power_double_tap"][@"enabled"] boolValue];
 
     if (enabled) {
+        // Don't fire here, manual handler does it.
+    }
+    */
+    /*
         trigger_haptic();
         RCExecuteTrigger(@"power_double_tap");
         SRLog(@"[SpringRemote] Power Double Tap Fired (Actions)");
         return; 
     }
+    */
     %orig;
 }
 
@@ -2974,45 +3594,7 @@ static void setup_background_hid_listener() {
 }
 %end
 
-// --- Reachability (Home Button Double Tap) ---
 
-%hook SBReachabilityManager
-
-+ (id)sharedInstance {
-    return %orig;
-}
-
-- (void)toggleReachability {
-    SRLog(@"[SpringRemote] SBReachabilityManager toggleReachability (Double Tap detected)");
-    
-    // Execute our trigger
-    load_trigger_config();
-    NSDictionary *trigger = g_triggerConfig[@"triggers"][@"trigger_home_double_tap"];
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL triggerEnabled = [trigger[@"enabled"] boolValue];
-    
-    if (masterEnabled && triggerEnabled) {
-        SRLog(@"[SpringRemote] Home Double Tap Trigger Fired! Suppressing default Reachability.");
-        
-        // Haptic feedback
-        trigger_haptic();
-        
-        // Execute Actions
-        RCExecuteTrigger(@"trigger_home_double_tap");
-        
-        // SUPPRESS default Reachability behavior
-        return;
-    }
-    
-    // If trigger disabled, behave normally
-    %orig;
-}
-
-- (void)_handleSignificantUserInteraction {
-    SRLog(@"[SpringRemote] SBReachabilityManager _handleSignificantUserInteraction");
-    %orig;
-}
-%end
 
 // [Removed unused biometric hooks]
 
@@ -3358,19 +3940,23 @@ static void unregister_edge_gestures() {
 
 // Update gesture registration based on config
 static void update_edge_gestures() {
-    BOOL shouldRegister = should_register_edge_gestures();
-    BOOL currentlyRegistered = (leftEdgeRecognizer != nil || rightEdgeRecognizer != nil);
-    
-    if (shouldRegister && !currentlyRegistered) {
-        SRLog(@"[SpringRemote] Edge gestures enabled - registering...");
-        register_edge_gestures();
-    } else if (!shouldRegister && currentlyRegistered) {
-        SRLog(@"[SpringRemote] Edge gestures disabled - unregistering...");
-        unregister_edge_gestures();
-    } else if (shouldRegister && currentlyRegistered) {
-        SRLog(@"[SpringRemote] Edge gestures already registered and should be");
-    } else {
-        SRLog(@"[SpringRemote] Edge gestures not needed and not registered");
+    @try {
+        BOOL shouldRegister = should_register_edge_gestures();
+        BOOL currentlyRegistered = (leftEdgeRecognizer != nil || rightEdgeRecognizer != nil);
+        
+        if (shouldRegister && !currentlyRegistered) {
+            SRLog(@"[SpringRemote] Edge gestures enabled - registering...");
+            register_edge_gestures();
+        } else if (!shouldRegister && currentlyRegistered) {
+            SRLog(@"[SpringRemote] Edge gestures disabled - unregistering...");
+            unregister_edge_gestures();
+        } else if (shouldRegister && currentlyRegistered) {
+            // SRLog(@"[SpringRemote] Edge gestures already registered and should be");
+        } else {
+            // SRLog(@"[SpringRemote] Edge gestures not needed and not registered");
+        }
+    } @catch (NSException *e) {
+        SRLog(@"[SpringRemote] ERROR in update_edge_gestures: %@", e);
     }
 }
 
@@ -3405,4 +3991,5 @@ static void update_edge_gestures() {
         SRLog(@"[SpringRemote] Initialization Complete.");
     });
 }
+
 

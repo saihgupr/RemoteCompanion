@@ -11,8 +11,10 @@
 - (void)waitUntilExit;
 @end
 
-@interface RCShortcutPickerViewController ()
+@interface RCShortcutPickerViewController () <UISearchResultsUpdating>
 @property (nonatomic, strong) NSArray<NSString *> *shortcuts;
+@property (nonatomic, strong) NSArray<NSString *> *filteredShortcuts;
+@property (nonatomic, strong) UISearchController *searchController;
 @end
 
 @implementation RCShortcutPickerViewController
@@ -21,10 +23,24 @@
     [super viewDidLoad];
     
     self.title = @"Select Shortcut";
+    // Enable Large Titles
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.navigationController.navigationBar.tintColor = [UIColor labelColor];
+    
     self.view.backgroundColor = [UIColor systemBackgroundColor];
-    self.navigationController.navigationBar.tintColor = [UIColor systemGrayColor];
     
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ShortcutCell"];
+    self.tableView.rowHeight = 60; // Consistent sizing
+    
+    // Setup Search
+    self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
+    self.searchController.searchResultsUpdater = self;
+    self.searchController.obscuresBackgroundDuringPresentation = NO;
+    self.searchController.searchBar.placeholder = @"Search Shortcuts";
+    self.navigationItem.searchController = self.searchController;
+    self.navigationItem.hidesSearchBarWhenScrolling = NO;
+    self.definesPresentationContext = YES;
     
     [self loadShortcuts];
 }
@@ -124,31 +140,72 @@
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+#pragma mark - Search
+
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
+    NSString *text = searchController.searchBar.text;
+    if (text.length == 0) {
+        self.filteredShortcuts = @[];
+    } else {
+        NSPredicate *pred = [NSPredicate predicateWithFormat:@"SELF contains[cd] %@", text];
+        self.filteredShortcuts = [self.shortcuts filteredArrayUsingPredicate:pred];
+    }
+    [self.tableView reloadData];
+}
+
 #pragma mark - Table View
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        return self.filteredShortcuts.count;
+    }
     return _shortcuts.count;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ShortcutCell" forIndexPath:indexPath];
-    cell.textLabel.text = _shortcuts[indexPath.row];
+    
+    NSString *shortcut;
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        shortcut = self.filteredShortcuts[indexPath.row];
+    } else {
+        shortcut = _shortcuts[indexPath.row];
+    }
+    
+    cell.textLabel.text = shortcut;
     cell.imageView.image = [UIImage systemImageNamed:@"command"];
-    cell.imageView.tintColor = [UIColor systemBlueColor];
+    cell.imageView.tintColor = [UIColor secondaryLabelColor];
     return cell;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    NSString *selected = _shortcuts[indexPath.row];
+    
+    NSString *selected;
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        selected = self.filteredShortcuts[indexPath.row];
+    } else {
+        selected = _shortcuts[indexPath.row];
+    }
+    
     if (self.onShortcutSelected) {
         self.onShortcutSelected(selected);
     }
     
-    if (self.presentingViewController) {
-        [self dismissViewControllerAnimated:YES completion:nil];
+    if (self.searchController.isActive) {
+        [self.searchController dismissViewControllerAnimated:NO completion:^{
+            if (self.presentingViewController) {
+                [self dismissViewControllerAnimated:YES completion:nil];
+            } else {
+                [self.navigationController popViewControllerAnimated:YES];
+            }
+        }];
     } else {
-        [self.navigationController popViewControllerAnimated:YES];
+        if (self.presentingViewController) {
+            [self dismissViewControllerAnimated:YES completion:nil];
+        } else {
+            [self.navigationController popViewControllerAnimated:YES];
+        }
     }
 }
 

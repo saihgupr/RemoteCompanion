@@ -4,6 +4,7 @@
 
 @property (nonatomic, assign) BOOL masterEnabled;
 @property (nonatomic, assign) BOOL tcpEnabled;
+@property (nonatomic, assign) BOOL nfcEnabled;
 
 + (instancetype)sharedManager;
 

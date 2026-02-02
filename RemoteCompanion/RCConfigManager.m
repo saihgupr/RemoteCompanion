@@ -63,12 +63,17 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         // Auto-add any missing triggers (for upgrades)
         NSMutableDictionary *triggers = _config[@"triggers"];
         NSArray *allKeys = @[@"volume_up_hold", @"volume_down_hold", @"power_double_tap", @"power_long_press", 
+                             @"power_triple_click", @"power_quadruple_click", 
                              @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", 
-                             @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_home_double_tap",
+                             @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right",
                              @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_home_double_click",
                              @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", 
                              @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down",
-                             @"volume_both_press"];
+                             @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", 
+                             @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down",
+                             @"volume_both_press", @"touchid_tap",
+                             @"power_volume_up", @"power_volume_down",
+                             @"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle"];
         
         BOOL needsSave = NO;
         for (NSString *key in allKeys) {
@@ -88,31 +93,46 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             _config[@"tcpEnabled"] = @NO;
             [self saveConfig];
         }
+        
+        // Auto-add nfcEnabled if missing
+        if (_config[@"nfcEnabled"] == nil) {
+            _config[@"nfcEnabled"] = @YES;
+            [self saveConfig];
+        }
     } else {
         // Default config with all triggers
         NSLog(@"[RCConfigManager] Using default config");
         _config = [@{
             @"masterEnabled": @YES,
             @"tcpEnabled": @NO,
+            @"nfcEnabled": @YES,
             @"triggers": [@{
                 @"volume_up_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"volume_down_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"power_double_tap": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"power_long_press": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"power_triple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"power_quadruple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_statusbar_left_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_statusbar_center_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_statusbar_right_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_statusbar_swipe_left": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_statusbar_swipe_right": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
-                @"trigger_home_double_tap": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_triple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_quadruple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_double_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"touchid_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"touchid_tap": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_left_swipe_up": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_left_swipe_down": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_right_swipe_up": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_edge_right_swipe_down": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
-                @"volume_both_press": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy]
+                @"volume_both_press": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"power_volume_up": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"power_volume_down": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"trigger_ringer_mute": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"trigger_ringer_unmute": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"trigger_ringer_toggle": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy]
             } mutableCopy]
         } mutableCopy];
     }
@@ -137,6 +157,22 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 
 - (void)setTcpEnabled:(BOOL)tcpEnabled {
     _config[@"tcpEnabled"] = @(tcpEnabled);
+    [self saveConfig];
+}
+
+- (BOOL)nfcEnabled {
+    // Default to YES if missing
+    if (!_config[@"nfcEnabled"]) {
+        return YES;
+    }
+    return [_config[@"nfcEnabled"] boolValue];
+}
+
+- (void)setNfcEnabled:(BOOL)nfcEnabled {
+    _config[@"nfcEnabled"] = @(nfcEnabled);
+    if (!nfcEnabled) {
+        [self stopBackgroundNFC];
+    }
     [self saveConfig];
 }
 
@@ -176,7 +212,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 }
 
 - (NSArray<NSString *> *)allTriggerKeys {
-    return @[@"volume_up_hold", @"volume_down_hold", @"volume_both_press", @"power_double_tap", @"power_long_press", @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_home_double_tap", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"];
+    return @[@"volume_up_hold", @"volume_down_hold", @"volume_both_press", @"power_double_tap", @"power_long_press", @"power_triple_click", @"power_quadruple_click", @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"];
 }
 
 - (NSString *)displayNameForTrigger:(NSString *)triggerKey {
@@ -186,19 +222,27 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"volume_both_press": @"Volume Up + Down (Both)",
         @"power_double_tap": @"Power Double-Tap",
         @"power_long_press": @"Power Long Press",
+        @"power_triple_click": @"Power Triple Click",
+        @"power_quadruple_click": @"Power Quadruple Click",
+        @"power_volume_up": @"Power + Volume Up",
+        @"power_volume_down": @"Power + Volume Down",
         @"trigger_statusbar_left_hold": @"Status Bar Left Hold",
         @"trigger_statusbar_center_hold": @"Status Bar Center Hold",
         @"trigger_statusbar_right_hold": @"Status Bar Right Hold",
         @"trigger_statusbar_swipe_left": @"Status Bar Swipe Left",
         @"trigger_statusbar_swipe_right": @"Status Bar Swipe Right",
-        @"trigger_home_double_tap": @"Home Button (Double Tap)",
         @"trigger_home_triple_click": @"Home Button (Triple Click)",
         @"trigger_home_quadruple_click": @"Home Button (Quadruple Click)",
         @"trigger_home_double_click": @"Home Button (Double Click)",
+        @"touchid_hold": @"Touch ID Hold (Rest Finger)",
+        @"touchid_tap": @"Touch ID Single Tap",
         @"trigger_edge_left_swipe_up": @"Left Edge Swipe Up",
         @"trigger_edge_left_swipe_down": @"Left Edge Swipe Down",
         @"trigger_edge_right_swipe_up": @"Right Edge Swipe Up",
-        @"trigger_edge_right_swipe_down": @"Right Edge Swipe Down"
+        @"trigger_edge_right_swipe_down": @"Right Edge Swipe Down",
+        @"trigger_ringer_mute": @"Ringer Muted (Silent Mode On)",
+        @"trigger_ringer_unmute": @"Ringer Unmuted (Silent Mode Off)",
+        @"trigger_ringer_toggle": @"Ringer Toggled (Any Change)"
     };
     
     if ([triggerKey hasPrefix:@"nfc_"]) {
@@ -317,6 +361,10 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if (importedConfig[@"masterEnabled"]) {
         _config[@"masterEnabled"] = importedConfig[@"masterEnabled"];
     }
+    
+    if (importedConfig[@"nfcEnabled"]) {
+        _config[@"nfcEnabled"] = importedConfig[@"nfcEnabled"];
+    }
     // If missing in import, keep current local setting.
     
     // 2. Triggers (Merge)
@@ -373,6 +421,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"dnd on": @"DND On",
         @"dnd off": @"DND Off",
         @"dnd toggle": @"DND Toggle",
+        @"respring": @"Respring",
         @"lpm on": @"LPM On",
         @"lpm off": @"LPM Off",
         @"lpm toggle": @"LPM Toggle",
@@ -389,7 +438,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"low power mode off": @"LPM Off",
         @"low power toggle": @"LPM Toggle",
         @"low power mode toggle": @"LPM Toggle",
-        @"mute toggle": @"Mute Toggle"
+        @"mute toggle": @"Mute Toggle",
+        @"siri": @"Activate Siri"
     };
     
     NSString *result = names[cmd];
@@ -447,8 +497,12 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     }
     
     // Final truncation to keep the detail labels from overflowing
+    // Use middle truncation: "Start...End"
     if (shouldTruncate && result.length > 25) {
-        result = [[result substringToIndex:22] stringByAppendingString:@"..."];
+        NSInteger keep = 10; 
+        NSString *prefix = [result substringToIndex:keep];
+        NSString *suffix = [result substringFromIndex:result.length - keep];
+        result = [NSString stringWithFormat:@"%@...%@", prefix, suffix];
     }
     
     return result;
@@ -500,6 +554,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"dnd on": @"moon.fill",
         @"dnd off": @"moon",
         @"dnd toggle": @"moon.circle.fill",
+        @"respring": @"memories",
         @"lpm on": @"battery.25",
         @"lpm off": @"battery.100",
         @"lpm toggle": @"battery.25",
@@ -513,7 +568,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"anc off": @"ear",
         @"anc transparency": @"waveform.circle.fill",
         @"airplay disconnect": @"airplayaudio.badge.exclamationmark",
-        @"mute toggle": @"speaker.slash.fill"
+        @"mute toggle": @"speaker.slash.fill",
+        @"siri": @"mic.circle.fill"
     };
     
     return icons[cmd] ?: @"circle.fill";

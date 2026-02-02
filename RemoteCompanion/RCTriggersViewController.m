@@ -19,33 +19,51 @@
     return [[RCConfigManager sharedManager] nameForCommand:cmd truncate:shouldTruncate];
 }
 
+- (NSString *)iconNameForTrigger:(NSString *)triggerKey {
+    if ([triggerKey containsString:@"volume"]) return @"speaker.wave.2.fill";
+    if ([triggerKey containsString:@"power"]) return @"power";
+    if ([triggerKey containsString:@"statusbar"]) return @"hand.draw"; // Status bar / screen gestures
+    if ([triggerKey containsString:@"home"]) return @"circle.circle"; // Home button
+    if ([triggerKey containsString:@"ringer"]) return @"bell.fill";
+    if ([triggerKey containsString:@"edge"]) return @"iphone.homebutton.radiowaves.left.and.right"; // Edge gestures
+    if ([triggerKey containsString:@"touchid"]) return @"touchid";
+    if ([triggerKey hasPrefix:@"nfc_"]) return @"wave.3.right.circle.fill";
+    return @"hand.tap"; // Default
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     
     self.navigationController.navigationBar.tintColor = [UIColor labelColor];
+    
+    // Enable Large Titles
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
     self.title = @"RemoteCompanion";
-    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     
-    UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
-    [appearance configureWithOpaqueBackground];
-    appearance.backgroundColor = [UIColor systemBackgroundColor];
-    appearance.shadowColor = [UIColor clearColor];
-    
-    self.navigationItem.standardAppearance = appearance;
-    self.navigationItem.compactAppearance = appearance;
-    self.navigationItem.scrollEdgeAppearance = appearance;
+    // Use default appearance for translucent blur
+    // We do NOT set standardAppearance/scrollEdgeAppearance to opaque here anymore
     
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] 
+    UIBarButtonItem *settingsItem = [[UIBarButtonItem alloc] 
         initWithImage:[UIImage systemImageNamed:@"gear"] 
         style:UIBarButtonItemStylePlain 
         target:self 
         action:@selector(openSettings)];
+        
+    UIBarButtonItem *addItem = [[UIBarButtonItem alloc] 
+        initWithImage:[UIImage systemImageNamed:@"plus"] 
+        style:UIBarButtonItemStylePlain 
+        target:self 
+        action:@selector(addNewItem)];
+        
+    self.navigationItem.rightBarButtonItems = @[addItem, settingsItem];
     
     self.tableView.rowHeight = 64;
-    self.tableView.sectionHeaderTopPadding = 0;
-    self.tableView.contentInset = UIEdgeInsetsZero;
+    self.tableView.rowHeight = 64;
+    self.tableView.sectionHeaderTopPadding = 15; // increased padding
+    self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 0, 0); // Reset inset since we have large titles handling spacing better now
     
     self.tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 0.1)];
     self.tableView.tableHeaderView.clipsToBounds = YES;
@@ -91,6 +109,16 @@
     [footerView addSubview:appTitleLabel];
     [footerView addSubview:versionLabel];
     
+    // Add Tap Gesture to Footer Labels
+    appTitleLabel.userInteractionEnabled = YES;
+    versionLabel.userInteractionEnabled = YES;
+    
+    UITapGestureRecognizer *titleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openGitHub)];
+    [appTitleLabel addGestureRecognizer:titleTap];
+    
+    UITapGestureRecognizer *versionTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openGitHub)];
+    [versionLabel addGestureRecognizer:versionTap];
+    
     [NSLayoutConstraint activateConstraints:@[
         // Stack Title on top of Version
         [appTitleLabel.centerXAnchor constraintEqualToAnchor:footerView.centerXAnchor],
@@ -123,7 +151,7 @@
     [sections addObject:@[@"volume_up_hold", @"volume_down_hold", @"volume_both_press"]];
     [titles addObject:@"Volume Buttons"];
     
-    [sections addObject:@[@"power_double_tap", @"power_long_press"]];
+    [sections addObject:@[@"power_double_tap", @"power_triple_click", @"power_quadruple_click", @"power_volume_up", @"power_volume_down", @"power_long_press"]];
     [titles addObject:@"Power Button"];
     
     [sections addObject:@[@"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right"]];
@@ -132,8 +160,11 @@
     [sections addObject:@[@"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"]];
     [titles addObject:@"Edge Gestures"];
     
-    [sections addObject:@[@"trigger_home_double_tap", @"trigger_home_double_click", @"trigger_home_triple_click", @"trigger_home_quadruple_click"]];
+    [sections addObject:@[@"trigger_home_double_click", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"touchid_tap", @"touchid_hold"]];
     [titles addObject:@"Home Button"];
+    
+    [sections addObject:@[@"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle"]];
+    [titles addObject:@"Ringer Switch"];
     
     // NFC Section
     NSMutableArray *nfcKeys = [[[RCConfigManager sharedManager] nfcTriggerKeys] mutableCopy];
@@ -153,6 +184,33 @@
     RCSettingsViewController *settingsVC = [[RCSettingsViewController alloc] init];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:settingsVC];
     [self presentViewController:nav animated:YES completion:nil];
+}
+
+- (void)addNewItem {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"New Trigger"
+        message:@"Select a trigger type to expand your RemoteCompanion setup."
+        preferredStyle:UIAlertControllerStyleActionSheet];
+        
+    [alert addAction:[UIAlertAction actionWithTitle:@"NFC Tag" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        [self startNFCScan];
+    }]];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    
+    if (alert.popoverPresentationController) {
+        alert.popoverPresentationController.barButtonItem = self.navigationItem.rightBarButtonItems.firstObject;
+    }
+    
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)startNFCScan {
+    RCNFCTriggerViewController *vc = [[RCNFCTriggerViewController alloc] init];
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
+- (void)openGitHub {
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/saihgupr/RemoteCompanion"] options:@{} completionHandler:nil];
 }
 
 - (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
@@ -197,12 +255,18 @@
     return _sections.count;
 }
 
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return _sectionTitles[section];
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 40)];
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(20, 15, tableView.bounds.size.width - 40, 20)];
+    label.text = [_sectionTitles[section] uppercaseString];
+    label.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    label.textColor = [UIColor secondaryLabelColor];
+    [headerView addSubview:label];
+    return headerView;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
-    return 35.0f;
+    return 40.0f;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -235,7 +299,13 @@
     cell.textLabel.text = [config displayNameForTrigger:triggerKey];
     cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
     cell.textLabel.textColor = [UIColor labelColor];
-    cell.imageView.image = nil; // Reset in case reused
+    
+    // Add Icon with tint based on section or type?
+    // Using dark gray tint for a "premium" but subtle look
+    UIImage *icon = [UIImage systemImageNamed:[self iconNameForTrigger:triggerKey]];
+    cell.imageView.image = icon;
+    cell.imageView.tintColor = [UIColor systemGrayColor];
+    
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     
     // Action names joined by >
@@ -251,9 +321,12 @@
             cell.detailTextLabel.text = [shortNames componentsJoinedByString:@" > "];
         }
         cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+        // Use Monospace font for commands for better readability of code/IDs
+        cell.detailTextLabel.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
     } else {
         cell.detailTextLabel.text = @"Not configured";
         cell.detailTextLabel.textColor = [UIColor tertiaryLabelColor];
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:13]; // Regular font for placeholder
     }
     
     cell.accessoryView = nil;
@@ -267,20 +340,7 @@
     NSString *triggerKey = _sections[indexPath.section][indexPath.row];
     
     if ([triggerKey isEqualToString:@"__ADD_NEW_NFC__"]) {
-        // Import class at runtime to avoid circular dependency header issues if any, or just forward declare.
-        // But better is to just use string class name or helper.
-        // We included "RCNFCTriggerViewController.h" in header? No, we need to import it.
-        // Assuming we add #import "RCNFCTriggerViewController.h"
-        
-        // Dynamic instantiation for now since I can't easily add import to top via replace without context
-        Class nfcVCClass = NSClassFromString(@"RCNFCTriggerViewController");
-        if (nfcVCClass) {
-            UIViewController *vc = [[nfcVCClass alloc] init];
-            [self.navigationController pushViewController:vc animated:YES];
-        } else {
-            // Fallback if class not found (should be there)
-            NSLog(@"RCNFCTriggerViewController class not found!");
-        }
+        [self startNFCScan];
         return;
     }
     

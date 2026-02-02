@@ -31,9 +31,16 @@
     [super viewDidLoad];
     
     self.title = @"Select App";
+    
+    // Enable Large Titles
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.navigationController.navigationBar.tintColor = [UIColor labelColor];
+    
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"AppCell"];
+    self.tableView.rowHeight = 60; // Consistent sizing
     
     // Setup Search
     self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];

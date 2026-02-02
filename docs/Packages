@@ -36,6 +36,24 @@ SHA256: 26bda14ff527ea9f5269b04c555b221d62dc64216d1ba03a9929100a8a4b242f
 
 Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion
+Depends: mobilesubstrate, firmware (>= 15.0), netcat
+Description: A modern Activator replacement for rootless jailbreaks. Bind triggers like Touch ID, Power/Volume buttons, and Status Bar gestures to system actions, Siri automation, and custom TCP commands. GitHub: https://github.com/saihgupr/RemoteCompanion
+Maintainer: Saihgupr
+Author: Saihgupr
+Section: Tweaks
+Replaces: com.pizzaman.remotecommand
+Conflicts: com.pizzaman.remotecommand
+Architecture: iphoneos-arm64
+Version: 2.0.0
+Installed-Size: 1060
+Filename: ./com.saihgupr.remotecompanion_2.0.0_iphoneos-arm64.deb
+Size: 251218
+MD5sum: 7fa0613b90bd6a53c75625cbece33975
+SHA1: f3a9985f5b1b124a13d8b48a2428d88747f84dbb
+SHA256: e5f171e987df2cfb8a1e7a5dfd20ed2095d624a4ce4b69a146334b0a3936d757
+
+Package: com.saihgupr.remotecompanion
+Name: RemoteCompanion
 Depends: mobilesubstrate, firmware (>= 15.0)
 Description: Remote Companion App & Tweak
 Maintainer: Saihgupr
@@ -72,6 +90,7 @@ SHA256: 04b21d38c9e304ae0dbf5ca398a5ff1b2a5412ed92fa5a82d71ff6ce0dc692da
 
 Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion
+<<<<<<< HEAD
 Depends: mobilesubstrate, firmware (>= 15.0)
 Description: Remote Companion App & Tweak
 Maintainer: Saihgupr
@@ -126,6 +145,8 @@ SHA256: f36a73db5d3f062a764c5174f23f4cddfbcaad5d878ec7aaa7a5634f5494c297
 
 Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion
+=======
+>>>>>>> develop
 Depends: mobilesubstrate, firmware (>= 15.0), netcat
 Description: Remote Companion App & Tweak
 Maintainer: Saihgupr
@@ -155,8 +176,8 @@ Architecture: iphoneos-arm64
 Version: 1.1.1
 Installed-Size: 1048
 Filename: ./com.saihgupr.remotecompanion_1.1.1_iphoneos-arm64.deb
-Size: 247876
-MD5sum: 541ac9bc7b1bfeac1ce8644101971fe7
-SHA1: 692633cbe4452f83d9c72f740793a782ab698da3
-SHA256: 09591c75fec527006df9bd6ca203ffb401bea8953747946116856cee204711a0
+Size: 247746
+MD5sum: 18d80968e586a03e10a1263ab5d650a8
+SHA1: 87d859934be58ac7c474bccb1e9f49792c996971
+SHA256: ac7bc08313bf45ffe4312d8b6ea7e9e1b74c829a2f7e9b32a460d042f138d3cc
 

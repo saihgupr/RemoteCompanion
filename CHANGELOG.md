@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-02-02
+
+### Fixed
+- **Safe Mode Crash**: Resolved a race condition and main-thread violation when re-enabling triggers from Settings.
+
 ## [1.1.2] - 2026-01-30
 
 ### Fixed
@@ -12,6 +17,53 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **Open App Action**: Fixed "Open App" action failing by restoring the missing `uiopen` command handler in the Tweak.
 - **Custom Command Repair**: Fixed "Custom Command" actions failing when using `rc <command>` by intercepting the `rc` prefix and executing it internally.
+
+## [2.0.0~beta5] - 2026-01-31
+
+### UI Overhaul (Visual Refresh)
+- **Modern Header**: Updated the main navigation bar to use Large Titles with a native translucent blur effect (frosted glass), moving away from the "web-view" look.
+- **Improved Readability**: Command strings (like `curl`) now use a Monospace font and are middle-truncated (e.g., `curl -X...7DB5fjv`) to keep the UI clean.
+- **Visual Contrast**: Added SF Symbols (icons) to every trigger row for faster scanning.
+- **Section Polish**: Refined section headers with smaller, all-caps styling and better spacing.
+- **Action Sequence**: Overhauled the action list with Large Titles, subtitle-style rows for commands (showing code neatly), and a proper Edit button.
+- **Action Selection**: Updated the "Add Action" screen with Large Titles, larger touch targets (60pt), and visual cues (chevrons) for actions that require input.
+- **Settings**: Polished the Settings page with Large Titles, consistent headers, and a **sticky footer** for version info.
+- **App Icon**: Updated with a new modern design and flattened assets to resolve system rendering artifacts.
+- **NFC Scanning Toggle**: Added a toggle in Settings to enable/disable NFC scanning, preventing conflicts with Apple Pay.
+
+## [2.0.0~beta4] - 2026-01-30
+
+### Removed
+- **Volume Combo Trigger**: Removed "Volume Up + Down" trigger due to conflicts with NFC scanning logic.
+    - **Home Button (Double Tap)**: Removed this trigger to prevent conflicts with native Reachability and improve system stability. Since Double Click exists, Double Tap (Touch) was redundant and problematic.
+
+### Added
+- **Siri Activation**: Added the `button siri` command and a native "Activate Siri" action in the Action Picker. Uses a robust multi-stage activation sequence (HID + Programmatic Fallbacks) for maximum reliability on iOS 15+.
+- **Power + Volume Triggers**: Added support for **Power + Volume Up** and **Power + Volume Down** combos.
+- **Touch ID Triggers**: Added support for **Single Tap** and **Hold** triggers on Touch ID devices.
+- **Shortcuts Picker Search**: Added a search bar to the "Select Shortcut" screen, making it easier to find specific shortcuts in your library.
+- **UI Polish**: Shortcuts picker icons now match the system accent color (grey).
+
+### Fixed
+- **Touch ID Stability**: Fixed a crash related to background thread event access in the biometric handler.
+- **Rootless Injection (iOS 15)**: Fixed a critical architecture mismatch in the Tweak control file (`iphoneos-arm` -> `iphoneos-arm64`) that prevented the tweak from loading on rootless jailbreaks.
+- **Shortcuts Menu Regression**: Fixed an issue where selecting "Run Shortcut..." would immediately close the menu without showing the picker.
+- **Search Selection Bug**: Fixed a bug where selecting an action from search results in the Action Picker would fail to correctly dismiss the view.
+
+## [2.0.0~beta3] - 2026-01-29
+
+### Added
+- **Search in Action Picker**: Added a search bar to the Action Selection menu, allowing users to quickly find actions by name or command. 
+- **UI Polish**: Reduced the header gap in the Action Selection menu for a cleaner look. 
+
+### Fixed
+- **Ringer Trigger**: Fixed an issue where ringer actions would fire on respring/reboot based on the current switch position. Actions now only fire when the state actually changes.
+
+## [2.0.0~beta2] - 2026-01-29
+
+### Added
+- **Ringer Switch Automation**: Triggers for muting, unmuting, and toggling the ringer switch (works with hardware switch and Control Center).
+- **Respring Action**: Added a native "Respring Device" action to the UI and improved the `respring` command reliability by using `killall backboardd`.
 
 ## [1.1.0] - 2026-01-29
 
@@ -39,7 +91,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Shortcuts (via Powercuts)
-- **Custom Command**: You can now use `rc open Music` (or any other `rc` command) directly in the Custom Command action to open apps or trigger any system action.
+- **Custom Command**: You can now use `rc haptic` / `rc screenshot` / `rc siri` (or any other `rc` command) directly in the Custom Command action to open apps or trigger any system action.
 - **Settings UI**: Added version label (e.g., `v1.0.3`) to the bottom of the Settings menu.
 - **Improved Layout**: Refactored Settings screen to pin the version label to the bottom of the view, ensuring consistent positioning regardless of screen size.
 - **UI Details**: Matched version label styling to native table view footers (font, color).

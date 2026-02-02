@@ -8,6 +8,7 @@
 @property (nonatomic, strong) UILabel *appTitleLabel;
 @property (nonatomic, strong) UISwitch *masterSwitch;
 @property (nonatomic, strong) UISwitch *tcpSwitch;
+@property (nonatomic, strong) UISwitch *nfcSwitch;
 @property (nonatomic, assign) BOOL isExporting;
 @end
 
@@ -17,7 +18,12 @@
     [super viewDidLoad];
     
     self.title = @"Settings";
-    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
+    
+    // Enable Large Titles
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.navigationController.navigationBar.tintColor = [UIColor labelColor];
+
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
     
     // Close button
@@ -29,49 +35,61 @@
     self.tableView.dataSource = self;
     self.tableView.translatesAutoresizingMaskIntoConstraints = NO;
     self.tableView.rowHeight = 50;
+    
+    // Improved Section Spacing
+    if (@available(iOS 15.0, *)) {
+        self.tableView.sectionHeaderTopPadding = 10;
+    }
+    
     [self.view addSubview:self.tableView];
     
-    // Setup Version Label (Fixed at bottom)
-    self.versionLabel = [[UILabel alloc] init];
-    self.versionLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    self.versionLabel.textAlignment = NSTextAlignmentCenter;
-    self.versionLabel.font = [UIFont systemFontOfSize:13]; // Standard footer size
-    self.versionLabel.textColor = [UIColor secondaryLabelColor]; // Standard footer color
-    self.versionLabel.numberOfLines = 1;
+    // Setup App Title Label (Sticky Bottom)
+    UILabel *appTitleLabel = [[UILabel alloc] init];
+    appTitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    appTitleLabel.textAlignment = NSTextAlignmentCenter;
+    appTitleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    appTitleLabel.textColor = [UIColor secondaryLabelColor];
+    appTitleLabel.text = @"RemoteCompanion";
+    [self.view addSubview:appTitleLabel];
+
+    // Setup Version Label (Sticky Bottom)
+    UILabel *versionLabel = [[UILabel alloc] init];
+    versionLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    versionLabel.textAlignment = NSTextAlignmentCenter;
+    versionLabel.font = [UIFont systemFontOfSize:13];
+    versionLabel.textColor = [UIColor secondaryLabelColor];
     
     NSDictionary *infoDict = [[NSBundle mainBundle] infoDictionary];
     NSString *version = [infoDict objectForKey:@"CFBundleShortVersionString"];
-    self.versionLabel.text = [NSString stringWithFormat:@"v%@", version];
+    versionLabel.text = [NSString stringWithFormat:@"v%@", version];
+    [self.view addSubview:versionLabel];
     
-    [self.view addSubview:self.versionLabel];
+    // Add Tap Gesture to Footer Labels
+    appTitleLabel.userInteractionEnabled = YES;
+    versionLabel.userInteractionEnabled = YES;
     
-    // Setup App Title Label
-    self.appTitleLabel = [[UILabel alloc] init];
-    self.appTitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    self.appTitleLabel.textAlignment = NSTextAlignmentCenter;
-    self.appTitleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold]; // Bold to match headers
-    self.appTitleLabel.textColor = [UIColor secondaryLabelColor]; // Match opacity of Volume Buttons header
-    self.appTitleLabel.text = @"RemoteCompanion";
+    UITapGestureRecognizer *titleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openGitHub)];
+    [appTitleLabel addGestureRecognizer:titleTap];
     
-    [self.view addSubview:self.appTitleLabel];
+    UITapGestureRecognizer *versionTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openGitHub)];
+    [versionLabel addGestureRecognizer:versionTap];
+    
+    // Constraints for Sticky Footer
+    [NSLayoutConstraint activateConstraints:@[
+        [versionLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [versionLabel.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-10],
+        
+        [appTitleLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [appTitleLabel.bottomAnchor constraintEqualToAnchor:versionLabel.topAnchor constant:-2]
+    ]];
     
     // Constraints
     [NSLayoutConstraint activateConstraints:@[
-        // Table View: Top, Left, Right, Bottom-to-Label
         [self.tableView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
         [self.tableView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.tableView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [self.tableView.bottomAnchor constraintEqualToAnchor:self.appTitleLabel.topAnchor constant:-8], // Padding above title
-        
-        // App Title Label
-        [self.appTitleLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.appTitleLabel.bottomAnchor constraintEqualToAnchor:self.versionLabel.topAnchor constant:0], // Stack directly on top
-        [self.appTitleLabel.heightAnchor constraintEqualToConstant:20],
-        
-        // Version Label: Centered, Pinned to Bottom Guide
-        [self.versionLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.versionLabel.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-8], // Padding from bottom
-        [self.versionLabel.heightAnchor constraintEqualToConstant:16]
+        // The table view ends above the footer labels
+        [self.tableView.bottomAnchor constraintEqualToAnchor:appTitleLabel.topAnchor constant:-10]
     ]];
 }
 
@@ -85,10 +103,20 @@
     return 2;
 }
 
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    if (section == 0) return @"General";
-    if (section == 1) return @"Backup";
-    return nil;
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    NSString *title = (section == 0) ? @"General" : @"Backup";
+    
+    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 40)];
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(20, 15, tableView.bounds.size.width - 40, 20)];
+    label.text = [title uppercaseString];
+    label.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    label.textColor = [UIColor secondaryLabelColor];
+    [headerView addSubview:label];
+    return headerView;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return 40.0f;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
@@ -101,7 +129,7 @@
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 2; // Master toggle + TCP toggle
+    if (section == 0) return 3; // Master toggle + TCP toggle + NFC toggle
     return 2; // Export, Import
 }
 
@@ -122,6 +150,13 @@
             _tcpSwitch.on = [RCConfigManager sharedManager].tcpEnabled;
             [_tcpSwitch addTarget:self action:@selector(tcpToggleChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = _tcpSwitch;
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"NFC Scanning";
+            _nfcSwitch = [[UISwitch alloc] init];
+            _nfcSwitch.on = [RCConfigManager sharedManager].nfcEnabled;
+            [_nfcSwitch addTarget:self action:@selector(nfcToggleChanged:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = _nfcSwitch;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         }
     } else {
@@ -161,6 +196,10 @@
 
 - (void)tcpToggleChanged:(UISwitch *)sender {
     [RCConfigManager sharedManager].tcpEnabled = sender.on;
+}
+
+- (void)nfcToggleChanged:(UISwitch *)sender {
+    [RCConfigManager sharedManager].nfcEnabled = sender.on;
 }
 
 - (void)exportConfig {
@@ -231,6 +270,10 @@
     [self presentViewController:picker animated:YES completion:nil];
 }
 
+- (void)openGitHub {
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/saihgupr/RemoteCompanion"] options:@{} completionHandler:nil];
+}
+
 #pragma mark - UIDocumentPickerDelegate
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
@@ -271,6 +314,7 @@
     if (success) {
         _masterSwitch.on = [RCConfigManager sharedManager].masterEnabled;
         _tcpSwitch.on = [RCConfigManager sharedManager].tcpEnabled;
+        _nfcSwitch.on = [RCConfigManager sharedManager].nfcEnabled;
         
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Successful" message:@"Configuration restored. Return to Triggers to see changes." preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];

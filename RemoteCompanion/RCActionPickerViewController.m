@@ -1,8 +1,10 @@
 #import "RCActionPickerViewController.h"
 
-@interface RCActionPickerViewController ()
+@interface RCActionPickerViewController () <UISearchResultsUpdating>
 @property (nonatomic, strong) NSArray<NSString *> *sectionTitles;
 @property (nonatomic, strong) NSArray<NSArray<NSDictionary *> *> *sections;
+@property (nonatomic, strong) NSArray<NSDictionary *> *filteredActions;
+@property (nonatomic, strong) UISearchController *searchController;
 @end
 
 @implementation RCActionPickerViewController
@@ -16,15 +18,35 @@
     [super viewDidLoad];
     
     // Elegant grey tint
-    self.navigationController.navigationBar.tintColor = [UIColor systemGrayColor];
+    self.navigationController.navigationBar.tintColor = [UIColor labelColor];
+    
+    // Enable Large Titles
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
     
     self.title = @"Select Action";
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
+    // Reduce gap above first section (below search bar)
+    self.tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, CGFLOAT_MIN)];
+    if (@available(iOS 15.0, *)) {
+        self.tableView.sectionHeaderTopPadding = 15;
+    }
+    
+    // Use proper Cancel button style
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemCancel
         target:self
         action:@selector(cancel)];
+    
+    // Setup Search
+    self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
+    self.searchController.searchResultsUpdater = self;
+    self.searchController.obscuresBackgroundDuringPresentation = NO;
+    self.searchController.searchBar.placeholder = @"Search Actions";
+    self.navigationItem.searchController = self.searchController;
+    self.navigationItem.hidesSearchBarWhenScrolling = NO;
+    self.definesPresentationContext = YES;
     
     // Categories and actions
     // Each action: @{ @"name": display name, @"command": rc command }
@@ -73,12 +95,14 @@
         @[
             @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
             @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
-            @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT__", @"icon": @"command" },
+            @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
             @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
             @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
             @{ @"name": @"Do Not Disturb On", @"command": @"dnd on", @"icon": @"moon.fill" },
             @{ @"name": @"Do Not Disturb Off", @"command": @"dnd off", @"icon": @"moon" },
             @{ @"name": @"Do Not Disturb Toggle", @"command": @"dnd toggle", @"icon": @"moon.circle.fill" },
+            @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
+            @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
             @{ @"name": @"Lock Status", @"command": @"lock status", @"icon": @"lock.circle" },
             @{ @"name": @"Low Power Mode On", @"command": @"low power on", @"icon": @"battery.25" },
             @{ @"name": @"Low Power Mode Off", @"command": @"low power off", @"icon": @"battery.100" },
@@ -96,7 +120,7 @@
     ];
     
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ActionCell"];
-    self.tableView.rowHeight = 48;
+    self.tableView.rowHeight = 60; // Increased touch target
 }
 
 - (void)cancel {
@@ -106,21 +130,49 @@
 #pragma mark - Table View Data Source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        return 1;
+    }
     return _sections.count;
 }
 
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return _sectionTitles[section];
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    NSString *title = nil;
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        title = @"SEARCH RESULTS";
+    } else {
+        title = _sectionTitles[section];
+    }
+    
+    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 40)];
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(20, 15, tableView.bounds.size.width - 40, 20)];
+    label.text = [title uppercaseString];
+    label.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    label.textColor = [UIColor secondaryLabelColor];
+    [headerView addSubview:label];
+    return headerView;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return 40.0f;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        return self.filteredActions.count;
+    }
     return _sections[section].count;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ActionCell" forIndexPath:indexPath];
     
-    NSDictionary *action = _sections[indexPath.section][indexPath.row];
+    NSDictionary *action;
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        action = self.filteredActions[indexPath.row];
+    } else {
+        action = _sections[indexPath.section][indexPath.row];
+    }
     cell.textLabel.text = action[@"name"];
     cell.textLabel.font = [UIFont systemFontOfSize:17];
     
@@ -131,26 +183,37 @@
     
     cell.accessoryType = UITableViewCellAccessoryNone;
     
+    // Add disclosure for items requiring input
+    NSString *cmd = action[@"command"];
+    if ([cmd isEqualToString:@"__SET_VOLUME__"] || 
+        [cmd isEqualToString:@"__SET_BRIGHTNESS__"] || 
+        [cmd isEqualToString:@"__BT_CONNECT__"] || 
+        [cmd isEqualToString:@"__BT_DISCONNECT__"] || 
+        [cmd isEqualToString:@"__AIRPLAY_CONNECT__"] || 
+        [cmd isEqualToString:@"__SHORTCUT_PICKER__"] || 
+        [cmd isEqualToString:@"__OPEN_APP__"] || 
+        [cmd isEqualToString:@"__LUA_SCRIPT__"] || 
+        [cmd isEqualToString:@"__DELAY__"] || 
+        [cmd isEqualToString:@"__CUSTOM__"]) {
+        
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
+    
     return cell;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     
-    NSDictionary *action = _sections[indexPath.section][indexPath.row];
+    NSDictionary *action;
+    if (self.searchController.isActive && self.searchController.searchBar.text.length > 0) {
+        action = self.filteredActions[indexPath.row];
+    } else {
+        action = _sections[indexPath.section][indexPath.row];
+    }
     NSString *command = action[@"command"];
     
-    if ([command isEqualToString:@"__BT_DISCONNECT__"]) {
-        // [Existing BT Disconnect Logic] - Wait, I haven't implemented that yet in this file,
-        // but I should probably leave placeholders or check if I need to copy logic.
-        // Actually, looking at previous steps, I only changed the ICON in the list.
-        // The previous implementation used RCShortcutPickerViewController logic for shortcuts.
-        // For BT Disconnect, I likely need a picker too? 
-        // Wait, the user request for BT disconnect was just about the icon in the displayed action list.
-        // But if I select "Disconnect Bluetooth...", does it work? 
-        // The implementation plan for that was in a previous session or skipped?
-        // Let's focus on Volume/Brightness first.
-    }
+
 
     if ([command isEqualToString:@"__SET_VOLUME__"] || [command isEqualToString:@"__SET_BRIGHTNESS__"]) {
         [self handleValueInputForCommand:command];
@@ -158,28 +221,21 @@
     }
     
     // Existing special handlers
-    if ([command isEqualToString:@"__SHORTCUT__"]) {
-        // ... (Shortcut logic is likely handled elsewhere or I need to import headers)
-        // Checking my file view, I don't see shortcut logic in this file?
-        // Ah, RCActionPickerViewController just returns the command?
-        // No, for "Run Shortcut...", it launches RCShortcutPickerViewController?
-        // Let's look at the file content I viewed earlier. It has "Run Shortcut..." mapping to __SHORTCUT__?
-        // I need to be careful not to break existing logic.
-        // Re-reading view_file output:
-        // 67: @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT__", @"icon": @"command" }
-        // 130: NSDictionary *action = _sections[indexPath.section][indexPath.row];
-        // 131: NSString *command = action[@"command"];
-        // 133: if (self.onActionSelected) { self.onActionSelected(command); }
-        // So the parent controller handles "__SHORTCUT__".
-        // I can do the same for __SET_VOLUME__, OR handle it here and return the final string.
-        // Handling here is better UX (picker stays on top of parent).
-    }
+
     
     if (self.onActionSelected) {
         self.onActionSelected(command);
     }
     
-    [self dismissViewControllerAnimated:YES completion:nil];
+    if (self.searchController.isActive) {
+        // Dismiss search first, then self (or just self which now dismisses search? No, we need self gone.)
+        // Robust pattern: Dismiss search (no animation), then dismiss self.
+        [self.searchController dismissViewControllerAnimated:NO completion:^{
+            [self dismissViewControllerAnimated:YES completion:nil];
+        }];
+    } else {
+        [self dismissViewControllerAnimated:YES completion:nil];
+    }
 }
 
 - (void)handleValueInputForCommand:(NSString *)commandPlaceholder {
@@ -209,7 +265,13 @@
         if (self.onActionSelected) {
             self.onActionSelected(finalCommand);
         }
-        [self dismissViewControllerAnimated:YES completion:nil];
+        if (self.searchController.isActive) {
+            [self.searchController dismissViewControllerAnimated:NO completion:^{
+                [self dismissViewControllerAnimated:YES completion:nil];
+            }];
+        } else {
+            [self dismissViewControllerAnimated:YES completion:nil];
+        }
     }];
     
     UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:^(UIAlertAction * _Nonnull action) {
@@ -220,6 +282,26 @@
     [alert addAction:okAction];
     
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+
+
+#pragma mark - Search
+
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
+    NSString *text = searchController.searchBar.text;
+    if (text.length == 0) {
+        self.filteredActions = @[];
+    } else {
+        NSMutableArray *allActions = [NSMutableArray array];
+        for (NSArray *section in self.sections) {
+            [allActions addObjectsFromArray:section];
+        }
+        
+        NSPredicate *pred = [NSPredicate predicateWithFormat:@"name CONTAINS[cd] %@ OR command CONTAINS[cd] %@", text, text];
+        self.filteredActions = [allActions filteredArrayUsingPredicate:pred];
+    }
+    [self.tableView reloadData];
 }
 
 @end

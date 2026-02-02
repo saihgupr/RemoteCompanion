@@ -1,24 +1,24 @@
 # RemoteCompanion
 
-Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, apps, and system actions from your computer or directly from the RemoteCompanion app.
+RemoteCompanion is a modern Activator replacement built specifically for rootless jailbreaks. It lets you bind physical gestures and hardware buttons to system actions, media controls, and custom scripts.
 
 > [!NOTE] 
-> **What's New in v1.1**
-> - **New Hardware Triggers**: Added **Volume Up + Down** and **Home Button Double, Triple, & Quadruple Click**.
-> - **Smart App Picker**: Search and select any installed app to launch via triggers.
-> - **Connectivity Toggles**: New commands for `wifi`, `bluetooth`, `dnd`, `low power mode`, `orientation lock`, and `mute`.
-> - **Powercuts Support**: Trigger any RemoteCompanion action directly from iOS Shortcuts.
-> - **Native RC Commands**: Run `rc` commands directly from the terminal or the custom command action.
+> **What's New in v2.0**
+> - **Full UI Redesign**: Modern native look with Large Titles and translucent frosted glass effects.
+> - **Power & Touch ID Triggers**: Added **Power + Volume** combos, **Touch ID (Tap/Hold)**, and **Triple/Quadruple Power clicks**.
+> - **Ringer & Siri Automation**: Hardware ringer switch triggers and a dedicated native Siri action.
+> - **Search Everywhere**: Find actions and shortcuts instantly with new search bars in every picker.
+> - **Native Respring**: Dedicated "Respring Device" action added directly to the UI.
 
 <p align="center">
-  <img src="images/IMG_1331-1.PNG" width="250" alt="RemoteCompanion Interface" />
-  <img src="images/IMG_1332-2.PNG" width="250" alt="Settings View" />
-  <img src="images/IMG_1334.PNG" width="250" alt="Action Picker" />
+  <img src="images/IMG_1385.PNG" width="250" alt="RemoteCompanion Interface" />
+  <img src="images/IMG_1386.PNG" width="250" alt="Trigger Config" />
+  <img src="images/IMG_1388.PNG" width="250" alt="Search and Select" />
 </p>
 <p align="center">
-  <img src="images/IMG_1336.PNG" width="250" alt="Bluetooth Control" />
-  <img src="images/IMG_1338.PNG" width="250" alt="Haptic Settings" />
-  <img src="images/IMG_1333-2.PNG" width="250" alt="Trigger Config" />
+  <img src="images/IMG_1389.PNG" width="250" alt="Haptic Settings" />
+  <img src="images/IMG_1390.PNG" width="250" alt="Settings View" />
+  <img src="images/IMG_1387.PNG" width="250" alt="Action Picker" />
 </p>
 
 ## Features
@@ -64,12 +64,16 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 
 ### Hardware Triggers (Tweak App)
 Configure these in the `RemoteCompanion` app for custom action sequences. Tip: **Long-press** any trigger in the app to instantly test and run its assigned actions.
-- **NFC Triggers**: Scan physical NFC tags to run actions. Automatically scans for tags briefly when the screen wakes.
-- **Volume Buttons**: Long hold Up/Down (0.3s) or **Volume Up + Down** combo.
-- **Power Button**: Double-tap or Long-press.
-- **Status Bar**: Hold (Left/Center/Right) or Swipe Left/Right (80pt+).
-- **Edge Gestures**: Vertical swipe on left/right edges (within 50pt).
-- **Home Button**: Double-tap (Touch ID). Requires "Reachability" enabled.
+- **Hardware Buttons**:
+  - **Power**: Double-tap, Long-press, **Triple/Quadruple click**, or **Power + Volume Up/Down** combos.
+  - **Volume**: Long hold Up/Down (0.3s) or **Volume Up + Down** combo.
+  - **Home**: Double-tap (Touch ID), Double, Triple, or Quadruple click.
+- **Biometrics**: **Touch ID Single Tap** and **Hold (Rest Finger)** triggers.
+- **NFC Triggers**: Scan physical NFC tags to run actions on screen wake (Optional toggle in Settings).
+- **Ringer Switch**: Mute, Unmute, or Toggle triggers.
+- **Gestures**: 
+  - **Status Bar**: Hold (Left/Center/Right) or Swipe Left/Right.
+  - **Edge Gestures**: Vertical swipe on left/right edges.
 
 ### Text & Notifications
 - `rc type "Text"` - Type text (supports symbols).
@@ -88,9 +92,15 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 - The `RemoteCompanion` tweak installed.
 
 ### 2. Installation Options
-- **Repository (Recommended)**: Add `https://saihgupr.github.io/RemoteCompanion` to Zebra, or use zbra://sources/add/https://saihgupr.github.io/RemoteCompanion
-- **Manual Install**: Download the `.deb` from [Releases](https://github.com/saihgupr/RemoteCompanion/releases).
-- **Build from Source**: `cd Tweak && make package install`.
+
+#### Option 1: Repository (Recommended)
+Add `https://saihgupr.github.io/RemoteCompanion` to Zebra, or use `zbra://sources/add/https://saihgupr.github.io/RemoteCompanion`
+
+#### Option 2: Manual Install
+Download the `.deb` from [Releases](https://github.com/saihgupr/RemoteCompanion/releases).
+
+#### Option 3: Build from Source
+`cd Tweak && make package install`.
 
 ### 3. Usage Options
 Choose the control method that best fits your needs:
@@ -149,9 +159,17 @@ service: shell_command.iphone_remote
 data:
   cmd: 'play'
 ```
+## Troubleshooting
+
+### Apple Pay Issues
+If you experience the "Updating Cards" screen or other conflicts with Apple Pay when waking your device, you can disable the background NFC scanning feature.
+1. Go to the **Settings** tab (gear icon).
+2. Toggle off **NFC Scanning**.
+
+This ensures the tweak does not attempt to access the NFC controller on wake, resolving conflicts with system services.
 
 ## Support & Feedback
 
 If you encounter any issues or have feature requests, please [open an issue](https://github.com/saihgupr/RemoteCompanion/issues) on GitHub.
 
-If you find this project useful, please consider giving it a **star**, or [buy me a coffee](https://ko-fi.com/saihgupr) if you'd like!
+If you like this project, consider giving it a star ⭐ or making a small donation.

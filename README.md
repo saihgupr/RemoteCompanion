@@ -8,6 +8,8 @@ RemoteCompanion brings fast, scriptable system control to modern rootless jailbr
 > - **Unified Device Pickers**: Consistently designed, searchable live lists for picking AirPlay and Bluetooth devices.
 > - **Modern Code Editor**: Completely redesigned, edge-to-edge UI for Terminal and Lua editors.
 > - **Faster & Conflict-Free**: Default TCP port moved to `12340` with optimized local probes making commands like `rc lock` run instantly (~0.25s).
+> - **iPad Experience**: Added official support for iPads with full landscape orientation support and optimized layouts.
+> - **Dependency-Free Client**: The `rc` command-line tool now uses native bash networking (`/dev/tcp`) instead of relying on `netcat`, ensuring higher reliability on all jailbreak types.
 > - **iOS 14 & Rootful Support**: Broader compatibility covering iOS 14 firmware and traditional rootful jailbreak environments with dynamic path detection.
 > - **True Multitasking**: Powered by Apple's **Grand Central Dispatch**, the tweak now handles multiple commands simultaneously without blocking. It's incredibly efficient, using virtually zero battery while ensuring your actions execute instantly.
 
@@ -94,7 +96,7 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 ## Getting Started
 
 ### 1. Requirements
-- A **Rootless Jailbroken Device** (iOS 15+). Tested on iOS 15, 16, and 17.
+- A **Jailbroken Device** (iOS 14+). Supports both Rootless (iOS 15+) and Rootful (iOS 14) environments.
 - The `RemoteCompanion` tweak installed.
 
 ### 2. Installation Options

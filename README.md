@@ -4,9 +4,9 @@ RemoteCompanion is a modern Activator replacement built specifically for rootles
 
 > [!IMPORTANT]
 > **What's New in v2.1** (Performance Update)
-> - **Instant Execution**: Commands like `rc lock` now run instantly (~0.25s), relying on optimized local TCP probes instead of slower fallback methods.
-> - **Rock-Solid Stability**: The server is now multi-threaded, meaning one bad connection won't freeze the entire system.
-> - **No Conflict Mode**: Ports moved to `12340+` to play nicely with other system tools.
+> - **Faster SSH**: Commands like `rc lock` now run instantly (~0.25s), relying on optimized local TCP probes instead of slower fallback methods.
+> - **No Conflict Mode**: TCP port moved to `12340` to play nicely with other system tools.
+> - **True Concurrency**: Now uses Apple's Grand Central Dispatch (GCD) to spin up a new lightweight thread for every single connection. This means `rc lock` can happen at the exact same time as `rc volume`, and if one gets stuck, the others keep working.
 
 <p align="center">
   <img src="images/IMG_1385.PNG" width="250" alt="RemoteCompanion Interface" />

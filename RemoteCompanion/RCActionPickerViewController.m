@@ -103,6 +103,7 @@
             @{ @"name": @"Do Not Disturb Off", @"command": @"dnd off", @"icon": @"moon" },
             @{ @"name": @"Do Not Disturb Toggle", @"command": @"dnd toggle", @"icon": @"moon.circle.fill" },
             @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
+            @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
             @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
             @{ @"name": @"Lock Status", @"command": @"lock status", @"icon": @"lock.circle" },
             @{ @"name": @"Low Power Mode On", @"command": @"low power on", @"icon": @"battery.25" },

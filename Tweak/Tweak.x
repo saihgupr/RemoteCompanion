@@ -350,6 +350,9 @@ extern void BKSTerminateApplicationForReasonAndReportWithDescription(NSString *b
 
 @interface SpringBoard : UIApplication
 - (SBApplication *)_accessibilityFrontMostApplication;
+- (void)_simulateHomeButtonPress;
+- (void)_menuButtonDown:(id)arg1;
+- (void)_menuButtonUp:(id)arg1;
 @end
 
 @interface SBOrientationLockManager : NSObject
@@ -366,6 +369,9 @@ extern void BKSTerminateApplicationForReasonAndReportWithDescription(NSString *b
 
 @interface SBUIController : NSObject
 + (instancetype)sharedInstance;
+- (void)handleHomeButtonTap;
+- (void)handleHomeButtonTap:(id)arg1;
+- (void)clickedMenuButton;
 - (void)handleScreenshotGestureFired:(id)arg1;
 @end
 
@@ -574,6 +580,39 @@ static void inject_hid_event(uint32_t page, uint32_t usage, uint64_t durationNs,
 // Helper to inject a HID Consumer Page event (wrapper)
 static void inject_consumer_key(int usage) {
     inject_hid_event(kHIDPage_Consumer, usage, 50000000, 0); // 50ms hold
+}
+
+static void simulate_home_press() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SRLog(@"[SpringRemote] Executing Home simulation...");
+        
+        // 1. Try SBUIController (Modern Home Tap)
+        id uiCtrl = [objc_getClass("SBUIController") sharedInstance];
+        if ([uiCtrl respondsToSelector:@selector(handleHomeButtonTap)]) {
+            [uiCtrl handleHomeButtonTap];
+            SRLog(@"[SpringRemote] Triggered handleHomeButtonTap");
+        } else if ([uiCtrl respondsToSelector:@selector(handleHomeButtonTap:)]) {
+            [uiCtrl handleHomeButtonTap:nil];
+            SRLog(@"[SpringRemote] Triggered handleHomeButtonTap:");
+        } else if ([uiCtrl respondsToSelector:@selector(clickedMenuButton)]) {
+            [uiCtrl clickedMenuButton];
+            SRLog(@"[SpringRemote] Triggered clickedMenuButton");
+        }
+        
+        // 2. Fallback: SpringBoard simulation
+        SpringBoard *sb = (SpringBoard *)[UIApplication sharedApplication];
+        if ([sb respondsToSelector:@selector(_simulateHomeButtonPress)]) {
+            [sb _simulateHomeButtonPress];
+            SRLog(@"[SpringRemote] Triggered _simulateHomeButtonPress");
+        } else if ([sb respondsToSelector:@selector(_menuButtonDown:)]) {
+            [sb _menuButtonDown:nil];
+            [sb _menuButtonUp:nil];
+            SRLog(@"[SpringRemote] Triggered _menuButtonDown/Up");
+        }
+        
+        // 3. HID Event (Last resort)
+        inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Menu, 50000000, 0);
+    });
 }
 
 // MediaRemote Helper Declarations
@@ -1411,7 +1450,7 @@ static NSString *handle_command(NSString *cmd) {
         if ([btn isEqualToString:@"power"] || [btn isEqualToString:@"lock"]) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
         } else if ([btn isEqualToString:@"home"]) {
-            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Menu, 0, 0);
+            simulate_home_press();
         } else if ([btn isEqualToString:@"volup"]) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement, 0, 0);
         } else if ([btn isEqualToString:@"voldown"]) {
@@ -2379,6 +2418,9 @@ static NSString *handle_command(NSString *cmd) {
             usleep(50000); // 50ms delay between keys
         }
         return @"Typing completed\n";
+    } else if ([cleanCmd isEqualToString:@"home"]) {
+         simulate_home_press();
+         return @"Home Button Success\n";
     } else if ([cleanCmd isEqualToString:@"screenshot"]) {
          dispatch_async(dispatch_get_main_queue(), ^{
              @try {

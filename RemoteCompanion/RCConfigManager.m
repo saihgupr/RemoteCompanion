@@ -439,7 +439,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"low power toggle": @"Low Power Mode Toggle",
         @"low power mode toggle": @"Low Power Mode Toggle",
         @"mute toggle": @"Mute Toggle",
-        @"siri": @"Activate Siri"
+        @"siri": @"Activate Siri",
+        @"home": @"Home Button"
     };
     
     NSString *result = names[cmd];
@@ -517,8 +518,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmd hasPrefix:@"shortcut:"]) return @"command";
     if ([cmd hasPrefix:@"set-vol "]) return @"speaker.wave.3.fill";
     if ([cmd hasPrefix:@"brightness "]) return @"sun.max.fill";
-    if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua "]) return @"scroll.fill";
+    if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) return @"scroll.fill";
     if ([cmd hasPrefix:@"spotify "]) return @"music.note";
+    if ([cmd isEqualToString:@"home"]) return @"house.fill";
     if ([cmd hasPrefix:@"uiopen "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:7]];
     
     NSDictionary *icons = @{

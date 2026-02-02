@@ -14,7 +14,10 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **Action Editing**: You can now edit any existing action in your sequence just by tapping it. This re-opens the picker (for apps, shortcuts, devices) or an alert (for delay, volume, brightness) to quickly swap values.
 - **Unified Device Pickers**: Implemented a consistent, discovery-based picker for both AirPlay and Bluetooth devices. The app now fetches a live list of available devices (using `airplay list` and `bluetooth list`) to ensure you're always selecting from active nearby hardware.
-- **Auto-Launch on Deploy**: The `deploy.sh` script now automatically opens the RemoteCompanion app on your device after a successful install.
+- **Home Button Action**: Added a new action to simulate a physical Home Button press, useful for returning home or closing apps within a sequence.
+- **Modern Code Editor**: Completely redesigned the Terminal and Lua editor pages with a modernized, edge-to-edge iOS 17 style. Removed unnecessary buttons for a cleaner, more focused editing experience.
+- **Refined Labels**: Simplified "Lua" and "Terminal" labels in the main panel for a cleaner look, and updated "Wait" labels to show the duration (e.g., "Wait 5s").
+- **Auto-Launch on Deploy**: The `deploy.sh` script now automatically opens the RemoteCompanion app on your device after a successful install, using a more robust launch method.
 
 ### Fixed
 - **Connectivity**: Fixed an issue where `rc lock` would execute but report failure due to a missing response from the server.

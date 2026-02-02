@@ -449,22 +449,20 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             result = [cmd substringFromIndex:5];
         } else if ([cmd hasPrefix:@"delay "]) {
             result = [NSString stringWithFormat:@"Delay %@s", [cmd substringFromIndex:6]];
-        } else if ([cmd hasPrefix:@"bt connect "]) {
-            result = [NSString stringWithFormat:@"Connect BT: %@", [cmd substringFromIndex:11]];
-        } else if ([cmd hasPrefix:@"bluetooth connect "]) {
-            result = [NSString stringWithFormat:@"Connect BT: %@", [cmd substringFromIndex:18]];
-        } else if ([cmd hasPrefix:@"bt disconnect "]) {
-            result = [NSString stringWithFormat:@"Disconnect BT: %@", [cmd substringFromIndex:14]];
-        } else if ([cmd hasPrefix:@"bluetooth disconnect "]) {
-            result = [NSString stringWithFormat:@"Disconnect BT: %@", [cmd substringFromIndex:21]];
+        } else if ([cmd hasPrefix:@"bt connect "] || [cmd hasPrefix:@"bluetooth connect "]) {
+            NSString *val = [cmd hasPrefix:@"bluetooth connect "] ? [cmd substringFromIndex:18] : [cmd substringFromIndex:11];
+            result = [NSString stringWithFormat:@"Connect %@", val];
+        } else if ([cmd hasPrefix:@"bt disconnect "] || [cmd hasPrefix:@"bluetooth disconnect "]) {
+            NSString *val = [cmd hasPrefix:@"bluetooth disconnect "] ? [cmd substringFromIndex:21] : [cmd substringFromIndex:14];
+            result = [NSString stringWithFormat:@"Disconnect %@", val];
         } else if ([cmd hasPrefix:@"airplay connect "]) {
             NSString *val = [cmd substringFromIndex:16];
             if ([val containsString:@" # "]) {
                 val = [val componentsSeparatedByString:@" # "].lastObject;
             }
-            result = [NSString stringWithFormat:@"AirPlay -> %@", val];
+            result = [NSString stringWithFormat:@"Connect %@", val];
         } else if ([cmd hasPrefix:@"airplay disconnect"]) {
-            result = @"AirPlay Off";
+            result = @"Disconnect Airplay";
         } else if ([cmd hasPrefix:@"set-vol "]) {
             result = [NSString stringWithFormat:@"Set Vol: %@", [cmd substringFromIndex:8]];
         } else if ([cmd hasPrefix:@"brightness "]) {

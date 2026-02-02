@@ -2110,7 +2110,20 @@ static NSString *handle_command(NSString *cmd) {
             }
         }
         return @"Error: BluetoothManager not found\n";
-        return @"Error: BluetoothManager not found\n";
+    } else if ([cleanCmd isEqualToString:@"bluetooth list"] || [cleanCmd isEqualToString:@"bt list"]) {
+        NSMutableString *output = [NSMutableString string];
+        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
+        if (btHandle) {
+            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
+            if (BluetoothManagerClass) {
+                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
+                for (BluetoothDevice *device in [btManager pairedDevices]) {
+                    NSString *name = [device name] ?: @"Unknown Device";
+                    [output appendFormat:@"%@\n", name];
+                }
+            }
+        }
+        return output.length > 0 ? output : @"No paired Bluetooth devices found\n";
     } else if ([cleanCmd hasPrefix:@"bt-connect "] || [cleanCmd hasPrefix:@"bt connect "] || [cleanCmd hasPrefix:@"bluetooth connect "]) {
         NSString *deviceName;
         if ([cleanCmd hasPrefix:@"bt connect "]) deviceName = [cleanCmd substringFromIndex:11];

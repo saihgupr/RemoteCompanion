@@ -226,6 +226,16 @@
         [self handleAirPlayConnect];
         return;
     }
+    
+    if ([command isEqualToString:@"__BT_CONNECT__"]) {
+        [self handleBluetoothConnect];
+        return;
+    }
+    
+    if ([command isEqualToString:@"__BT_DISCONNECT__"]) {
+        [self handleBluetoothDisconnect];
+        return;
+    }
 
     
     if (self.onActionSelected) {
@@ -379,6 +389,130 @@
 }
 
 
+
+- (void)handleBluetoothConnect {
+    UIAlertController *loading = [UIAlertController alertControllerWithTitle:@"Fetching paired devices..." 
+                                                                     message:@"Please wait" 
+                                                              preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:loading animated:YES completion:nil];
+    
+    [[RCServerClient sharedClient] executeCommand:@"bluetooth list" completion:^(NSString * _Nullable output, NSError * _Nullable error) {
+        [loading dismissViewControllerAnimated:YES completion:^{
+            if (error || !output) {
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error" message:error.localizedDescription ?: @"Failed to fetch devices" preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:alert animated:YES completion:nil];
+                return;
+            }
+            
+            NSArray *lines = [output componentsSeparatedByString:@"\n"];
+            NSMutableArray *devices = [NSMutableArray array];
+            for (NSString *line in lines) {
+                NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (trimmed.length > 0) {
+                    [devices addObject:trimmed];
+                }
+            }
+            
+            if (devices.count == 0) {
+                UIAlertController *empty = [UIAlertController alertControllerWithTitle:@"No Devices Found" 
+                                                                               message:@"Ensure Bluetooth devices are paired." 
+                                                                        preferredStyle:UIAlertControllerStyleAlert];
+                [empty addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:empty animated:YES completion:nil];
+                return;
+            }
+            
+            UIAlertController *picker = [UIAlertController alertControllerWithTitle:@"Select Bluetooth Device" 
+                                                                            message:nil 
+                                                                     preferredStyle:UIAlertControllerStyleActionSheet];
+            
+            for (NSString *deviceName in devices) {
+                [picker addAction:[UIAlertAction actionWithTitle:deviceName style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                    NSString *finalCommand = [NSString stringWithFormat:@"bt connect %@", deviceName];
+                    
+                    if (self.onActionSelected) {
+                        self.onActionSelected(finalCommand);
+                    }
+                    if (self.searchController.isActive) {
+                        [self.searchController dismissViewControllerAnimated:NO completion:^{
+                            [self dismissViewControllerAnimated:YES completion:nil];
+                        }];
+                    } else {
+                        [self dismissViewControllerAnimated:YES completion:nil];
+                    }
+                }]];
+            }
+            
+            [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+            picker.popoverPresentationController.sourceView = self.view;
+            picker.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1);
+            [self presentViewController:picker animated:YES completion:nil];
+        }];
+    }];
+}
+
+- (void)handleBluetoothDisconnect {
+    UIAlertController *loading = [UIAlertController alertControllerWithTitle:@"Fetching paired devices..." 
+                                                                     message:@"Please wait" 
+                                                              preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:loading animated:YES completion:nil];
+    
+    [[RCServerClient sharedClient] executeCommand:@"bluetooth list" completion:^(NSString * _Nullable output, NSError * _Nullable error) {
+        [loading dismissViewControllerAnimated:YES completion:^{
+            if (error || !output) {
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error" message:error.localizedDescription ?: @"Failed to fetch devices" preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:alert animated:YES completion:nil];
+                return;
+            }
+            
+            NSArray *lines = [output componentsSeparatedByString:@"\n"];
+            NSMutableArray *devices = [NSMutableArray array];
+            for (NSString *line in lines) {
+                NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (trimmed.length > 0) {
+                    [devices addObject:trimmed];
+                }
+            }
+            
+            if (devices.count == 0) {
+                UIAlertController *empty = [UIAlertController alertControllerWithTitle:@"No Devices Found" 
+                                                                               message:@"Ensure Bluetooth devices are paired." 
+                                                                        preferredStyle:UIAlertControllerStyleAlert];
+                [empty addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:empty animated:YES completion:nil];
+                return;
+            }
+            
+            UIAlertController *picker = [UIAlertController alertControllerWithTitle:@"Select Bluetooth Device" 
+                                                                            message:nil 
+                                                                     preferredStyle:UIAlertControllerStyleActionSheet];
+            
+            for (NSString *deviceName in devices) {
+                [picker addAction:[UIAlertAction actionWithTitle:deviceName style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                    NSString *finalCommand = [NSString stringWithFormat:@"bt disconnect %@", deviceName];
+                    
+                    if (self.onActionSelected) {
+                        self.onActionSelected(finalCommand);
+                    }
+                    if (self.searchController.isActive) {
+                        [self.searchController dismissViewControllerAnimated:NO completion:^{
+                            [self dismissViewControllerAnimated:YES completion:nil];
+                        }];
+                    } else {
+                        [self dismissViewControllerAnimated:YES completion:nil];
+                    }
+                }]];
+            }
+            
+            [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+            picker.popoverPresentationController.sourceView = self.view;
+            picker.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1);
+            [self presentViewController:picker animated:YES completion:nil];
+        }];
+    }];
+}
 
 #pragma mark - Search
 

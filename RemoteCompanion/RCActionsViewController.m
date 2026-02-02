@@ -390,10 +390,16 @@
         cell.textLabel.text = @"Open App";
         subtitle = [action substringFromIndex:7];
     } else if ([action hasPrefix:@"airplay connect "]) {
-        cell.textLabel.text = cleanName; // Will be "AirPlay -> Name"
-        subtitle = @"Connect to device";
+        cell.textLabel.text = cleanName; // Will be "Connect Speaker Name"
+        subtitle = @"AirPlay Device";
+    } else if ([action hasPrefix:@"bt connect "] || [action hasPrefix:@"bluetooth connect "]) {
+        cell.textLabel.text = cleanName; // "Connect Device Name"
+        subtitle = @"Bluetooth Device";
+    } else if ([action hasPrefix:@"bt disconnect "] || [action hasPrefix:@"bluetooth disconnect "]) {
+        cell.textLabel.text = cleanName; // "Disconnect Device Name"
+        subtitle = nil;
     } else if ([action hasPrefix:@"airplay disconnect"]) {
-        cell.textLabel.text = cleanName; // "AirPlay Off"
+        cell.textLabel.text = cleanName; // "Disconnect Airplay"
         subtitle = nil;
     } else {
         // Standard commands

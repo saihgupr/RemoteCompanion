@@ -1,15 +1,16 @@
 Origin: RemoteCompanion Repo
 Label: RemoteCompanion
+Icon: https://saihgupr.github.io/RemoteCompanion/CydiaIcon.png
 Suite: stable
 Version: 1.0
 Codename: ios
 Architectures: iphoneos-arm iphoneos-arm64
 Description: A modern Activator replacement for rootless jailbreaks. Bind triggers to system actions, Siri automation, and custom TCP commands.
 MD5Sum:
- 3dd4def62dcb50b84cc58c035e1cd5b8 805 Packages
- 772f8a0d762e6f74e38563c7fb317e63 574 Packages.bz2
- e5a013b1843b602386e2404d851c2cfc 526 Packages.zst
+ a95523aae86ca994b631ddd99255b15a 4919 Packages
+ db9141f0ff6aed5f7b9ea5f6142b368d 1459 Packages.bz2
+ b8fcdaa96ba6b0a65eafac1e4ecbbf7e 1257 Packages.zst
 SHA256:
- 01834d23df78baca31d4bf4ea508274acdd2d9d71655ae23700ef5bc2a4cd44e 805 Packages
- 69603154bc5adeb423092ab0071e017d58a29c271b9c37e600b6d521d020085e 574 Packages.bz2
- 952c40ecb6ff5920d5466d9950e62218f15794d9baec40a31bc879ac7e2773b9 526 Packages.zst
+ 3735175a27cf933b7b6ed5d3734ea096ed841530875559a9570047dff1fdd144 4919 Packages
+ 103f2c7475baa980840af9e3b9cb79b34067f80d79f8f09707453fa5f8da9d9f 1459 Packages.bz2
+ 8c4bc2fc5065de25cb55a68ac4e1489ade02552990aeabee6abf8a4449927bfd 1257 Packages.zst

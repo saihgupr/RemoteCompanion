@@ -1,12 +1,14 @@
 # RemoteCompanion
 
-RemoteCompanion is a modern Activator replacement built specifically for rootless jailbreaks. It lets you bind physical gestures and hardware buttons to system actions, media controls, and custom scripts.
+RemoteCompanion brings fast, scriptable system control to modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons to system actions, media controls, and custom scripts.
 
 > [!IMPORTANT]
-> **What's New in v2.1** (Performance Update)
-> - **Faster SSH**: Commands like `rc lock` now run instantly (~0.25s), relying on optimized local TCP probes instead of slower fallback methods.
-> - **No Conflict Mode**: TCP port moved to `12340` to play nicely with other system tools.
-> - **True Concurrency**: Now uses Apple's Grand Central Dispatch (GCD) to spin up a new lightweight thread for every single connection. This means `rc lock` can happen at the exact same time as `rc volume`, and if one gets stuck, the others keep working.
+> **What's New in v2.1** (Modernization Update)
+> - **Home Button**: Added a new "Home Button" action that works across all device models (button and gesture-based).
+> - **Unified Device Pickers**: Consistently designed, searchable live lists for picking AirPlay and Bluetooth devices.
+> - **Modern Code Editor**: Completely redesigned, edge-to-edge UI for Terminal and Lua editors.
+> - **Faster & Conflict-Free**: Default TCP port moved to `12340` with optimized local probes making commands like `rc lock` run instantly (~0.25s).
+> - **True Multitasking**: Powered by Apple's **Grand Central Dispatch**, the tweak now handles multiple commands simultaneously without blocking. It's incredibly efficient, using virtually zero battery while ensuring your actions execute instantly.
 
 <p align="center">
   <img src="images/IMG_1385.PNG" width="250" alt="RemoteCompanion Interface" />
@@ -22,8 +24,10 @@ RemoteCompanion is a modern Activator replacement built specifically for rootles
 ## Features
 - **Lightning Fast**: Actions happen in milliseconds (~0.25s).
 - **Smart Control**: Run actions, open apps, or control settings remotely.
-- **Custom Triggers**: Use the companion app to assign action sequences to gestures, physical buttons, or NFC tags.
-- **Modern UI**: Fully redesigned with native iOS aesthetics, Large Titles, and frosted glass effects.
+- **Custom Triggers**: Assign action sequences to gestures, physical buttons, or NFC tags.
+- **Robust System Actions**: Simulate Home, Power, Volume, and more with cross-device compatibility.
+- **Live Device Discovery**: Pickers for AirPlay and Bluetooth now show a live, searchable list of nearby hardware.
+- **Modern UI**: Redesigned with edge-to-edge editors, native iOS aesthetics, Large Titles, and frosted glass effects.
 - **Universal Search**: Instantly find actions and shortcuts with search bars in every picker.
 - **Advanced Automation**: Full support for Touch ID (Tap/Hold), Ringer Switch, and Siri triggers.
 

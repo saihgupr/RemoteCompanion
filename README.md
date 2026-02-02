@@ -68,7 +68,7 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
   - **Power**: Double-tap, Long-press, **Triple/Quadruple click**, or **Power + Volume Up/Down** combos.
   - **Volume**: Long hold Up/Down (0.3s) or **Volume Up + Down** combo.
   - **Home**: Double-tap (Touch ID), Double, Triple, or Quadruple click.
-- **Biometrics**: **Touch ID Single Tap** and **Hold (Rest Finger)** triggers.
+- **Touch ID Sensor**: **Single Tap** and **Hold (Rest Finger)** triggers.
 - **NFC Triggers**: Scan physical NFC tags to run actions on screen wake (Optional toggle in Settings).
 - **Ringer Switch**: Mute, Unmute, or Toggle triggers.
 - **Gestures**: 

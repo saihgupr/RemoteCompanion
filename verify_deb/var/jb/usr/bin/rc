@@ -21,7 +21,7 @@ elif [ -f "/usr/bin/nc" ]; then
 fi
 
 # Try ports 1234-1238
-for PORT in 12340 12341 12342 12343 12344; do
+for PORT in 1234 1235 1236 1237 1238; do
     # Use netcat to send command AND read response
     # -w 2: Wait max 2 seconds for response/connection
     if echo -n "$CMD" | $NC_PATH -w 2 127.0.0.1 $PORT 2>/dev/null; then
@@ -30,5 +30,5 @@ for PORT in 12340 12341 12342 12343 12344; do
     fi
 done
 
-echo "Error: RemoteCommand server not running or reachable (checked ports 12340-12344)"
+echo "Error: RemoteCommand server not running or reachable (checked ports 1234-1238)"
 exit 1

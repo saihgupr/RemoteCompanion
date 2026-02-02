@@ -396,18 +396,22 @@ void SRLog(NSString *format, ...) {
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
     
+    // Log to console (stderr) for syslog capture if available
     NSLog(@"[RemoteCommand] %@", message);
     
-    NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] %@\n", [NSDate date], message];
-    NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
-    if (fileHandle) {
-        @try {
-            [fileHandle seekToEndOfFile];
-            [fileHandle writeData:[logMsg dataUsingEncoding:NSUTF8StringEncoding]];
-            [fileHandle closeFile];
-        } @catch (NSException *e) {}
-    } else {
-        [logMsg writeToFile:@"/tmp/remotecommand.log" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    // Write to file with synchronization
+    @synchronized([NSFileManager defaultManager]) {
+        NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] %@\n", [NSDate date], message];
+        NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
+        if (fileHandle) {
+            @try {
+                [fileHandle seekToEndOfFile];
+                [fileHandle writeData:[logMsg dataUsingEncoding:NSUTF8StringEncoding]];
+                [fileHandle closeFile];
+            } @catch (NSException *e) {}
+        } else {
+            [logMsg writeToFile:@"/tmp/remotecommand.log" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        }
     }
 }
 
@@ -1566,6 +1570,7 @@ static NSString *handle_command(NSString *cmd) {
                  inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
             }
         });
+        return @"Lock command sent\n";
     } else if ([cleanCmd isEqualToString:@"unlock"] || [cleanCmd hasPrefix:@"unlock "]) {
         // Unlock phone: Only if currently locked!
         
@@ -2581,15 +2586,15 @@ static void start_server() {
         struct sockaddr_in address;
         int opt = 1;
         int addrlen = sizeof(address);
-        char buffer[1024] = {0};
+        // Buffer removed (unused)
         
-        // Ports to try in order
-        int ports[] = {1234, 1235, 1236, 1237, 1238};
+        // Ports to try in order (12340+ to avoid debugserver conflict on 1234)
+        int ports[] = {12340, 12341, 12342, 12343, 12344};
         int num_ports = sizeof(ports) / sizeof(ports[0]);
         int bound_port = 0;
 
-        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-            SRLog(@"[RemoteCommand] ERROR: Failed to create socket");
+        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) { // Fix: check < 0
+            SRLog(@"[RemoteCommand] ERROR: Failed to create socket (errno: %d)", errno);
             return;
         }
 
@@ -2597,12 +2602,9 @@ static void start_server() {
         if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
             SRLog(@"[RemoteCommand] WARNING: Failed to set SO_REUSEADDR");
         }
-        #ifdef SO_REUSEPORT
-        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt))) {
-            SRLog(@"[RemoteCommand] WARNING: Failed to set SO_REUSEPORT");
-        }
-        #endif
-
+        
+        memset(&address, 0, sizeof(address));
+        address.sin_len = sizeof(address);
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = INADDR_ANY;
         
@@ -2632,42 +2634,68 @@ static void start_server() {
             return;
         }
 
-        SRLog(@"[RemoteCommand] Server listening on port %d", bound_port);
+        SRLog(@"[RemoteCommand] Server listening on port %d... Waiting for connections.", bound_port);
 
         while (1) {
-            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) continue;
+            // Reset addrlen for each accept call
+            addrlen = sizeof(address);
             
-            // Get client IP
-            char *client_ip = inet_ntoa(address.sin_addr);
-            BOOL isLocalhost = (strcmp(client_ip, "127.0.0.1") == 0);
+            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+                 // Only log serious errors, ignore EAGAIN/EINTR
+                 if (errno != EAGAIN && errno != EINTR) {
+                     SRLog(@"[RemoteCommand] Accept failed: %d (%s)", errno, strerror(errno));
+                 }
+                 continue;
+            }
             
-            // Check config if not localhost
-            if (!isLocalhost) {
-                // Check if TCP server is enabled in config (dynamic reload)
-                load_trigger_config();
-                BOOL tcpEnabled = NO; // Default
-                if (g_triggerConfig) {
-                    id tcpVal = g_triggerConfig[@"tcpEnabled"];
-                    tcpEnabled = (tcpVal == nil) ? NO : [tcpVal boolValue];
+            // Dispatch connection handling to concurrent queue to prevent blocking the listener
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                // Set receive timeout to 5 seconds to prevent hanging
+                struct timeval tv;
+                tv.tv_sec = 5;
+                tv.tv_usec = 0;
+                setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
+                // Get client IP (Thread Safe)
+                char client_ip[INET_ADDRSTRLEN] = {0};
+                if (inet_ntop(AF_INET, &(address.sin_addr), client_ip, INET_ADDRSTRLEN) == NULL) {
+                     strcpy(client_ip, "UNKNOWN");
                 }
                 
-                if (!tcpEnabled) {
-                    // Connection rejected by policy (only allow localhost)
-                    close(new_socket);
-                    continue;
+                BOOL isLocalhost = (strcmp(client_ip, "127.0.0.1") == 0);
+                
+                // Check config if not localhost
+                if (!isLocalhost) {
+                    load_trigger_config();
+                    BOOL tcpEnabled = NO;
+                    if (g_triggerConfig) {
+                         id tcpVal = g_triggerConfig[@"tcpEnabled"];
+                         tcpEnabled = (tcpVal == nil) ? NO : [tcpVal boolValue];
+                    }
+                    
+                    if (!tcpEnabled) {
+                        SRLog(@"[RemoteCommand] Rejected non-localhost connection from %s", client_ip);
+                        close(new_socket);
+                        return; 
+                    }
                 }
-            }
-            
-            ssize_t valread = read(new_socket, buffer, 1024);
-            if (valread > 0) {
-                NSString *cmd = [[NSString alloc] initWithBytes:buffer length:valread encoding:NSUTF8StringEncoding];
-                NSString *response = handle_command(cmd);
-                if (response) {
-                     write(new_socket, [response UTF8String], [response lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+                
+                char local_buffer[1024] = {0};
+                // SRLog(@"[RemoteCommand] Reading from %s...", client_ip);
+                ssize_t valread = read(new_socket, local_buffer, 1024);
+                if (valread > 0) {
+                    NSString *cmd = [[NSString alloc] initWithBytes:local_buffer length:valread encoding:NSUTF8StringEncoding];
+                    // SRLog(@"[RemoteCommand] Received: %@", cmd);
+                    NSString *response = handle_command(cmd);
+                    if (response) {
+                        write(new_socket, [response UTF8String], [response lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+                    }
+                    // SRLog(@"[RemoteCommand] Processed command");
+                } else if (valread < 0) {
+                     // SRLog(@"[RemoteCommand] Read error: %d", errno);
                 }
-            }
-            close(new_socket);
-            memset(buffer, 0, 1024);
+                close(new_socket);
+            });
         }
     });
 }

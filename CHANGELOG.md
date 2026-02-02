@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.1.0~beta1] - 2026-02-02
+## [2.1.0~beta2] - 2026-02-02
 
 ### Improved
 - **Action Labels**: Refined all system labels for clarity. "set-vol" is now "Set Volume", "brightness" is now "Set Brightness", and abbreviations like LPM, DND, and ANC have been expanded to their full names.

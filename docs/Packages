@@ -126,6 +126,24 @@ SHA256: 9360c0c2d71b80268600a3979dd626ea8175cb5119f7c156cd31d42d2bd49a67
 
 Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion
+Depends: mobilesubstrate, firmware (>= 14.0)
+Description: A modern Activator replacement for rootless jailbreaks. Bind triggers like Touch ID, Power/Volume buttons, and Status Bar gestures to system actions, Siri automation, and custom TCP commands. https://github.com/saihgupr/RemoteCompanion
+Maintainer: Saihgupr
+Author: Saihgupr
+Section: Tweaks
+Replaces: com.pizzaman.remotecommand
+Conflicts: com.pizzaman.remotecommand
+Architecture: iphoneos-arm
+Version: 2.1.0~beta2
+Installed-Size: 1368
+Filename: ./com.saihgupr.remotecompanion_2.1.0~beta2_iphoneos-arm.deb
+Size: 285580
+MD5sum: 53aba4164e3b57dddee03da32e814963
+SHA1: 5a062a3f277e3b6239f3504dc6bbfa8c11269610
+SHA256: 4997c4f84ba93a58446ef24f59549dc09ba28b4078c35837e1c9d245cfcb5eb9
+
+Package: com.saihgupr.remotecompanion
+Name: RemoteCompanion
 Depends: mobilesubstrate, firmware (>= 14.0), netcat
 Description: A modern Activator replacement for rootless jailbreaks. Bind triggers like Touch ID, Power/Volume buttons, and Status Bar gestures to system actions, Siri automation, and custom TCP commands. https://github.com/saihgupr/RemoteCompanion
 Maintainer: Saihgupr
@@ -141,6 +159,24 @@ Size: 257860
 MD5sum: 8fc9095070d8b9af49efc12b3a3e7352
 SHA1: 1e6118974f3c5ae16ad728f4bf76177f4818aca1
 SHA256: 66b607195ecc5c7b52ef8feaa4b2b4e61fda12bcc688334af817f76e023ebaa5
+
+Package: com.saihgupr.remotecompanion
+Name: RemoteCompanion
+Depends: mobilesubstrate, firmware (>= 14.0)
+Description: A modern Activator replacement for rootless jailbreaks. Bind triggers like Touch ID, Power/Volume buttons, and Status Bar gestures to system actions, Siri automation, and custom TCP commands. https://github.com/saihgupr/RemoteCompanion
+Maintainer: Saihgupr
+Author: Saihgupr
+Section: Tweaks
+Replaces: com.pizzaman.remotecommand
+Conflicts: com.pizzaman.remotecommand
+Architecture: iphoneos-arm64
+Version: 2.1.0~beta2
+Installed-Size: 1920
+Filename: ./com.saihgupr.remotecompanion_2.1.0~beta2_iphoneos-arm64.deb
+Size: 285856
+MD5sum: fef18f6a9d35ef29cb30d476df932583
+SHA1: d2c7999002b03f01617c7499fa00e12452e87271
+SHA256: 91c1af50bbf53bbd3cceafa6b33d2af6f7bf4ca69e8458c1e91af57e71b4f978
 
 Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion

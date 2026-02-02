@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - **Modern Code Editor**: Completely redesigned the Terminal and Lua editor pages with a modernized, edge-to-edge iOS 17 style. Removed unnecessary buttons for a cleaner, more focused editing experience.
 - **Refined Labels**: Simplified "Lua" and "Terminal" labels in the main panel for a cleaner look, and updated "Wait" labels to show the duration (e.g., "Wait 5s").
 - **Auto-Launch on Deploy**: The `deploy.sh` script now automatically opens the RemoteCompanion app on your device after a successful install, using a more robust launch method.
+- **iOS 14 & Rootful Compatibility**: Added support for iOS 14 and traditional rootful jailbreak environments. This includes dynamic path resolution for binaries like `springcuts` and `killall` (supporting both `/var/jb/usr/bin` and `/usr/bin`), SF Symbol fallbacks for older firmware, and iOS 14 specific DND fallback research.
 
 ### Fixed
 - **Connectivity**: Fixed an issue where `rc lock` would execute but report failure due to a missing response from the server.

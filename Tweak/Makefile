@@ -2,10 +2,10 @@ FINALPACKAGE=1
 THEOS ?= /opt/theos
 THEOS_DEVICE_IP = iphone.local
 INSTALL_TARGET_USER = mobile
-TARGET := iphone:clang:latest:15.0
+TARGET := iphone:clang:latest:14.0
 INSTALL_TARGET_PROCESSES = SpringBoard
 ARCHS = arm64 arm64e
-THEOS_PACKAGE_SCHEME = rootless
+THEOS_PACKAGE_SCHEME ?= rootless
 
 include $(THEOS)/makefiles/common.mk
 

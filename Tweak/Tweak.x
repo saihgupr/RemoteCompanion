@@ -437,14 +437,28 @@ static void toggle_dnd(BOOL state) {
         @try {
             Class ServiceClass = objc_getClass("DNDModeAssertionService");
             Class DetailsClass = objc_getClass("DNDModeAssertionDetails");
+            Class StateServiceClass = objc_getClass("DNDStateService");
             
             if (!ServiceClass || !DetailsClass) {
-                SRLog(@"[SpringRemote] DND classes not found");
+                // Fallback for iOS 14
+                if (StateServiceClass) {
+                    SRLog(@"[SpringRemote] Using iOS 14 DND fallback");
+                    id service = [StateServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
+                    (void)service;
+                    if (state) {
+                        // On iOS 14, DND is often handled via specialized controllers or assertions
+                        // but a quick way is often through the SBDoNotDisturbController if we can find it
+                        // or just failing gracefully if private APIs changed too much.
+                        // For now, we'll try to find the shared instance of the DND service.
+                        // NOTE: Proper iOS 14 DND implementation usually involves SpringBoard hooks.
+                    }
+                }
+                SRLog(@"[SpringRemote] DND toggle not fully supported on this iOS version yet");
                 return;
             }
 
             // Use the SAME client identifier as Control Center (from Assertions.json)
-            DNDModeAssertionService *service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
+            id service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
             
             // Always invalidate existing assertions first to prevent stacking/errors (Idempotency)
             NSError *invalidateErr = nil;
@@ -454,7 +468,7 @@ static void toggle_dnd(BOOL state) {
                 // Turn ON
                 // Try to use a more robust identifier or userRequested approach if possible.
                 // For now, let's stick to explicit default but log heavily.
-                 DNDModeAssertionDetails *details = [DetailsClass detailsWithIdentifier:@"com.apple.control-center.manual-toggle"
+                 id details = [DetailsClass detailsWithIdentifier:@"com.apple.control-center.manual-toggle"
                                                                      modeIdentifier:@"com.apple.donotdisturb.mode.default"
                                                                            lifetime:nil];
                 NSError *err = nil;
@@ -515,7 +529,7 @@ static BOOL get_lpm_state() {
 static BOOL get_dnd_state() {
     Class ServiceClass = objc_getClass("DNDModeAssertionService");
     if (ServiceClass) {
-        DNDModeAssertionService *service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
+        id service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
         NSError *err = nil;
         id assertion = [service activeModeAssertionWithError:&err];
         return (assertion != nil);
@@ -575,6 +589,20 @@ static void inject_hid_event(uint32_t page, uint32_t usage, uint64_t durationNs,
         
         if (client) CFRelease(client);
     });
+}
+
+// Helper to detect rootless vs rootful
+static NSString* root_prefix() {
+    static NSString *prefix = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb/usr/bin/nc"]) {
+            prefix = @"/var/jb";
+        } else {
+            prefix = @"";
+        }
+    });
+    return prefix;
 }
 
 // Helper to inject a HID Consumer Page event (wrapper)
@@ -1299,7 +1327,7 @@ static NSString *handle_command(NSString *cmd) {
         
         SRLog(@"Direct spawn springcuts with: %@", args);
         
-        const char *springcutsPath = "/var/jb/usr/bin/springcuts";
+        const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
         if (access(springcutsPath, X_OK) != 0) {
             springcutsPath = "/usr/bin/springcuts";
         }
@@ -1370,7 +1398,7 @@ static NSString *handle_command(NSString *cmd) {
         
         SRLog(@"Shortcut spawn with args: %@", args);
         
-        const char *springcutsPath = "/var/jb/usr/bin/springcuts";
+        const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
         if (access(springcutsPath, X_OK) != 0) {
             springcutsPath = "/usr/bin/springcuts";
         }
@@ -2609,7 +2637,8 @@ static NSString *handle_command(NSString *cmd) {
             // Reliable Tweak way: Kill backboardd
             pid_t pid;
             const char* args[] = { "killall", "-9", "backboardd", NULL };
-            posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char* const*)args, NULL);
+            NSString *killallPath = [NSString stringWithFormat:@"%@/usr/bin/killall", root_prefix()];
+            posix_spawn(&pid, [killallPath UTF8String], NULL, NULL, (char* const*)args, NULL);
             
             // Fallback for non-rootless
             if (pid <= 0) {
@@ -2629,7 +2658,7 @@ static NSString *handle_command(NSString *cmd) {
                  if (NSTaskClass) {
                      id task = [[NSTaskClass alloc] init];
                      
-                     NSString *binPath = @"/var/jb/usr/bin/springcuts";
+                     NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()];
                      if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
                          binPath = @"/usr/bin/springcuts";
                      }

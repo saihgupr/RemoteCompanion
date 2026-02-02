@@ -25,7 +25,10 @@
     if ([triggerKey containsString:@"statusbar"]) return @"hand.draw"; // Status bar / screen gestures
     if ([triggerKey containsString:@"home"]) return @"circle.circle"; // Home button
     if ([triggerKey containsString:@"ringer"]) return @"bell.fill";
-    if ([triggerKey containsString:@"edge"]) return @"iphone.homebutton.radiowaves.left.and.right"; // Edge gestures
+    if ([triggerKey containsString:@"edge"]) {
+        if (@available(iOS 14.2, *)) return @"iphone.homebutton.radiowaves.left.and.right";
+        return @"hand.draw";
+    }
     if ([triggerKey containsString:@"touchid"]) return @"touchid";
     if ([triggerKey hasPrefix:@"nfc_"]) return @"wave.3.right.circle.fill";
     return @"hand.tap"; // Default
@@ -62,7 +65,9 @@
     
     self.tableView.rowHeight = 64;
     self.tableView.rowHeight = 64;
-    self.tableView.sectionHeaderTopPadding = 15; // increased padding
+    if (@available(iOS 15.0, *)) {
+        self.tableView.sectionHeaderTopPadding = 15; // increased padding
+    }
     self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 0, 0); // Reset inset since we have large titles handling spacing better now
     
     self.tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 0.1)];

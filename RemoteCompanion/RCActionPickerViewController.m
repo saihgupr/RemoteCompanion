@@ -179,7 +179,15 @@
     cell.textLabel.font = [UIFont systemFontOfSize:17];
     
     if (action[@"icon"]) {
-        cell.imageView.image = [UIImage systemImageNamed:action[@"icon"]];
+        NSString *iconName = action[@"icon"];
+        if (@available(iOS 15.0, *)) {
+            // Use modern icon
+        } else {
+            if ([iconName isEqualToString:@"ear.badge.checkmark"]) {
+                iconName = @"ear";
+            }
+        }
+        cell.imageView.image = [UIImage systemImageNamed:iconName];
         cell.imageView.tintColor = [UIColor secondaryLabelColor];
     }
     

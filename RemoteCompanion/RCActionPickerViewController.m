@@ -1,4 +1,5 @@
 #import "RCActionPickerViewController.h"
+#import "RCServerClient.h"
 
 @interface RCActionPickerViewController () <UISearchResultsUpdating>
 @property (nonatomic, strong) NSArray<NSString *> *sectionTitles;
@@ -221,6 +222,10 @@
     }
     
     // Existing special handlers
+    if ([command isEqualToString:@"__AIRPLAY_CONNECT__"]) {
+        [self handleAirPlayConnect];
+        return;
+    }
 
     
     if (self.onActionSelected) {
@@ -282,6 +287,95 @@
     [alert addAction:okAction];
     
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)handleAirPlayConnect {
+    UIAlertController *loading = [UIAlertController alertControllerWithTitle:@"Scanning for devices..." 
+                                                                     message:@"Please wait" 
+                                                              preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:loading animated:YES completion:nil];
+    
+    [[RCServerClient sharedClient] executeCommand:@"airplay list" completion:^(NSString * _Nullable output, NSError * _Nullable error) {
+        [loading dismissViewControllerAnimated:YES completion:^{
+            if (error) {
+                UIAlertController *errAlert = [UIAlertController alertControllerWithTitle:@"Error" 
+                                                                                message:error.localizedDescription 
+                                                                         preferredStyle:UIAlertControllerStyleAlert];
+                [errAlert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:errAlert animated:YES completion:nil];
+                return;
+            }
+            
+            // Parse output
+            // Output format expected: "UID - Name" per line, or "No AirPlay devices found."
+            NSArray *lines = [output componentsSeparatedByString:@"\n"];
+            NSMutableArray *devices = [NSMutableArray array];
+            
+            for (NSString *line in lines) {
+                NSString *clean = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (clean.length == 0) continue;
+                if ([clean isEqualToString:@"No AirPlay devices found."]) continue;
+                if ([clean hasPrefix:@"Error:"]) continue;
+                
+                // Format from Tweak.x: "  Name [UID]" or "* Name [UID]"
+                if (clean.length < 5) continue;
+                
+                // Strip leading status char if present (* or space)
+                NSString *workingLine = clean;
+                if ([workingLine hasPrefix:@"* "] || [workingLine hasPrefix:@"  "]) {
+                    workingLine = [workingLine substringFromIndex:2];
+                }
+                
+                NSRange openBracket = [workingLine rangeOfString:@" [" options:NSBackwardsSearch];
+                NSRange closeBracket = [workingLine rangeOfString:@"]" options:NSBackwardsSearch];
+                
+                if (openBracket.location != NSNotFound && closeBracket.location != NSNotFound && closeBracket.location > openBracket.location) {
+                    NSString *name = [workingLine substringToIndex:openBracket.location];
+                    NSString *uid = [workingLine substringWithRange:NSMakeRange(openBracket.location + 2, closeBracket.location - openBracket.location - 2)];
+                    [devices addObject:@{ @"uid": uid, @"name": name }];
+                }
+            }
+            
+            if (devices.count == 0) {
+                UIAlertController *empty = [UIAlertController alertControllerWithTitle:@"No Devices Found" 
+                                                                               message:@"Ensure AirPlay devices are reachable." 
+                                                                        preferredStyle:UIAlertControllerStyleAlert];
+                [empty addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:empty animated:YES completion:nil];
+                return;
+            }
+            
+            // Show selection
+            UIAlertController *picker = [UIAlertController alertControllerWithTitle:@"Select AirPlay Device" 
+                                                                            message:nil 
+                                                                     preferredStyle:UIAlertControllerStyleActionSheet];
+            
+            for (NSDictionary *device in devices) {
+                [picker addAction:[UIAlertAction actionWithTitle:device[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                    NSString *finalCommand = [NSString stringWithFormat:@"airplay connect %@", device[@"uid"]];
+                    
+                    if (self.onActionSelected) {
+                        self.onActionSelected(finalCommand);
+                    }
+                    if (self.searchController.isActive) {
+                        [self.searchController dismissViewControllerAnimated:NO completion:^{
+                            [self dismissViewControllerAnimated:YES completion:nil];
+                        }];
+                    } else {
+                        [self dismissViewControllerAnimated:YES completion:nil];
+                    }
+                }]];
+            }
+            
+            [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+            
+            // iPad support
+            picker.popoverPresentationController.sourceView = self.view;
+            picker.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1);
+            
+            [self presentViewController:picker animated:YES completion:nil];
+        }];
+    }];
 }
 
 

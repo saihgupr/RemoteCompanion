@@ -2436,26 +2436,45 @@ static NSString *handle_command(NSString *cmd) {
         dispatch_async(dispatch_get_main_queue(), ^{
             MPAVRoutingController *ctrl = [[objc_getClass("MPAVRoutingController") alloc] init];
             ctrl.discoveryMode = 3; // Detailed
-            [ctrl fetchAvailableRoutesWithCompletionHandler:^(NSArray<MPAVRoute *> *routes) {
-                NSMutableString *output = [NSMutableString string];
-                if (routes.count == 0) {
-                    [output appendString:@"No AirPlay devices found.\n"];
-                } else {
-                    for (MPAVRoute *route in routes) {
-                        NSString *name = route.routeName ?: @"Unknown";
-                        NSString *uid = route.routeUID ?: @"No UID";
-                        // Mark picked route
-                        NSString *prefix = route.picked ? @"* " : @"  ";
-                        [output appendFormat:@"%@%@ [%@]\n", prefix, name, uid];
+            
+            __block int attempts = 0;
+            __block void (^fetchDevices)(void) = nil;
+            
+            fetchDevices = ^void(void) {
+                [ctrl fetchAvailableRoutesWithCompletionHandler:^(NSArray<MPAVRoute *> *routes) {
+                    attempts++;
+                    
+                    // If we only found 1 device (iPhone), try again for up to 3 seconds (6 * 0.5s)
+                    if (routes.count <= 1 && attempts < 6) {
+                        SRLog(@"[SpringRemote] AirPlay list: Only found %lu devices, retrying discovery (%d/6)...", (unsigned long)routes.count, attempts);
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                            if (fetchDevices) fetchDevices();
+                        });
+                        return;
                     }
-                }
-                result = output;
-                dispatch_semaphore_signal(sema);
-            }];
+                    
+                    NSMutableString *output = [NSMutableString string];
+                    if (routes.count == 0) {
+                        [output appendString:@"No AirPlay devices found.\n"];
+                    } else {
+                        for (MPAVRoute *route in routes) {
+                            NSString *name = route.routeName ?: @"Unknown";
+                            NSString *uid = route.routeUID ?: @"No UID";
+                            NSString *prefix = route.picked ? @"* " : @"  ";
+                            [output appendFormat:@"%@%@ [%@]\n", prefix, name, uid];
+                        }
+                    }
+                    result = output;
+                    dispatch_semaphore_signal(sema);
+                    fetchDevices = nil; // Break cycle
+                }];
+            };
+            
+            fetchDevices();
         });
         
-        // Wait up to 4 seconds
-        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC));
+        // Wait up to 5 seconds (6 * 0.5s retry + buffer)
+        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
         return result ?: @"Error: Timeout fetching AirPlay devices\n";
 
     } else if ([cleanCmd hasPrefix:@"airplay connect "]) {

@@ -541,7 +541,7 @@
         cell.textLabel.text = @"Lua Script";
         subtitle = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
     } else if ([action hasPrefix:@"delay "]) {
-        cell.textLabel.text = @"Wait";
+        cell.textLabel.text = [NSString stringWithFormat:@"Wait %@s", [action substringFromIndex:6]];
         subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
     } else if ([action hasPrefix:@"shortcut:"]) {
         cell.textLabel.text = cleanName; // "Run Shortcut Name"

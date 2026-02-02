@@ -5,9 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [2.1.0~beta1] - 2026-02-02
 
 ### Improved
+- **Action Labels**: Refined all system labels for clarity. "set-vol" is now "Set Volume", "brightness" is now "Set Brightness", and abbreviations like LPM, DND, and ANC have been expanded to their full names.
+- **Label Readability**: Increased truncation limit to 40 characters for better visibility of long device and shortcut names.
 - **Instant Commands**: Optimized `rc` command execution to be virtually instant (~0.25s) by fixing TCP probe timeouts that were causing unnecessary SSH fallbacks.
 - **Server Stability**: Rewrote the internal server to handle multiple connections concurrently, preventing freezes/crashes when a connection hangs.
 - **Port Reliability**: Moved server ports to 12340-12344 to avoid conflicts with system services like `debugserver`.
+
+### Added
+- **Action Editing**: You can now edit any existing action in your sequence just by tapping it. This re-opens the picker (for apps, shortcuts, devices) or an alert (for delay, volume, brightness) to quickly swap values.
+- **Unified Device Pickers**: Implemented a consistent, discovery-based picker for both AirPlay and Bluetooth devices. The app now fetches a live list of available devices (using `airplay list` and `bluetooth list`) to ensure you're always selecting from active nearby hardware.
+- **Auto-Launch on Deploy**: The `deploy.sh` script now automatically opens the RemoteCompanion app on your device after a successful install.
 
 ### Fixed
 - **Connectivity**: Fixed an issue where `rc lock` would execute but report failure due to a missing response from the server.

@@ -385,10 +385,12 @@
         
         UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:appPicker];
         [self presentViewController:nav animated:YES completion:nil];
-    } else if ([currentAction hasPrefix:@"airplay connect "]) {
+    } else if ([currentAction hasPrefix:@"airplay connect "] || [currentAction hasPrefix:@"airplay-connect "]) {
         [self editAirPlayConnectAtIndex:indexPath.row];
-    } else if ([currentAction hasPrefix:@"bt connect "] || [currentAction hasPrefix:@"bluetooth connect "]) {
-        [self editBluetoothConnectAtIndex:indexPath.row];
+    } else if ([currentAction hasPrefix:@"bt connect "] || [currentAction hasPrefix:@"bluetooth connect "] || [currentAction hasPrefix:@"bt-connect "]) {
+        [self editBluetoothConnectAtIndex:indexPath.row isDisconnect:NO];
+    } else if ([currentAction hasPrefix:@"bt disconnect "] || [currentAction hasPrefix:@"bluetooth disconnect "] || [currentAction hasPrefix:@"bt-disconnect "]) {
+        [self editBluetoothConnectAtIndex:indexPath.row isDisconnect:YES];
     }
 }
 
@@ -446,7 +448,9 @@
     }];
 }
 
-- (void)editBluetoothConnectAtIndex:(NSInteger)index {
+- (void)editBluetoothConnectAtIndex:(NSInteger)index isDisconnect:(BOOL)isDisconnect {
+    NSString *promptTitle = isDisconnect ? @"Update Bluetooth Disconnect" : @"Update Bluetooth Connection";
+    
     UIAlertController *loading = [UIAlertController alertControllerWithTitle:@"Fetching paired devices..." 
                                                                      message:@"Please wait" 
                                                               preferredStyle:UIAlertControllerStyleAlert];
@@ -475,10 +479,11 @@
                 return;
             }
             
-            UIAlertController *picker = [UIAlertController alertControllerWithTitle:@"Update Bluetooth Device" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+            UIAlertController *picker = [UIAlertController alertControllerWithTitle:promptTitle message:nil preferredStyle:UIAlertControllerStyleActionSheet];
             for (NSString *deviceName in devices) {
                 [picker addAction:[UIAlertAction actionWithTitle:deviceName style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-                    self.actions[index] = [NSString stringWithFormat:@"bt connect %@", deviceName];
+                    NSString *prefix = isDisconnect ? @"bt disconnect" : @"bt connect";
+                    self.actions[index] = [NSString stringWithFormat:@"%@ %@", prefix, deviceName];
                     [self saveActions];
                     [self.tableView reloadData];
                 }]];

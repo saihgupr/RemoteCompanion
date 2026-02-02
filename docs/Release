@@ -7,10 +7,10 @@ Codename: ios
 Architectures: iphoneos-arm iphoneos-arm64
 Description: A modern Activator replacement for rootless jailbreaks. Bind triggers to system actions, Siri automation, and custom TCP commands.
 MD5Sum:
- 32456bc207988c62850ede777600c233 5720 Packages
- 3c521ef501f2b09222a78fc44cafe25b 1625 Packages.bz2
- 926571dfb64eb3d19e7d846b28992c23 1352 Packages.zst
+ 9cb80d616306ff44bccd8299d5b20c23 5720 Packages
+ e03a7aebe8abffab624f23b8fdf26c1d 1626 Packages.bz2
+ 8b45c7c5610423e2974291c2cb160474 1351 Packages.zst
 SHA256:
- 4a39059828c8e612660568d62121a000c1e952081c16ea36985dcd10f6e994d0 5720 Packages
- 6348692d59609efaf4b20f5097a65f69f0eb85f3ec720d5bf6d31ca1644e1159 1625 Packages.bz2
- 6cc5add9071defbfa912d1d63251ddcba8bbdeaf738edcb17f7da4160c41ddd6 1352 Packages.zst
+ 0d43637e5d4e782d1554890d8fbb545658e2ecb12bd7faeba53bbac5d1126a3c 5720 Packages
+ a7d90926e7740a1b29c6e1d0d7dacc2304929662d9c4756e649afda057e8081f 1626 Packages.bz2
+ 77b202135672609d7591edf8b101ab2894f60bc1e419409d0cd051cbb3839646 1351 Packages.zst

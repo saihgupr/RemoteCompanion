@@ -446,7 +446,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     
     if (!result) {
         if ([cmd hasPrefix:@"exec "]) {
-            result = [cmd substringFromIndex:5];
+            result = @"Terminal Command";
         } else if ([cmd hasPrefix:@"delay "]) {
             result = [NSString stringWithFormat:@"Delay %@s", [cmd substringFromIndex:6]];
         } else if ([cmd hasPrefix:@"bt connect "] || [cmd hasPrefix:@"bluetooth connect "]) {
@@ -469,12 +469,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             result = [NSString stringWithFormat:@"Set Brightness %@", [cmd substringFromIndex:11]];
         } else if ([cmd hasPrefix:@"shortcut:"]) {
             result = [NSString stringWithFormat:@"Run %@", [cmd substringFromIndex:9]];
-        } else if ([cmd hasPrefix:@"Lua "]) {
-            result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:4]];
-        } else if ([cmd hasPrefix:@"lua_eval "]) {
-            result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:9]];
-        } else if ([cmd hasPrefix:@"lua "]) {
-            result = [[cmd substringFromIndex:4] lastPathComponent];
+        } else if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) {
+            result = @"Lua Script";
         } else if ([cmd hasPrefix:@"spotify "]) {
             result = @"Spotify";
         } else if ([cmd hasPrefix:@"uiopen "]) {

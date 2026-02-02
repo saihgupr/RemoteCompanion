@@ -19,6 +19,8 @@ All notable changes to this project will be documented in this file.
 - **Refined Labels**: Simplified "Lua" and "Terminal" labels in the main panel for a cleaner look, and updated "Wait" labels to show the duration (e.g., "Wait 5s").
 - **Auto-Launch on Deploy**: The `deploy.sh` script now automatically opens the RemoteCompanion app on your device after a successful install, using a more robust launch method.
 - **iOS 14 & Rootful Compatibility**: Added support for iOS 14 and traditional rootful jailbreak environments. This includes dynamic path resolution for binaries like `springcuts` and `killall` (supporting both `/var/jb/usr/bin` and `/usr/bin`), SF Symbol fallbacks for older firmware, and iOS 14 specific DND fallback research.
+- **iPad Experience**: Added official support for iPads with full landscape orientation support and optimized layouts.
+- **Dependency-Free Client**: The `rc` command-line tool now uses native bash networking (`/dev/tcp`) instead of relying on `netcat`, ensuring higher reliability and performance on all jailbreak types.
 
 ### Fixed
 - **Connectivity**: Fixed an issue where `rc lock` would execute but report failure due to a missing response from the server.

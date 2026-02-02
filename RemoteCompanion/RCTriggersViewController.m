@@ -91,6 +91,7 @@
 
 - (void)setupFooterView {
     UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 60)];
+    footerView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     
     // App Title Label
     UILabel *appTitleLabel = [[UILabel alloc] init];

@@ -464,9 +464,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         } else if ([cmd hasPrefix:@"airplay disconnect"]) {
             result = @"Disconnect Airplay";
         } else if ([cmd hasPrefix:@"set-vol "]) {
-            result = [NSString stringWithFormat:@"Set Vol: %@", [cmd substringFromIndex:8]];
+            result = [NSString stringWithFormat:@"Set Volume %@", [cmd substringFromIndex:8]];
         } else if ([cmd hasPrefix:@"brightness "]) {
-            result = [NSString stringWithFormat:@"Set Brightness: %@", [cmd substringFromIndex:11]];
+            result = [NSString stringWithFormat:@"Set Brightness %@", [cmd substringFromIndex:11]];
         } else if ([cmd hasPrefix:@"shortcut:"]) {
             result = [NSString stringWithFormat:@"Shortcut: %@", [cmd substringFromIndex:9]];
         } else if ([cmd hasPrefix:@"Lua "]) {
@@ -502,8 +502,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     
     // Final truncation to keep the detail labels from overflowing
     // Use middle truncation: "Start...End"
-    if (shouldTruncate && result.length > 25) {
-        NSInteger keep = 10; 
+    if (shouldTruncate && result.length > 40) {
+        NSInteger keep = 18; 
         NSString *prefix = [result substringToIndex:keep];
         NSString *suffix = [result substringFromIndex:result.length - keep];
         result = [NSString stringWithFormat:@"%@...%@", prefix, suffix];

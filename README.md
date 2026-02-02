@@ -11,14 +11,14 @@ Control your jailbroken iPhone from anywhere. RemoteCompanion triggers media, ap
 > - **Native Respring**: Dedicated "Respring Device" action added directly to the UI.
 
 <p align="center">
-  <img src="images/IMG_1331-1.PNG" width="250" alt="RemoteCompanion Interface" />
-  <img src="images/IMG_1332-2.PNG" width="250" alt="Settings View" />
-  <img src="images/IMG_1334.PNG" width="250" alt="Action Picker" />
+  <img src="images/IMG_1385.PNG" width="250" alt="RemoteCompanion Interface" />
+  <img src="images/IMG_1386.PNG" width="250" alt="Trigger Config" />
+  <img src="images/IMG_1388.PNG" width="250" alt="Search and Select" />
 </p>
 <p align="center">
-  <img src="images/IMG_1336.PNG" width="250" alt="Bluetooth Control" />
-  <img src="images/IMG_1338.PNG" width="250" alt="Haptic Settings" />
-  <img src="images/IMG_1333-2.PNG" width="250" alt="Trigger Config" />
+  <img src="images/IMG_1389.PNG" width="250" alt="Haptic Settings" />
+  <img src="images/IMG_1390.PNG" width="250" alt="Settings View" />
+  <img src="images/IMG_1387.PNG" width="250" alt="Action Picker" />
 </p>
 
 ## Features

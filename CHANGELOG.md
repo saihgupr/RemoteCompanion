@@ -2,21 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0~beta1] - 2026-02-02
+
+### Improved
+- **Instant Commands**: Optimized `rc` command execution to be virtually instant (~0.25s) by fixing TCP probe timeouts that were causing unnecessary SSH fallbacks.
+- **Server Stability**: Rewrote the internal server to handle multiple connections concurrently, preventing freezes/crashes when a connection hangs.
+- **Port Reliability**: Moved server ports to 12340-12344 to avoid conflicts with system services like `debugserver`.
+
+### Fixed
+- **Connectivity**: Fixed an issue where `rc lock` would execute but report failure due to a missing response from the server.
+
+
 ## [2.0.0] - 2026-02-02
 
 ### Fixed
 - **Safe Mode Crash**: Resolved a race condition and main-thread violation when re-enabling triggers from Settings.
-
-## [1.1.2] - 2026-01-30
-
-### Fixed
-- **Volume Button Responsiveness**: Improved reliability of native volume buttons when custom triggers are disabled.
-
-## [1.1.1] - 2026-01-29
-
-### Fixed
-- **Open App Action**: Fixed "Open App" action failing by restoring the missing `uiopen` command handler in the Tweak.
-- **Custom Command Repair**: Fixed "Custom Command" actions failing when using `rc <command>` by intercepting the `rc` prefix and executing it internally.
 
 ## [2.0.0~beta5] - 2026-01-31
 
@@ -65,6 +65,17 @@ All notable changes to this project will be documented in this file.
 - **Ringer Switch Automation**: Triggers for muting, unmuting, and toggling the ringer switch (works with hardware switch and Control Center).
 - **Respring Action**: Added a native "Respring Device" action to the UI and improved the `respring` command reliability by using `killall backboardd`.
 
+## [1.1.2] - 2026-01-30
+
+### Fixed
+- **Volume Button Responsiveness**: Improved reliability of native volume buttons when custom triggers are disabled.
+
+## [1.1.1] - 2026-01-29
+
+### Fixed
+- **Open App Action**: Fixed "Open App" action failing by restoring the missing `uiopen` command handler in the Tweak.
+- **Custom Command Repair**: Fixed "Custom Command" actions failing when using `rc <command>` by intercepting the `rc` prefix and executing it internally.
+
 ## [1.1.0] - 2026-01-29
 
 ### Added
@@ -90,7 +101,7 @@ All notable changes to this project will be documented in this file.
 ## [1.0.3] - 2026-01-22
 
 ### Added
-- Shortcuts (via Powercuts)
+- - Shortcuts (via Powercuts)
 - **Custom Command**: You can now use `rc haptic` / `rc screenshot` / `rc siri` (or any other `rc` command) directly in the Custom Command action to open apps or trigger any system action.
 - **Settings UI**: Added version label (e.g., `v1.0.3`) to the bottom of the Settings menu.
 - **Improved Layout**: Refactored Settings screen to pin the version label to the bottom of the view, ensuring consistent positioning regardless of screen size.

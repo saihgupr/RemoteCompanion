@@ -330,8 +330,8 @@
                 NSRange closeBracket = [workingLine rangeOfString:@"]" options:NSBackwardsSearch];
                 
                 if (openBracket.location != NSNotFound && closeBracket.location != NSNotFound && closeBracket.location > openBracket.location) {
-                    NSString *name = [workingLine substringToIndex:openBracket.location];
-                    NSString *uid = [workingLine substringWithRange:NSMakeRange(openBracket.location + 2, closeBracket.location - openBracket.location - 2)];
+                    NSString *name = [[workingLine substringToIndex:openBracket.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                    NSString *uid = [[workingLine substringWithRange:NSMakeRange(openBracket.location + 2, closeBracket.location - openBracket.location - 2)] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
                     [devices addObject:@{ @"uid": uid, @"name": name }];
                 }
             }
@@ -352,7 +352,7 @@
             
             for (NSDictionary *device in devices) {
                 [picker addAction:[UIAlertAction actionWithTitle:device[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-                    NSString *finalCommand = [NSString stringWithFormat:@"airplay connect %@", device[@"uid"]];
+                    NSString *finalCommand = [NSString stringWithFormat:@"airplay connect %@ # %@", device[@"uid"], device[@"name"]];
                     
                     if (self.onActionSelected) {
                         self.onActionSelected(finalCommand);

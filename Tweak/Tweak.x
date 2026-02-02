@@ -2483,6 +2483,11 @@ static NSString *handle_command(NSString *cmd) {
         if ([target hasPrefix:@"\""] && [target hasSuffix:@"\""] && target.length >= 2) {
             target = [target substringWithRange:NSMakeRange(1, target.length - 2)];
         }
+        
+        // Strip name suffix if present: "UID # Name"
+        if ([target containsString:@" # "]) {
+            target = [target componentsSeparatedByString:@" # "].firstObject;
+        }
 
         __block NSString *result = nil;
         dispatch_semaphore_t sema = dispatch_semaphore_create(0);

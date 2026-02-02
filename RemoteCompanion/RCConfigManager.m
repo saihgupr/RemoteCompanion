@@ -458,7 +458,13 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         } else if ([cmd hasPrefix:@"bluetooth disconnect "]) {
             result = [NSString stringWithFormat:@"Disconnect BT: %@", [cmd substringFromIndex:21]];
         } else if ([cmd hasPrefix:@"airplay connect "]) {
-            result = [NSString stringWithFormat:@"Connect AirPlay: %@", [cmd substringFromIndex:16]];
+            NSString *val = [cmd substringFromIndex:16];
+            if ([val containsString:@" # "]) {
+                val = [val componentsSeparatedByString:@" # "].lastObject;
+            }
+            result = [NSString stringWithFormat:@"AirPlay -> %@", val];
+        } else if ([cmd hasPrefix:@"airplay disconnect"]) {
+            result = @"AirPlay Off";
         } else if ([cmd hasPrefix:@"set-vol "]) {
             result = [NSString stringWithFormat:@"Set Vol: %@", [cmd substringFromIndex:8]];
         } else if ([cmd hasPrefix:@"brightness "]) {

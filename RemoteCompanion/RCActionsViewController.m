@@ -389,6 +389,12 @@
     } else if ([action hasPrefix:@"uiopen "]) {
         cell.textLabel.text = @"Open App";
         subtitle = [action substringFromIndex:7];
+    } else if ([action hasPrefix:@"airplay connect "]) {
+        cell.textLabel.text = cleanName; // Will be "AirPlay -> Name"
+        subtitle = @"Connect to device";
+    } else if ([action hasPrefix:@"airplay disconnect"]) {
+        cell.textLabel.text = cleanName; // "AirPlay Off"
+        subtitle = nil;
     } else {
         // Standard commands
         cell.textLabel.text = cleanName;

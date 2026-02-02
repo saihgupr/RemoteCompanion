@@ -468,7 +468,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         } else if ([cmd hasPrefix:@"brightness "]) {
             result = [NSString stringWithFormat:@"Set Brightness %@", [cmd substringFromIndex:11]];
         } else if ([cmd hasPrefix:@"shortcut:"]) {
-            result = [NSString stringWithFormat:@"Shortcut: %@", [cmd substringFromIndex:9]];
+            result = [NSString stringWithFormat:@"Run %@", [cmd substringFromIndex:9]];
         } else if ([cmd hasPrefix:@"Lua "]) {
             result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:4]];
         } else if ([cmd hasPrefix:@"lua_eval "]) {

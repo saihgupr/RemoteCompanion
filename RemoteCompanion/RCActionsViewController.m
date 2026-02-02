@@ -384,11 +384,11 @@
         cell.textLabel.text = @"Wait";
         subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
     } else if ([action hasPrefix:@"shortcut:"]) {
-        cell.textLabel.text = @"Run Shortcut";
-        subtitle = [action substringFromIndex:9];
+        cell.textLabel.text = cleanName; // "Run Shortcut Name"
+        subtitle = @"Siri Shortcut";
     } else if ([action hasPrefix:@"uiopen "]) {
-        cell.textLabel.text = @"Open App";
-        subtitle = [action substringFromIndex:7];
+        cell.textLabel.text = cleanName; // "Open App Name"
+        subtitle = @"Application";
     } else if ([action hasPrefix:@"airplay connect "]) {
         cell.textLabel.text = cleanName; // Will be "Connect Speaker Name"
         subtitle = @"AirPlay Device";

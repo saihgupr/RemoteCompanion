@@ -2,13 +2,11 @@
 
 RemoteCompanion is a modern Activator replacement built specifically for rootless jailbreaks. It lets you bind physical gestures and hardware buttons to system actions, media controls, and custom scripts.
 
-> [!NOTE] 
-> **What's New in v2.0**
-> - **Full UI Redesign**: Modern native look with Large Titles and translucent frosted glass effects.
-> - **Power & Touch ID Triggers**: Added **Power + Volume** combos, **Touch ID (Tap/Hold)**, and **Triple/Quadruple Power clicks**.
-> - **Ringer & Siri Automation**: Hardware ringer switch triggers and a dedicated native Siri action.
-> - **Search Everywhere**: Find actions and shortcuts instantly with new search bars in every picker.
-> - **Native Respring**: Dedicated "Respring Device" action added directly to the UI.
+> [!IMPORTANT]
+> **What's New in v2.1** (Performance Update)
+> - **Instant Execution**: Commands like `rc lock` now run instantly (~0.25s), relying on optimized local TCP probes instead of slower fallback methods.
+> - **Rock-Solid Stability**: The server is now multi-threaded, meaning one bad connection won't freeze the entire system.
+> - **No Conflict Mode**: Ports moved to `12340+` to play nicely with other system tools.
 
 <p align="center">
   <img src="images/IMG_1385.PNG" width="250" alt="RemoteCompanion Interface" />
@@ -22,9 +20,12 @@ RemoteCompanion is a modern Activator replacement built specifically for rootles
 </p>
 
 ## Features
-- **Lightning Fast**: Actions happen in milliseconds.
+- **Lightning Fast**: Actions happen in milliseconds (~0.25s).
 - **Smart Control**: Run actions, open apps, or control settings remotely.
 - **Custom Triggers**: Use the companion app to assign action sequences to gestures, physical buttons, or NFC tags.
+- **Modern UI**: Fully redesigned with native iOS aesthetics, Large Titles, and frosted glass effects.
+- **Universal Search**: Instantly find actions and shortcuts with search bars in every picker.
+- **Advanced Automation**: Full support for Touch ID (Tap/Hold), Ringer Switch, and Siri triggers.
 
 ## What you can do
 
@@ -150,7 +151,8 @@ Actions can even be fired from shortcuts using Powercuts.
 Add this to your `configuration.yaml`:
 ```yaml
 shell_command:
-  iphone_remote: 'echo -n "{{ cmd }}" | nc -w 1 YOUR_IPHONE_IP 1234'
+  iphone_remote: >
+    bash -c 'echo '\''{{ cmd }}'\'' > /dev/tcp/YOUR_IPHONE_IP/12340'
 ```
 Then call it with:
 

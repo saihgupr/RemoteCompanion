@@ -76,7 +76,8 @@
     self.navigationItem.rightBarButtonItems = @[addButton, self.editButtonItem];
     
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ActionCell"];
-    self.tableView.rowHeight = 70; // Increased height for subtitles
+    self.tableView.rowHeight = UITableViewAutomaticDimension;
+    self.tableView.estimatedRowHeight = 70;
 }
 
 - (void)renameTrigger {
@@ -131,8 +132,8 @@
         } else if ([action isEqualToString:@"__CUSTOM__"]) {
             // Show custom text input for command
             RCTextInputViewController *inputVC = [[RCTextInputViewController alloc] init];
-            inputVC.promptTitle = @"Custom Command";
-            inputVC.promptMessage = @"Enter terminal command (e.g. curl ...)";
+            inputVC.promptTitle = @"Terminal Command";
+            inputVC.promptMessage = @"Enter terminal command (runs as mobile user)";
             inputVC.onComplete = ^(NSString *text) {
                 if (text.length > 0) {
                     [self.actions addObject:[NSString stringWithFormat:@"exec %@", text]];
@@ -140,13 +141,32 @@
                     [self.tableView reloadData];
                 }
             };
-            
+
             UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:inputVC];
-            
+
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentViewController:nav animated:YES completion:nil];
             });
-            
+
+        } else if ([action isEqualToString:@"__CUSTOM_ROOT__"]) {
+            // Show custom text input for root command
+            RCTextInputViewController *inputVC = [[RCTextInputViewController alloc] init];
+            inputVC.promptTitle = @"Root Command";
+            inputVC.promptMessage = @"Enter terminal command (runs as root)";
+            inputVC.onComplete = ^(NSString *text) {
+                if (text.length > 0) {
+                    [self.actions addObject:[NSString stringWithFormat:@"root %@", text]];
+                    [self saveActions];
+                    [self.tableView reloadData];
+                }
+            };
+
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:inputVC];
+
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentViewController:nav animated:YES completion:nil];
+            });
+
         } else if ([action isEqualToString:@"__BT_CONNECT__"] || [action isEqualToString:@"__BT_DISCONNECT__"] || [action isEqualToString:@"__AIRPLAY_CONNECT__"]) {
             
             NSString *title = @"Device Name";
@@ -308,19 +328,37 @@
         
         UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:inputVC];
         [self presentViewController:nav animated:YES completion:nil];
+    } else if ([currentAction hasPrefix:@"root "]) {
+        // Edit Root Command
+        NSString *currentCommand = [currentAction substringFromIndex:5];
+
+        RCTextInputViewController *inputVC = [[RCTextInputViewController alloc] init];
+        inputVC.promptTitle = @"Edit Root Command";
+        inputVC.promptMessage = @"Update your terminal command (runs as root)";
+        inputVC.initialText = currentCommand;
+        inputVC.onComplete = ^(NSString *text) {
+            if (text.length > 0) {
+                self.actions[indexPath.row] = [NSString stringWithFormat:@"root %@", text];
+                [self saveActions];
+                [self.tableView reloadData];
+            }
+        };
+
+        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:inputVC];
+        [self presentViewController:nav animated:YES completion:nil];
     } else if ([currentAction hasPrefix:@"delay "]) {
         // Edit Delay
         NSString *currentDelay = [currentAction substringFromIndex:6];
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Edit Delay" 
-            message:@"Update delay in seconds" 
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Edit Delay"
+            message:@"Update delay in seconds"
             preferredStyle:UIAlertControllerStyleAlert];
-            
+
         [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
             textField.text = currentDelay;
             textField.placeholder = @"1.0";
             textField.keyboardType = UIKeyboardTypeDecimalPad;
         }];
-        
+
         [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
         [alert addAction:[UIAlertAction actionWithTitle:@"Update" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
             NSString *input = alert.textFields.firstObject.text;
@@ -330,7 +368,30 @@
                 [self.tableView reloadData];
             }
         }]];
-        
+
+        [self presentViewController:alert animated:YES completion:nil];
+    } else {
+        // Generic edit for other commands - show alert with current command
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Edit Action"
+            message:@"Modify the command"
+            preferredStyle:UIAlertControllerStyleAlert];
+
+        [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+            textField.text = currentAction;
+            textField.autocorrectionType = UITextAutocorrectionTypeNo;
+            textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        }];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+            NSString *input = alert.textFields.firstObject.text;
+            if (input.length > 0) {
+                self.actions[indexPath.row] = input;
+                [self saveActions];
+                [self.tableView reloadData];
+            }
+        }]];
+
         [self presentViewController:alert animated:YES completion:nil];
     }
 }
@@ -363,68 +424,100 @@
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    // Use Subtitle style
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ActionCell"];
+    static NSString *cellId = @"ActionCellCustom";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellId];
+
+    UILabel *titleLabel;
+    UILabel *subtitleLabel;
+    UIImageView *iconView;
+
     if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ActionCell"];
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:cellId];
+        cell.contentView.clipsToBounds = YES;
+
+        iconView = [[UIImageView alloc] init];
+        iconView.tag = 100;
+        iconView.translatesAutoresizingMaskIntoConstraints = NO;
+        iconView.contentMode = UIViewContentModeScaleAspectFit;
+        [cell.contentView addSubview:iconView];
+
+        titleLabel = [[UILabel alloc] init];
+        titleLabel.tag = 101;
+        titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
+        titleLabel.textColor = [UIColor labelColor];
+        [cell.contentView addSubview:titleLabel];
+
+        subtitleLabel = [[UILabel alloc] init];
+        subtitleLabel.tag = 102;
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        subtitleLabel.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
+        subtitleLabel.textColor = [UIColor secondaryLabelColor];
+        subtitleLabel.numberOfLines = 0;
+        subtitleLabel.lineBreakMode = NSLineBreakByCharWrapping;
+        [cell.contentView addSubview:subtitleLabel];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [iconView.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:16],
+            [iconView.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
+            [iconView.widthAnchor constraintEqualToConstant:28],
+            [iconView.heightAnchor constraintEqualToConstant:28],
+
+            [titleLabel.leadingAnchor constraintEqualToAnchor:iconView.trailingAnchor constant:12],
+            [titleLabel.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-40],
+            [titleLabel.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:10],
+
+            [subtitleLabel.leadingAnchor constraintEqualToAnchor:titleLabel.leadingAnchor],
+            [subtitleLabel.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-16],
+            [subtitleLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:4],
+            [subtitleLabel.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10]
+        ]];
+    } else {
+        iconView = [cell.contentView viewWithTag:100];
+        titleLabel = [cell.contentView viewWithTag:101];
+        subtitleLabel = [cell.contentView viewWithTag:102];
     }
-    
+
     NSString *action = _actions[indexPath.row];
     NSString *cleanName = [self displayNameForCommand:action];
     NSString *subtitle = nil;
-    
+
     // Logic to separate "Type" from "Value"
     if ([action hasPrefix:@"exec "]) {
-        cell.textLabel.text = @"Terminal Command";
+        titleLabel.text = @"Terminal Command";
+        subtitle = [action substringFromIndex:5];
+    } else if ([action hasPrefix:@"root "]) {
+        titleLabel.text = @"Root Command";
         subtitle = [action substringFromIndex:5];
     } else if ([action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
-        cell.textLabel.text = @"Lua Script";
+        titleLabel.text = @"Lua Script";
         subtitle = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
     } else if ([action hasPrefix:@"delay "]) {
-        cell.textLabel.text = @"Wait";
+        titleLabel.text = @"Wait";
         subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
     } else if ([action hasPrefix:@"shortcut:"]) {
-        cell.textLabel.text = @"Run Shortcut";
+        titleLabel.text = @"Run Shortcut";
         subtitle = [action substringFromIndex:9];
     } else if ([action hasPrefix:@"uiopen "]) {
-        cell.textLabel.text = @"Open App";
+        titleLabel.text = @"Open App";
         subtitle = [action substringFromIndex:7];
     } else {
-        // Standard commands
-        cell.textLabel.text = cleanName;
-        subtitle = nil;
+        titleLabel.text = cleanName;
+        subtitle = action; // Show raw command
     }
 
-    cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
-    cell.textLabel.textColor = [UIColor labelColor];
-    
-    if (subtitle) {
-        cell.detailTextLabel.text = subtitle;
-        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
-        
-        // Use monospace for code-like things
-        if ([action hasPrefix:@"exec "] || [action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
-            cell.detailTextLabel.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
-            cell.detailTextLabel.numberOfLines = 1;
-            cell.detailTextLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
-        } else {
-             cell.detailTextLabel.font = [UIFont systemFontOfSize:15];
-        }
-    } else {
-        cell.detailTextLabel.text = nil;
-    }
-    
+    subtitleLabel.text = subtitle;
+
     NSString *iconName = [self iconForCommand:action];
     if ([iconName hasPrefix:@"USER_APP:"]) {
         NSString *bundleId = [iconName substringFromIndex:9];
-        // Use private API to get icon
-        cell.imageView.image = [UIImage _applicationIconImageForBundleIdentifier:bundleId format:0 scale:[UIScreen mainScreen].scale];
-        cell.imageView.tintColor = nil; // Keep original colors
+        iconView.image = [UIImage _applicationIconImageForBundleIdentifier:bundleId format:0 scale:[UIScreen mainScreen].scale];
+        iconView.tintColor = nil;
     } else {
-        cell.imageView.image = [UIImage systemImageNamed:iconName];
-        cell.imageView.tintColor = [UIColor systemGrayColor];
+        iconView.image = [UIImage systemImageNamed:iconName];
+        iconView.tintColor = [UIColor systemGrayColor];
     }
-    
+
     cell.showsReorderControl = YES;
     
     return cell;

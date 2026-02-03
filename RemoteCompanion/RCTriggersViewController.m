@@ -46,18 +46,18 @@
     
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
-    UIBarButtonItem *settingsItem = [[UIBarButtonItem alloc] 
-        initWithImage:[UIImage systemImageNamed:@"gear"] 
-        style:UIBarButtonItemStylePlain 
-        target:self 
+    UIBarButtonItem *settingsItem = [[UIBarButtonItem alloc]
+        initWithImage:[UIImage systemImageNamed:@"gear"]
+        style:UIBarButtonItemStylePlain
+        target:self
         action:@selector(openSettings)];
-        
-    UIBarButtonItem *addItem = [[UIBarButtonItem alloc] 
-        initWithImage:[UIImage systemImageNamed:@"plus"] 
-        style:UIBarButtonItemStylePlain 
-        target:self 
+
+    UIBarButtonItem *addItem = [[UIBarButtonItem alloc]
+        initWithImage:[UIImage systemImageNamed:@"plus"]
+        style:UIBarButtonItemStylePlain
+        target:self
         action:@selector(addNewItem)];
-        
+
     self.navigationItem.rightBarButtonItems = @[addItem, settingsItem];
     
     self.tableView.rowHeight = 64;
@@ -67,7 +67,9 @@
     
     self.tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 0.1)];
     self.tableView.tableHeaderView.clipsToBounds = YES;
-    
+
+    // Edit button will be shown/hidden based on favorites
+
     UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] 
         initWithTarget:self action:@selector(handleLongPress:)];
     longPress.minimumPressDuration = 0.5;
@@ -146,38 +148,71 @@
 - (void)reloadTableData {
     NSMutableArray *sections = [NSMutableArray array];
     NSMutableArray *titles = [NSMutableArray array];
-    
-    // Standard Sections
-    [sections addObject:@[@"volume_up_hold", @"volume_down_hold", @"volume_both_press"]];
+
+    RCConfigManager *config = [RCConfigManager sharedManager];
+
+    // Helper to filter out favorited triggers
+    NSArray* (^filterFavorites)(NSArray*) = ^NSArray*(NSArray *keys) {
+        return [keys filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *key, NSDictionary *bindings) {
+            return ![config isTriggerFavorite:key];
+        }]];
+    };
+
+    // Get ordered favorites from config
+    NSArray *allFavorites = [config orderedFavorites];
+
+    // Add Favorites section at top if there are any
+    if (allFavorites.count > 0) {
+        [sections addObject:[allFavorites mutableCopy]];
+        [titles addObject:@"Favorites"];
+    }
+
+    // Standard Sections (filtered to exclude favorites)
+    [sections addObject:filterFavorites(@[@"volume_up_hold", @"volume_down_hold", @"volume_both_press"])];
     [titles addObject:@"Volume Buttons"];
-    
-    [sections addObject:@[@"power_double_tap", @"power_triple_click", @"power_quadruple_click", @"power_volume_up", @"power_volume_down", @"power_long_press"]];
+
+    [sections addObject:filterFavorites(@[@"power_double_tap", @"power_triple_click", @"power_quadruple_click", @"power_volume_up", @"power_volume_down", @"power_long_press"])];
     [titles addObject:@"Power Button"];
-    
-    [sections addObject:@[@"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right"]];
+
+    [sections addObject:filterFavorites(@[@"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right"])];
     [titles addObject:@"Screen Gestures"];
-    
-    [sections addObject:@[@"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"]];
+
+    [sections addObject:filterFavorites(@[@"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"])];
     [titles addObject:@"Edge Gestures"];
-    
-    [sections addObject:@[@"trigger_home_double_click", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"touchid_tap", @"touchid_hold"]];
+
+    [sections addObject:filterFavorites(@[@"trigger_home_double_click", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"touchid_tap", @"touchid_hold"])];
     [titles addObject:@"Home Button"];
-    
-    [sections addObject:@[@"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle"]];
+
+    [sections addObject:filterFavorites(@[@"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle"])];
     [titles addObject:@"Ringer Switch"];
-    
-    // NFC Section
+
+    // NFC Section (filtered to exclude favorites)
     NSMutableArray *nfcKeys = [[[RCConfigManager sharedManager] nfcTriggerKeys] mutableCopy];
-    // Add a placeholder key for the "Add New" button
-    [nfcKeys addObject:@"__ADD_NEW_NFC__"];
-    
-    [sections addObject:nfcKeys];
+    NSArray *filteredNFC = filterFavorites(nfcKeys);
+    NSMutableArray *nfcWithAdd = [filteredNFC mutableCopy];
+    [nfcWithAdd addObject:@"__ADD_NEW_NFC__"];
+
+    [sections addObject:nfcWithAdd];
     [titles addObject:@"NFC Tags"];
-    
+
     self.sections = sections;
     self.sectionTitles = titles;
-    
+
+    // Show Edit button only when there are favorites
+    if (allFavorites.count > 0) {
+        self.navigationItem.leftBarButtonItem = self.editButtonItem;
+    } else {
+        self.navigationItem.leftBarButtonItem = nil;
+    }
+
     [self.tableView reloadData];
+}
+
+
+- (void)setEditing:(BOOL)editing animated:(BOOL)animated {
+    [super setEditing:editing animated:animated];
+    UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [haptic impactOccurred];
 }
 
 - (void)openSettings {
@@ -260,7 +295,14 @@
     UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(20, 15, tableView.bounds.size.width - 40, 20)];
     label.text = [_sectionTitles[section] uppercaseString];
     label.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
-    label.textColor = [UIColor secondaryLabelColor];
+
+    // Yellow text for Favorites section
+    if ([_sectionTitles[section] isEqualToString:@"Favorites"]) {
+        label.textColor = [UIColor systemYellowColor];
+    } else {
+        label.textColor = [UIColor secondaryLabelColor];
+    }
+
     [headerView addSubview:label];
     return headerView;
 }
@@ -305,7 +347,8 @@
     UIImage *icon = [UIImage systemImageNamed:[self iconNameForTrigger:triggerKey]];
     cell.imageView.image = icon;
     cell.imageView.tintColor = [UIColor systemGrayColor];
-    
+
+    cell.accessoryView = nil;
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     
     // Action names joined by >
@@ -328,9 +371,7 @@
         cell.detailTextLabel.textColor = [UIColor tertiaryLabelColor];
         cell.detailTextLabel.font = [UIFont systemFontOfSize:13]; // Regular font for placeholder
     }
-    
-    cell.accessoryView = nil;
-    
+
     return cell;
 }
 
@@ -348,19 +389,94 @@
     [self.navigationController pushViewController:actionsVC animated:YES];
 }
 
-- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
     NSString *triggerKey = _sections[indexPath.section][indexPath.row];
-    return [triggerKey hasPrefix:@"nfc_"];
+    if ([triggerKey isEqualToString:@"__ADD_NEW_NFC__"]) return nil;
+
+    RCConfigManager *config = [RCConfigManager sharedManager];
+    BOOL isFavorite = [config isTriggerFavorite:triggerKey];
+
+    UIContextualAction *favoriteAction = [UIContextualAction
+        contextualActionWithStyle:UIContextualActionStyleNormal
+        title:isFavorite ? @"Unfavorite" : @"Favorite"
+        handler:^(UIContextualAction * _Nonnull action, __kindof UIView * _Nonnull sourceView, void (^ _Nonnull completionHandler)(BOOL)) {
+            UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+            [haptic impactOccurred];
+            [config setTriggerFavorite:!isFavorite forTrigger:triggerKey];
+            [self reloadTableData];
+            completionHandler(YES);
+        }];
+
+    favoriteAction.backgroundColor = isFavorite ? [UIColor systemGrayColor] : [UIColor systemYellowColor];
+    favoriteAction.image = [UIImage systemImageNamed:isFavorite ? @"star.slash.fill" : @"star.fill"];
+
+    return [UISwipeActionsConfiguration configurationWithActions:@[favoriteAction]];
 }
 
-- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (editingStyle == UITableViewCellEditingStyleDelete) {
-        NSString *triggerKey = _sections[indexPath.section][indexPath.row];
-        if ([triggerKey hasPrefix:@"nfc_"]) {
+- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSString *triggerKey = _sections[indexPath.section][indexPath.row];
+    // Allow editing for all triggers except the "Add NFC" row
+    return ![triggerKey isEqualToString:@"__ADD_NEW_NFC__"];
+}
+
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSString *triggerKey = _sections[indexPath.section][indexPath.row];
+
+    // Only allow delete for NFC triggers
+    if (![triggerKey hasPrefix:@"nfc_"]) {
+        return [UISwipeActionsConfiguration configurationWithActions:@[]];
+    }
+
+    UIContextualAction *deleteAction = [UIContextualAction
+        contextualActionWithStyle:UIContextualActionStyleDestructive
+        title:@"Delete"
+        handler:^(UIContextualAction * _Nonnull action, __kindof UIView * _Nonnull sourceView, void (^ _Nonnull completionHandler)(BOOL)) {
             [[RCConfigManager sharedManager] removeTrigger:triggerKey];
             [self reloadTableData];
-        }
+            completionHandler(YES);
+        }];
+
+    deleteAction.image = [UIImage systemImageNamed:@"trash.fill"];
+    return [UISwipeActionsConfiguration configurationWithActions:@[deleteAction]];
+}
+
+- (UITableViewCellEditingStyle)tableView:(UITableView *)tableView editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return UITableViewCellEditingStyleNone;
+}
+
+- (BOOL)tableView:(UITableView *)tableView shouldIndentWhileEditingRowAtIndexPath:(NSIndexPath *)indexPath {
+    return NO;
+}
+
+- (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (_sectionTitles.count > 0 && [_sectionTitles[indexPath.section] isEqualToString:@"Favorites"]) {
+        return YES;
     }
+    return NO;
+}
+
+- (NSIndexPath *)tableView:(UITableView *)tableView targetIndexPathForMoveFromRowAtIndexPath:(NSIndexPath *)sourceIndexPath toProposedIndexPath:(NSIndexPath *)proposedDestinationIndexPath {
+    if (sourceIndexPath.section != proposedDestinationIndexPath.section) {
+        NSInteger row = (proposedDestinationIndexPath.section < sourceIndexPath.section) ? 0 : [_sections[sourceIndexPath.section] count] - 1;
+        return [NSIndexPath indexPathForRow:row inSection:sourceIndexPath.section];
+    }
+    return proposedDestinationIndexPath;
+}
+
+- (void)tableView:(UITableView *)tableView moveRowAtIndexPath:(NSIndexPath *)sourceIndexPath toIndexPath:(NSIndexPath *)destinationIndexPath {
+    NSMutableArray *favorites = [[RCConfigManager sharedManager] orderedFavorites].mutableCopy;
+    NSString *movedItem = favorites[sourceIndexPath.row];
+    [favorites removeObjectAtIndex:sourceIndexPath.row];
+    [favorites insertObject:movedItem atIndex:destinationIndexPath.row];
+    [[RCConfigManager sharedManager] setOrderedFavorites:favorites];
+
+    NSMutableArray *sectionData = [_sections[sourceIndexPath.section] mutableCopy];
+    [sectionData removeObjectAtIndex:sourceIndexPath.row];
+    [sectionData insertObject:movedItem atIndex:destinationIndexPath.row];
+
+    NSMutableArray *mutableSections = [_sections mutableCopy];
+    mutableSections[sourceIndexPath.section] = sectionData;
+    _sections = mutableSections;
 }
 
 @end

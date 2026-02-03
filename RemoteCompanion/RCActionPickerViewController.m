@@ -107,9 +107,10 @@
             @{ @"name": @"Low Power Mode On", @"command": @"low power on", @"icon": @"battery.25" },
             @{ @"name": @"Low Power Mode Off", @"command": @"low power off", @"icon": @"battery.100" },
             @{ @"name": @"Low Power Mode Toggle", @"command": @"low power toggle", @"icon": @"battery.25" },
-            @{ @"name": @"Custom Lua Script...", @"command": @"__LUA_SCRIPT__", @"icon": @"scroll.fill" },
+            @{ @"name": @"Custom Lua Script", @"command": @"__LUA_SCRIPT__", @"icon": @"scroll.fill" },
             @{ @"name": @"Delay", @"command": @"__DELAY__", @"icon": @"timer" },
-            @{ @"name": @"Custom Command...", @"command": @"__CUSTOM__", @"icon": @"terminal.fill" }
+            @{ @"name": @"Terminal Command", @"command": @"__CUSTOM__", @"icon": @"terminal.fill" },
+            @{ @"name": @"Terminal Command (Root)", @"command": @"__CUSTOM_ROOT__", @"icon": @"terminal.fill" }
         ],
         // Audio (ANC)
         @[
@@ -193,8 +194,9 @@
         [cmd isEqualToString:@"__SHORTCUT_PICKER__"] || 
         [cmd isEqualToString:@"__OPEN_APP__"] || 
         [cmd isEqualToString:@"__LUA_SCRIPT__"] || 
-        [cmd isEqualToString:@"__DELAY__"] || 
-        [cmd isEqualToString:@"__CUSTOM__"]) {
+        [cmd isEqualToString:@"__DELAY__"] ||
+        [cmd isEqualToString:@"__CUSTOM__"] ||
+        [cmd isEqualToString:@"__CUSTOM_ROOT__"]) {
         
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Set rc-root as setuid root
+# This allows the mobile user to execute commands as root
+
+RC_ROOT="/var/jb/usr/bin/rc-root"
+
+if [ -f "$RC_ROOT" ]; then
+    chown root:wheel "$RC_ROOT"
+    chmod 4755 "$RC_ROOT"
+fi
+
+exit 0

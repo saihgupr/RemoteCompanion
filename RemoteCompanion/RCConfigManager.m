@@ -176,6 +176,20 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     [self saveConfig];
 }
 
+- (NSString *)customPaths {
+    return _config[@"customPaths"] ?: @"";
+}
+
+- (void)setCustomPaths:(NSString *)customPaths {
+    _config[@"customPaths"] = customPaths ?: @"";
+    [self saveConfig];
+
+    // Also write to prefs plist that rc-root can read
+    NSString *prefsPath = @"/var/jb/var/mobile/Library/Preferences/com.saihgupr.remotecompanion.plist";
+    NSDictionary *prefs = @{ @"customPaths": customPaths ?: @"" };
+    [prefs writeToFile:prefsPath atomically:YES];
+}
+
 - (void)updateTrigger:(NSString *)triggerKey withData:(NSDictionary *)data {
     NSMutableDictionary *triggers = _config[@"triggers"];
     triggers[triggerKey] = [data mutableCopy];
@@ -274,6 +288,35 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 
 - (void)setTriggerEnabled:(BOOL)enabled forTrigger:(NSString *)triggerKey {
     [self triggerDict:triggerKey][@"enabled"] = @(enabled);
+    [self saveConfig];
+}
+
+- (BOOL)isTriggerFavorite:(NSString *)triggerKey {
+    NSArray *favorites = _config[@"favoriteTriggers"];
+    return [favorites containsObject:triggerKey];
+}
+
+- (void)setTriggerFavorite:(BOOL)favorite forTrigger:(NSString *)triggerKey {
+    NSMutableArray *favorites = [(_config[@"favoriteTriggers"] ?: @[]) mutableCopy];
+
+    if (favorite) {
+        if (![favorites containsObject:triggerKey]) {
+            [favorites addObject:triggerKey];
+        }
+    } else {
+        [favorites removeObject:triggerKey];
+    }
+
+    _config[@"favoriteTriggers"] = favorites;
+    [self saveConfig];
+}
+
+- (NSArray<NSString *> *)orderedFavorites {
+    return _config[@"favoriteTriggers"] ?: @[];
+}
+
+- (void)setOrderedFavorites:(NSArray<NSString *> *)favorites {
+    _config[@"favoriteTriggers"] = [favorites mutableCopy];
     [self saveConfig];
 }
 
@@ -445,7 +488,11 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     NSString *result = names[cmd];
     
     if (!result) {
-        if ([cmd hasPrefix:@"exec "]) {
+        if ([cmd hasPrefix:@"root "]) {
+            result = [NSString stringWithFormat:@"[root] %@", [cmd substringFromIndex:5]];
+        } else if ([cmd hasPrefix:@"exec-root "]) {
+            result = [NSString stringWithFormat:@"[root] %@", [cmd substringFromIndex:10]];
+        } else if ([cmd hasPrefix:@"exec "]) {
             result = [cmd substringFromIndex:5];
         } else if ([cmd hasPrefix:@"delay "]) {
             result = [NSString stringWithFormat:@"Delay %@s", [cmd substringFromIndex:6]];
@@ -509,6 +556,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 }
 
 - (NSString *)iconForCommand:(NSString *)cmd {
+    if ([cmd hasPrefix:@"root "] || [cmd hasPrefix:@"exec-root "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"delay "]) return @"timer";
     if ([cmd hasPrefix:@"bt connect "] || [cmd hasPrefix:@"bluetooth connect "]) return @"link";

@@ -6,6 +6,7 @@
 #import <unistd.h>
 #include <arpa/inet.h>
 #import <spawn.h>
+#import <sys/wait.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -2394,10 +2395,39 @@ static NSString *handle_command(NSString *cmd) {
             usleep((useconds_t)(seconds * 1000000));
         }
         return nil;
+    } else if ([cleanCmd hasPrefix:@"exec-root "] || [cleanCmd hasPrefix:@"root "]) {
+        // Execute command as root via setuid helper
+        NSString *shellCmd = [cleanCmd hasPrefix:@"root "]
+            ? [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
+            : [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        SRLog(@"[SpringRemote] Executing as root: %@", shellCmd);
+
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            // Use rc-root setuid helper with posix_spawn
+            pid_t pid;
+            const char *rcRootPath = "/var/jb/usr/bin/rc-root";
+            char *args[] = {(char *)rcRootPath, (char *)[shellCmd UTF8String], NULL};
+
+            extern char **environ;
+            int spawn_result = posix_spawn(&pid, rcRootPath, NULL, NULL, args, environ);
+
+            int result = -1;
+            if (spawn_result == 0) {
+                int status;
+                waitpid(pid, &status, 0);
+                if (WIFEXITED(status)) {
+                    result = WEXITSTATUS(status);
+                }
+            } else {
+                SRLog(@"[SpringRemote] posix_spawn failed: %d", spawn_result);
+            }
+            SRLog(@"[SpringRemote] Root command finished with exit code: %d", result);
+        });
+        return [NSString stringWithFormat:@"Executing as root: %@\n", shellCmd];
     } else if ([cleanCmd hasPrefix:@"exec "]) {
         NSString *shellCmd = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         SRLog(@"[SpringRemote] Processing command: %@", shellCmd);
-        
+
         if ([shellCmd hasPrefix:@"rc "]) {
              NSString *internalCmd = [shellCmd substringFromIndex:3];
              SRLog(@"[SpringRemote] Intercepting 'rc' command, executing internally: %@", internalCmd);
@@ -2407,16 +2437,61 @@ static NSString *handle_command(NSString *cmd) {
             perform_native_curl(shellCmd);
             return [NSString stringWithFormat:@"Executing via native curl: %@\n", shellCmd];
         } else {
-            // Fallback to system()
+            // Use posix_spawn with custom PATH
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                int (*sys)(const char *) = dlsym(RTLD_DEFAULT, "system");
-                int result = -1;
-                if (sys) {
-                     result = sys([shellCmd UTF8String]);
+                // Read custom paths from plist
+                NSString *customPaths = @"";
+                NSString *prefsPath = @"/var/jb/var/mobile/Library/Preferences/com.saihgupr.remotecompanion.plist";
+                NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:prefsPath];
+                if (prefs && prefs[@"customPaths"]) {
+                    customPaths = prefs[@"customPaths"];
                 }
+
+                // Build PATH
+                NSString *basePath = @"/var/jb/usr/local/bin:/var/jb/usr/bin:/var/jb/bin:/var/jb/usr/sbin:/var/jb/sbin:/usr/bin:/bin:/usr/sbin:/sbin";
+                NSString *fullPath = customPaths.length > 0 ? [NSString stringWithFormat:@"%@:%@", customPaths, basePath] : basePath;
+
+                // Setup environment with custom PATH
+                extern char **environ;
+                NSMutableArray *envArray = [NSMutableArray array];
+                for (char **env = environ; *env != NULL; env++) {
+                    NSString *envStr = [NSString stringWithUTF8String:*env];
+                    if (![envStr hasPrefix:@"PATH="]) {
+                        [envArray addObject:envStr];
+                    }
+                }
+                [envArray addObject:[NSString stringWithFormat:@"PATH=%@", fullPath]];
+
+                // Convert to char**
+                char **newEnviron = malloc(sizeof(char*) * (envArray.count + 1));
+                for (NSUInteger i = 0; i < envArray.count; i++) {
+                    newEnviron[i] = strdup([envArray[i] UTF8String]);
+                }
+                newEnviron[envArray.count] = NULL;
+
+                // Execute with sh -c
+                pid_t pid;
+                char *args[] = {"/bin/sh", "-c", (char*)[shellCmd UTF8String], NULL};
+                int spawn_result = posix_spawn(&pid, "/bin/sh", NULL, NULL, args, newEnviron);
+
+                int result = -1;
+                if (spawn_result == 0) {
+                    int status;
+                    waitpid(pid, &status, 0);
+                    if (WIFEXITED(status)) {
+                        result = WEXITSTATUS(status);
+                    }
+                }
+
+                // Cleanup
+                for (NSUInteger i = 0; i < envArray.count; i++) {
+                    free(newEnviron[i]);
+                }
+                free(newEnviron);
+
                 SRLog(@"[SpringRemote] Shell command finished with exit code: %d", result);
             });
-            return [NSString stringWithFormat:@"Executing via system(): %@\n", shellCmd];
+            return [NSString stringWithFormat:@"Executing: %@\n", shellCmd];
         }
     } else if ([cleanCmd hasPrefix:@"lua_eval "] || [cleanCmd hasPrefix:@"Lua "]) {
         NSString *code = [cleanCmd substringFromIndex:([cleanCmd hasPrefix:@"Lua "] ? 4 : 9)];

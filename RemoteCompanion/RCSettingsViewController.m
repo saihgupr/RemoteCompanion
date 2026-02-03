@@ -100,11 +100,14 @@
 #pragma mark - Table View Data Source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 2;
+    return 3;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
-    NSString *title = (section == 0) ? @"General" : @"Backup";
+    NSString *title;
+    if (section == 0) title = @"General";
+    else if (section == 1) title = @"Advanced";
+    else title = @"Backup";
     
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 40)];
     UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(20, 15, tableView.bounds.size.width - 40, 20)];
@@ -123,6 +126,8 @@
     if (section == 0) {
         return nil;
     } else if (section == 1) {
+        return @"Additional paths for commands (colon-separated, e.g. /custom/bin:/other/path)";
+    } else if (section == 2) {
         return @"Export your configuration to share or backup. Import to restore.";
     }
     return nil;
@@ -130,6 +135,7 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return 3; // Master toggle + TCP toggle + NFC toggle
+    if (section == 1) return 1; // Custom paths
     return 2; // Export, Import
 }
 
@@ -159,6 +165,11 @@
             cell.accessoryView = _nfcSwitch;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         }
+    } else if (indexPath.section == 1) {
+        cell.textLabel.text = @"Custom Paths";
+        cell.imageView.image = [UIImage systemImageNamed:@"folder.badge.gearshape"];
+        cell.imageView.tintColor = [UIColor systemOrangeColor];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"Export Configuration";
@@ -178,14 +189,38 @@
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    
+
     if (indexPath.section == 1) {
+        [self showCustomPathsEditor];
+    } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
             [self exportConfig];
         } else {
             [self importConfig];
         }
     }
+}
+
+- (void)showCustomPathsEditor {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Custom Paths"
+        message:@"Enter additional paths for commands (colon-separated)"
+        preferredStyle:UIAlertControllerStyleAlert];
+
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.text = [RCConfigManager sharedManager].customPaths;
+        textField.placeholder = @"/custom/bin:/other/path";
+        textField.autocorrectionType = UITextAutocorrectionTypeNo;
+        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        textField.keyboardType = UIKeyboardTypeURL;
+    }];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        NSString *paths = alert.textFields.firstObject.text;
+        [RCConfigManager sharedManager].customPaths = paths;
+    }]];
+
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 #pragma mark - Actions

@@ -5,6 +5,7 @@
 @property (nonatomic, assign) BOOL masterEnabled;
 @property (nonatomic, assign) BOOL tcpEnabled;
 @property (nonatomic, assign) BOOL nfcEnabled;
+@property (nonatomic, strong) NSString *customPaths;
 
 + (instancetype)sharedManager;
 
@@ -12,6 +13,10 @@
 - (NSString *)displayNameForTrigger:(NSString *)triggerKey;
 - (BOOL)isTriggerEnabled:(NSString *)triggerKey;
 - (void)setTriggerEnabled:(BOOL)enabled forTrigger:(NSString *)triggerKey;
+- (BOOL)isTriggerFavorite:(NSString *)triggerKey;
+- (void)setTriggerFavorite:(BOOL)favorite forTrigger:(NSString *)triggerKey;
+- (NSArray<NSString *> *)orderedFavorites;
+- (void)setOrderedFavorites:(NSArray<NSString *> *)favorites;
 - (NSArray<NSString *> *)actionsForTrigger:(NSString *)triggerKey;
 - (void)setActions:(NSArray<NSString *> *)actions forTrigger:(NSString *)triggerKey;
 - (void)updateTrigger:(NSString *)triggerKey withData:(NSDictionary *)data;

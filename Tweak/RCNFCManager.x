@@ -418,7 +418,7 @@ static void stop_nfc_callback(CFNotificationCenterRef center, void *observer, CF
 
 %ctor {
     %init;
-    
+
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
         NULL,

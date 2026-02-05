@@ -2,9 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.1.0~beta2] - 2026-02-02
+## [2.1.0] - 2026-02-05
 
 ### Improved
+- **Export Configuration**: Replaced the document picker with a native iOS Share Sheet. This fixes the cut-off spinning indicator and provides more flexible export options (AirDrop, Messages, etc.).
 - **Action Labels**: Refined all system labels for clarity. "set-vol" is now "Set Volume", "brightness" is now "Set Brightness", and abbreviations like LPM, DND, and ANC have been expanded to their full names.
 - **Label Readability**: Increased truncation limit to 40 characters for better visibility of long device and shortcut names.
 - **Instant Commands**: Optimized `rc` command execution to be virtually instant (~0.25s) by fixing TCP probe timeouts that were causing unnecessary SSH fallbacks.

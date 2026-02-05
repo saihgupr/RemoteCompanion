@@ -82,6 +82,33 @@ def main():
         # Clean up control content (ensure newline at end)
         control_content = control_content.strip()
         
+        # Architecture override detection from filename
+        filename = os.path.basename(deb_path)
+        arch_override = None
+        if "iphoneos-arm64" in filename:
+            arch_override = "iphoneos-arm64"
+        elif "iphoneos-arm" in filename:
+            arch_override = "iphoneos-arm"
+
+        # Update or add Architecture field
+        lines = control_content.splitlines()
+        new_lines = []
+        arch_found = False
+        for line in lines:
+            if line.startswith("Architecture:"):
+                arch_found = True
+                if arch_override:
+                    new_lines.append(f"Architecture: {arch_override}")
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+        
+        if not arch_found and arch_override:
+            new_lines.append(f"Architecture: {arch_override}")
+            
+        control_content = "\n".join(new_lines)
+
         # Calculate metadata
         size, md5, sha1, sha256 = get_hashes_and_size(deb_path)
         rel_path = os.path.relpath(deb_path, start=REPO_DIR)

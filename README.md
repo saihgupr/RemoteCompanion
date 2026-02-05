@@ -4,15 +4,14 @@ RemoteCompanion brings fast, scriptable system control to modern rootless jailbr
 
 > [!IMPORTANT]
 > **What's New in v2.1**
-> - **Port Change**: Default TCP port moved to `12340` (requires update for Home Assistant / local scripts).
 > - **Action Editing**: Modify any existing action in your sequence by simply tapping it.
-> - **Home Button**: Native simulation of the Home button for all device models.
-> - **Unified Device Pickers**: Searchable live lists for AirPlay and Bluetooth hardware.
-> - **Modern Code Editor**: Redesigned, edge-to-edge UI with iOS 17 aesthetics.
-> - **iOS 14 & Rootful Support**: Compatibility for legacy firmware and rootful environments.
-> - **iPad Experience**: Official support for iPads with full landscape orientation.
-> - **Lightning Fast**: Optimized local probes and native bash networking (~0.25s).
-> - **True Multitasking**: Concurrent server handling powered by GCD.
+> - **Port Change & Speed**: Default TCP port moved to `12340` with optimized local probes for instant (~0.25s) execution.
+> - **iPad Experience**: Official support for iPads with full landscape orientation and optimized layouts.
+> - **Home Button**: Native simulation of the Home button for all device models (physical and gesture-based).
+> - **Unified Device Pickers**: Discovery-based, searchable live lists for nearby AirPlay and Bluetooth hardware.
+> - **Modern Code Editor**: Completely redesigned, edge-to-edge UI with iOS 17 aesthetics.
+> - **True Multitasking**: Concurrent server handling powered by GCD—zero battery drain, zero blocking.
+> - **iOS 14 & Rootful Support**: Broader compatibility covering legacy firmware and rootful jailbreak environments.
 
 > [!WARNING]
 > **Breaking Change**: If you use the TCP server (e.g., via Home Assistant or the `rc` script), you **must** update your configuration to use port `12340`.

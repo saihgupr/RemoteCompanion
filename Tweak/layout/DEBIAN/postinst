@@ -6,12 +6,22 @@
 set -e
 
 # Determine if this is a rootless or rootful jailbreak
-if [ -d "/var/jb" ]; then
+if [ -L "/var/jb" ]; then
     # Rootless jailbreak
+    IS_ROOTLESS=1
     APP_PATH="/var/jb/Applications/RemoteCompanion.app"
 else
     # Rootful jailbreak
+    IS_ROOTLESS=0
+    # On rootful, we still extracted to /var/jb/Applications (because the package path is hardcoded)
+    # so we need to symlink it to /Applications
+    SRC_PATH="/var/jb/Applications/RemoteCompanion.app"
     APP_PATH="/Applications/RemoteCompanion.app"
+    
+    if [ ! -L "$APP_PATH" ] && [ ! -d "$APP_PATH" ]; then
+        echo "RemoteCompanion: Creating rootful symlink to /Applications"
+        ln -s "$SRC_PATH" "$APP_PATH"
+    fi
 fi
 
 echo "RemoteCompanion: Setting proper permissions for $APP_PATH"

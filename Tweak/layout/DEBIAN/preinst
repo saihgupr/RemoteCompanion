@@ -6,14 +6,16 @@
 set -e
 
 # Determine if this is a rootless or rootful jailbreak
-if [ -d "/var/jb" ]; then
-    # Rootless jailbreak (iOS 15+, Dopamine, Roothide, etc.)
+if [ -L "/var/jb" ]; then
+    # Standard Rootless (Palera1n, Dopamine, etc. use symlink)
+    IS_ROOTLESS=1
     APP_DIR="/var/jb/Applications"
     echo "RemoteCompanion: Detected rootless jailbreak"
 else
-    # Rootful jailbreak (Checkra1n, Unc0ver on iOS 14-, etc.)
+    # Rootful or legacy jailbreak
+    IS_ROOTLESS=0
     APP_DIR="/Applications"
-    echo "RemoteCompanion: Detected rootful jailbreak"
+    echo "RemoteCompanion: Detected rootful (legacy) jailbreak"
 fi
 
 # Create the Applications directory if it doesn't exist

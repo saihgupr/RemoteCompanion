@@ -13,10 +13,6 @@ RemoteCompanion brings fast, scriptable system control to modern rootless jailbr
 > - **Modern Code Editor**: Completely redesigned, edge-to-edge UI with iOS 17 aesthetics.
 > - **True Multitasking**: Concurrent server handling powered by GCD—zero battery drain, zero blocking.
 
-
-> [!WARNING]
-> **Breaking Change**: If you use the TCP server (e.g., via the `rc` script or Home Assistant), you **must** update your configuration to use port `12340`.
-
 <p align="center">
   <img src="images/IMG_1396.PNG" width="250" alt="RemoteCompanion Interface" />
   <img src="images/IMG_1394.PNG" width="250" alt="Trigger Config" />
@@ -102,6 +98,17 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 ### 1. Requirements
 - A **Jailbroken Device** (iOS 14+). Supports both Rootless (iOS 15+) and Rootful (iOS 14) environments.
 - The `RemoteCompanion` tweak installed.
+
+### 2. Compatibility Matrix
+
+| Jailbreak / Environment | Status | Notes |
+| :--- | :--- | :--- |
+| **Dopamine** (iOS 15.0 - 16.6.1) | ✅ Working | Fully optimized for rootless. |
+| **NathanLR** (iOS 15.0 - 16.6.1) | ✅ Working | Native support. |
+| **palera1n** (Rootless / Rootful) | ✅ Working | Works on ARM64 and ARM64e. |
+| **checkra1n / Odysseyra1n** | ✅ Working | Tested on iOS 14. |
+| **Unc0ver / Taurine** | ✅ Working | Tested on iOS 14. |
+| **Bootstrap Roothide** (iOS 17.0) | ❌ **Not Working** | Currently unsupported. |
 
 ### 2. Installation Options
 

@@ -9,7 +9,6 @@
 @property (nonatomic, strong) UISwitch *masterSwitch;
 @property (nonatomic, strong) UISwitch *tcpSwitch;
 @property (nonatomic, strong) UISwitch *nfcSwitch;
-@property (nonatomic, assign) BOOL isExporting;
 @end
 
 @implementation RCSettingsViewController
@@ -203,7 +202,6 @@
 }
 
 - (void)exportConfig {
-    self.isExporting = YES;
     NSData *jsonData = [[RCConfigManager sharedManager] exportConfigAsJSON];
     if (!jsonData) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Export Failed" message:@"Could not export configuration" preferredStyle:UIAlertControllerStyleAlert];
@@ -216,8 +214,6 @@
     [df setDateFormat:@"yyyyMMdd_HHmm"];
     NSString *dateStr = [df stringFromDate:[NSDate date]];
     if (!dateStr) dateStr = @"backup";
-    
-
     
     NSString *filename = [NSString stringWithFormat:@"rc_config_%@.json", dateStr];
     
@@ -246,22 +242,24 @@
          return;
     }
     
-    @try {
-        // Use UIDocumentPicker for reliable "Save to Files"
-        UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc] initForExportingURLs:@[fileURL] asCopy:YES];
-        documentPicker.delegate = self;
-        documentPicker.modalPresentationStyle = UIModalPresentationFormSheet;
-        [self presentViewController:documentPicker animated:YES completion:nil];
-    } @catch (NSException *exception) {
-        NSLog(@"[RemoteCompanion] EXCEPTION in export: %@, %@", exception.name, exception.reason);
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Export Crash Prevented" message:[NSString stringWithFormat:@"%@: %@", exception.name, exception.reason] preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-    }
+    // Use share sheet instead of document picker to avoid glitchy loading indicator
+    UIActivityViewController *activityVC = [[UIActivityViewController alloc] initWithActivityItems:@[fileURL] applicationActivities:nil];
+    activityVC.modalPresentationStyle = UIModalPresentationFormSheet;
+    
+    // Success callback when user saves the file
+    activityVC.completionWithItemsHandler = ^(UIActivityType activityType, BOOL completed, NSArray *returnedItems, NSError *error) {
+        if (completed) {
+            NSLog(@"[RemoteCompanion] Export successful via: %@", activityType);
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Export Successful" message:@"Configuration file has been saved." preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        }
+    };
+    
+    [self presentViewController:activityVC animated:YES completion:nil];
 }
 
 - (void)importConfig {
-    self.isExporting = NO;
     // iOS 14+ supported
     NSArray *types = @[[UTType typeWithIdentifier:@"public.json"], [UTType typeWithIdentifier:@"public.plain-text"]];
     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types];
@@ -274,19 +272,11 @@
     [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/saihgupr/RemoteCompanion"] options:@{} completionHandler:nil];
 }
 
-#pragma mark - UIDocumentPickerDelegate
+#pragma mark - UIDocumentPickerDelegate (Import only)
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *url = urls.firstObject;
     if (!url) return;
-
-    if (self.isExporting) {
-        NSLog(@"[RemoteCompanion] Export finished successfully to: %@", url);
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Export Successful" message:@"Configuration file has been saved." preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-        return;
-    }
     
     NSLog(@"[RemoteCompanion] Import selected URL: %@", url);
     

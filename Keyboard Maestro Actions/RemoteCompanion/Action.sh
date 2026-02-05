@@ -7,6 +7,6 @@ else
 	Device="iphone.local"
 fi
 
-RESP=$(/bin/bash -c 'echo -n "${KMPARAM_Command}" | /usr/bin/nc -w 1 IP_ADDRESS 1234');
+RESP=$(/bin/bash -c 'echo -n "${KMPARAM_Command}" | /usr/bin/nc -w 1 IP_ADDRESS 12340');
 
 echo $RESP;

@@ -131,11 +131,11 @@ IP="${RC_IPHONE_IP:-iphone.local}"
 
 # 1. FAST PATH: Direct TCP Connection
 # Try ports 1234-1238 directly. This is instant if it works.
-PORTS=(1234 1235 1236 1237 1238)
+PORTS=(12340 12341 12342 12343 12344)
 for PORT in "${PORTS[@]}"; do
-    if timeout 0.2 bash -c "echo > /dev/tcp/$IP/$PORT" 2>/dev/null; then
+    if timeout 0.5 bash -c "echo > /dev/tcp/$IP/$PORT" 2>/dev/null; then
         # Found open port, send command
-        echo -n "$CMD" | nc -w 2 "$IP" "$PORT"
+        echo -n "$CMD" | nc -4 -w 2 "$IP" "$PORT"
         if [ $? -eq 0 ]; then
             exit 0
         fi
@@ -145,12 +145,12 @@ done
 # 2. ROBUST PATH: SSH Tunnel
 # If direct connection failed (firewall/zombies), try SSH.
 # Slower, but bypasses most network issues.
-for PORT in 1234 1235 1236 1237 1238; do
+for PORT in 12340 12341 12342 12343 12344; do
      ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no mobile@$IP "echo -n '$CMD' | /var/jb/usr/bin/nc -w 2 127.0.0.1 $PORT" 2>/dev/null
      if [ $? -eq 0 ]; then
          exit 0
      fi
 done
 
-echo "Error: Cannot connect to iPhone at $IP. Checked ports 1234-1238 via Direct TCP and SSH." >&2
+echo "Error: Cannot connect to iPhone at $IP. Checked ports 12340-12344 via Direct TCP and SSH." >&2
 exit 1

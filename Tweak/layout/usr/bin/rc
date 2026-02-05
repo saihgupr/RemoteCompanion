@@ -12,23 +12,41 @@ fi
 # Construct command string
 CMD="$@"
 
-# Find netcat path (Rootless vs Rootful)
-NC_PATH="nc"
-if [ -f "/var/jb/usr/bin/nc" ]; then
-    NC_PATH="/var/jb/usr/bin/nc"
-elif [ -f "/usr/bin/nc" ]; then
-    NC_PATH="/usr/bin/nc"
-fi
-
-# Try ports 1234-1238
-for PORT in 1234 1235 1236 1237 1238; do
-    # Use netcat to send command AND read response
-    # -w 2: Wait max 2 seconds for response/connection
-    if echo -n "$CMD" | $NC_PATH -w 2 127.0.0.1 $PORT 2>/dev/null; then
-        # If nc exits with 0, connection was successful
+# Helper to send command via /dev/tcp
+send_packet() {
+    local port=$1
+    local cmd="$2"
+    
+    # Method 1: Bash /dev/tcp (Preferred - Fast & Native)
+    if (echo > /dev/tcp/127.0.0.1/$port) >/dev/null 2>&1; then
+        exec 3<>/dev/tcp/127.0.0.1/$port
+        echo -n "$cmd" >&3
+        # Read response with timeout protection
+        if read -r response <&3; then
+            echo "$response"
+            exit 0
+        fi
         exit 0
     fi
+    
+    # Method 2: Netcat (Fallback)
+    local nc_path="nc"
+    if [ -f "/var/jb/usr/bin/nc" ]; then nc_path="/var/jb/usr/bin/nc"; fi
+    if [ -f "/usr/bin/nc" ]; then nc_path="/usr/bin/nc"; fi
+    
+    if command -v $nc_path >/dev/null 2>&1; then
+        if echo -n "$cmd" | $nc_path -w 1 127.0.0.1 $port 2>/dev/null; then
+            exit 0
+        fi
+    fi
+    
+    return 1
+}
+
+# Try ports 12340-12344
+for PORT in 12340 12341 12342 12343 12344; do
+    send_packet $PORT "$CMD"
 done
 
-echo "Error: RemoteCommand server not running or reachable (checked ports 1234-1238)"
+echo "Error: RemoteCommand server not running or reachable (checked ports 12340-12344)"
 exit 1

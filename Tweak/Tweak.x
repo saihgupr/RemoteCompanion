@@ -350,6 +350,9 @@ extern void BKSTerminateApplicationForReasonAndReportWithDescription(NSString *b
 
 @interface SpringBoard : UIApplication
 - (SBApplication *)_accessibilityFrontMostApplication;
+- (void)_simulateHomeButtonPress;
+- (void)_menuButtonDown:(id)arg1;
+- (void)_menuButtonUp:(id)arg1;
 @end
 
 @interface SBOrientationLockManager : NSObject
@@ -366,6 +369,9 @@ extern void BKSTerminateApplicationForReasonAndReportWithDescription(NSString *b
 
 @interface SBUIController : NSObject
 + (instancetype)sharedInstance;
+- (void)handleHomeButtonTap;
+- (void)handleHomeButtonTap:(id)arg1;
+- (void)clickedMenuButton;
 - (void)handleScreenshotGestureFired:(id)arg1;
 @end
 
@@ -396,18 +402,22 @@ void SRLog(NSString *format, ...) {
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
     
+    // Log to console (stderr) for syslog capture if available
     NSLog(@"[RemoteCommand] %@", message);
     
-    NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] %@\n", [NSDate date], message];
-    NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
-    if (fileHandle) {
-        @try {
-            [fileHandle seekToEndOfFile];
-            [fileHandle writeData:[logMsg dataUsingEncoding:NSUTF8StringEncoding]];
-            [fileHandle closeFile];
-        } @catch (NSException *e) {}
-    } else {
-        [logMsg writeToFile:@"/tmp/remotecommand.log" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    // Write to file with synchronization
+    @synchronized([NSFileManager defaultManager]) {
+        NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] %@\n", [NSDate date], message];
+        NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
+        if (fileHandle) {
+            @try {
+                [fileHandle seekToEndOfFile];
+                [fileHandle writeData:[logMsg dataUsingEncoding:NSUTF8StringEncoding]];
+                [fileHandle closeFile];
+            } @catch (NSException *e) {}
+        } else {
+            [logMsg writeToFile:@"/tmp/remotecommand.log" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        }
     }
 }
 
@@ -427,14 +437,28 @@ static void toggle_dnd(BOOL state) {
         @try {
             Class ServiceClass = objc_getClass("DNDModeAssertionService");
             Class DetailsClass = objc_getClass("DNDModeAssertionDetails");
+            Class StateServiceClass = objc_getClass("DNDStateService");
             
             if (!ServiceClass || !DetailsClass) {
-                SRLog(@"[SpringRemote] DND classes not found");
+                // Fallback for iOS 14
+                if (StateServiceClass) {
+                    SRLog(@"[SpringRemote] Using iOS 14 DND fallback");
+                    id service = [StateServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
+                    (void)service;
+                    if (state) {
+                        // On iOS 14, DND is often handled via specialized controllers or assertions
+                        // but a quick way is often through the SBDoNotDisturbController if we can find it
+                        // or just failing gracefully if private APIs changed too much.
+                        // For now, we'll try to find the shared instance of the DND service.
+                        // NOTE: Proper iOS 14 DND implementation usually involves SpringBoard hooks.
+                    }
+                }
+                SRLog(@"[SpringRemote] DND toggle not fully supported on this iOS version yet");
                 return;
             }
 
             // Use the SAME client identifier as Control Center (from Assertions.json)
-            DNDModeAssertionService *service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
+            id service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
             
             // Always invalidate existing assertions first to prevent stacking/errors (Idempotency)
             NSError *invalidateErr = nil;
@@ -444,7 +468,7 @@ static void toggle_dnd(BOOL state) {
                 // Turn ON
                 // Try to use a more robust identifier or userRequested approach if possible.
                 // For now, let's stick to explicit default but log heavily.
-                 DNDModeAssertionDetails *details = [DetailsClass detailsWithIdentifier:@"com.apple.control-center.manual-toggle"
+                 id details = [DetailsClass detailsWithIdentifier:@"com.apple.control-center.manual-toggle"
                                                                      modeIdentifier:@"com.apple.donotdisturb.mode.default"
                                                                            lifetime:nil];
                 NSError *err = nil;
@@ -505,7 +529,7 @@ static BOOL get_lpm_state() {
 static BOOL get_dnd_state() {
     Class ServiceClass = objc_getClass("DNDModeAssertionService");
     if (ServiceClass) {
-        DNDModeAssertionService *service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
+        id service = [ServiceClass serviceForClientIdentifier:@"com.apple.donotdisturb.control-center.module"];
         NSError *err = nil;
         id assertion = [service activeModeAssertionWithError:&err];
         return (assertion != nil);
@@ -567,9 +591,56 @@ static void inject_hid_event(uint32_t page, uint32_t usage, uint64_t durationNs,
     });
 }
 
+// Helper to detect rootless vs rootful
+static NSString* root_prefix() {
+    static NSString *prefix = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb/usr/bin/nc"]) {
+            prefix = @"/var/jb";
+        } else {
+            prefix = @"";
+        }
+    });
+    return prefix;
+}
+
 // Helper to inject a HID Consumer Page event (wrapper)
 static void inject_consumer_key(int usage) {
     inject_hid_event(kHIDPage_Consumer, usage, 50000000, 0); // 50ms hold
+}
+
+static void simulate_home_press() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SRLog(@"[SpringRemote] Executing Home simulation...");
+        
+        // 1. Try SBUIController (Modern Home Tap)
+        id uiCtrl = [objc_getClass("SBUIController") sharedInstance];
+        if ([uiCtrl respondsToSelector:@selector(handleHomeButtonTap)]) {
+            [uiCtrl handleHomeButtonTap];
+            SRLog(@"[SpringRemote] Triggered handleHomeButtonTap");
+        } else if ([uiCtrl respondsToSelector:@selector(handleHomeButtonTap:)]) {
+            [uiCtrl handleHomeButtonTap:nil];
+            SRLog(@"[SpringRemote] Triggered handleHomeButtonTap:");
+        } else if ([uiCtrl respondsToSelector:@selector(clickedMenuButton)]) {
+            [uiCtrl clickedMenuButton];
+            SRLog(@"[SpringRemote] Triggered clickedMenuButton");
+        }
+        
+        // 2. Fallback: SpringBoard simulation
+        SpringBoard *sb = (SpringBoard *)[UIApplication sharedApplication];
+        if ([sb respondsToSelector:@selector(_simulateHomeButtonPress)]) {
+            [sb _simulateHomeButtonPress];
+            SRLog(@"[SpringRemote] Triggered _simulateHomeButtonPress");
+        } else if ([sb respondsToSelector:@selector(_menuButtonDown:)]) {
+            [sb _menuButtonDown:nil];
+            [sb _menuButtonUp:nil];
+            SRLog(@"[SpringRemote] Triggered _menuButtonDown/Up");
+        }
+        
+        // 3. HID Event (Last resort)
+        inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Menu, 50000000, 0);
+    });
 }
 
 // MediaRemote Helper Declarations
@@ -1256,7 +1327,7 @@ static NSString *handle_command(NSString *cmd) {
         
         SRLog(@"Direct spawn springcuts with: %@", args);
         
-        const char *springcutsPath = "/var/jb/usr/bin/springcuts";
+        const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
         if (access(springcutsPath, X_OK) != 0) {
             springcutsPath = "/usr/bin/springcuts";
         }
@@ -1327,7 +1398,7 @@ static NSString *handle_command(NSString *cmd) {
         
         SRLog(@"Shortcut spawn with args: %@", args);
         
-        const char *springcutsPath = "/var/jb/usr/bin/springcuts";
+        const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
         if (access(springcutsPath, X_OK) != 0) {
             springcutsPath = "/usr/bin/springcuts";
         }
@@ -1407,7 +1478,7 @@ static NSString *handle_command(NSString *cmd) {
         if ([btn isEqualToString:@"power"] || [btn isEqualToString:@"lock"]) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
         } else if ([btn isEqualToString:@"home"]) {
-            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Menu, 0, 0);
+            simulate_home_press();
         } else if ([btn isEqualToString:@"volup"]) {
             inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement, 0, 0);
         } else if ([btn isEqualToString:@"voldown"]) {
@@ -1566,6 +1637,7 @@ static NSString *handle_command(NSString *cmd) {
                  inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
             }
         });
+        return @"Lock command sent\n";
     } else if ([cleanCmd isEqualToString:@"unlock"] || [cleanCmd hasPrefix:@"unlock "]) {
         // Unlock phone: Only if currently locked!
         
@@ -2105,7 +2177,20 @@ static NSString *handle_command(NSString *cmd) {
             }
         }
         return @"Error: BluetoothManager not found\n";
-        return @"Error: BluetoothManager not found\n";
+    } else if ([cleanCmd isEqualToString:@"bluetooth list"] || [cleanCmd isEqualToString:@"bt list"]) {
+        NSMutableString *output = [NSMutableString string];
+        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
+        if (btHandle) {
+            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
+            if (BluetoothManagerClass) {
+                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
+                for (BluetoothDevice *device in [btManager pairedDevices]) {
+                    NSString *name = [device name] ?: @"Unknown Device";
+                    [output appendFormat:@"%@\n", name];
+                }
+            }
+        }
+        return output.length > 0 ? output : @"No paired Bluetooth devices found\n";
     } else if ([cleanCmd hasPrefix:@"bt-connect "] || [cleanCmd hasPrefix:@"bt connect "] || [cleanCmd hasPrefix:@"bluetooth connect "]) {
         NSString *deviceName;
         if ([cleanCmd hasPrefix:@"bt connect "]) deviceName = [cleanCmd substringFromIndex:11];
@@ -2361,6 +2446,9 @@ static NSString *handle_command(NSString *cmd) {
             usleep(50000); // 50ms delay between keys
         }
         return @"Typing completed\n";
+    } else if ([cleanCmd isEqualToString:@"home"]) {
+         simulate_home_press();
+         return @"Home Button Success\n";
     } else if ([cleanCmd isEqualToString:@"screenshot"]) {
          dispatch_async(dispatch_get_main_queue(), ^{
              @try {
@@ -2431,26 +2519,45 @@ static NSString *handle_command(NSString *cmd) {
         dispatch_async(dispatch_get_main_queue(), ^{
             MPAVRoutingController *ctrl = [[objc_getClass("MPAVRoutingController") alloc] init];
             ctrl.discoveryMode = 3; // Detailed
-            [ctrl fetchAvailableRoutesWithCompletionHandler:^(NSArray<MPAVRoute *> *routes) {
-                NSMutableString *output = [NSMutableString string];
-                if (routes.count == 0) {
-                    [output appendString:@"No AirPlay devices found.\n"];
-                } else {
-                    for (MPAVRoute *route in routes) {
-                        NSString *name = route.routeName ?: @"Unknown";
-                        NSString *uid = route.routeUID ?: @"No UID";
-                        // Mark picked route
-                        NSString *prefix = route.picked ? @"* " : @"  ";
-                        [output appendFormat:@"%@%@ [%@]\n", prefix, name, uid];
+            
+            __block int attempts = 0;
+            __block void (^fetchDevices)(void) = nil;
+            
+            fetchDevices = ^void(void) {
+                [ctrl fetchAvailableRoutesWithCompletionHandler:^(NSArray<MPAVRoute *> *routes) {
+                    attempts++;
+                    
+                    // If we only found 1 device (iPhone), try again for up to 3 seconds (6 * 0.5s)
+                    if (routes.count <= 1 && attempts < 6) {
+                        SRLog(@"[SpringRemote] AirPlay list: Only found %lu devices, retrying discovery (%d/6)...", (unsigned long)routes.count, attempts);
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                            if (fetchDevices) fetchDevices();
+                        });
+                        return;
                     }
-                }
-                result = output;
-                dispatch_semaphore_signal(sema);
-            }];
+                    
+                    NSMutableString *output = [NSMutableString string];
+                    if (routes.count == 0) {
+                        [output appendString:@"No AirPlay devices found.\n"];
+                    } else {
+                        for (MPAVRoute *route in routes) {
+                            NSString *name = route.routeName ?: @"Unknown";
+                            NSString *uid = route.routeUID ?: @"No UID";
+                            NSString *prefix = route.picked ? @"* " : @"  ";
+                            [output appendFormat:@"%@%@ [%@]\n", prefix, name, uid];
+                        }
+                    }
+                    result = output;
+                    dispatch_semaphore_signal(sema);
+                    fetchDevices = nil; // Break cycle
+                }];
+            };
+            
+            fetchDevices();
         });
         
-        // Wait up to 4 seconds
-        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC));
+        // Wait up to 5 seconds (6 * 0.5s retry + buffer)
+        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
         return result ?: @"Error: Timeout fetching AirPlay devices\n";
 
     } else if ([cleanCmd hasPrefix:@"airplay connect "]) {
@@ -2458,6 +2565,11 @@ static NSString *handle_command(NSString *cmd) {
         // Strip outer quotes if present
         if ([target hasPrefix:@"\""] && [target hasSuffix:@"\""] && target.length >= 2) {
             target = [target substringWithRange:NSMakeRange(1, target.length - 2)];
+        }
+        
+        // Strip name suffix if present: "UID # Name"
+        if ([target containsString:@" # "]) {
+            target = [target componentsSeparatedByString:@" # "].firstObject;
         }
 
         __block NSString *result = nil;
@@ -2525,7 +2637,8 @@ static NSString *handle_command(NSString *cmd) {
             // Reliable Tweak way: Kill backboardd
             pid_t pid;
             const char* args[] = { "killall", "-9", "backboardd", NULL };
-            posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char* const*)args, NULL);
+            NSString *killallPath = [NSString stringWithFormat:@"%@/usr/bin/killall", root_prefix()];
+            posix_spawn(&pid, [killallPath UTF8String], NULL, NULL, (char* const*)args, NULL);
             
             // Fallback for non-rootless
             if (pid <= 0) {
@@ -2545,7 +2658,7 @@ static NSString *handle_command(NSString *cmd) {
                  if (NSTaskClass) {
                      id task = [[NSTaskClass alloc] init];
                      
-                     NSString *binPath = @"/var/jb/usr/bin/springcuts";
+                     NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()];
                      if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
                          binPath = @"/usr/bin/springcuts";
                      }
@@ -2581,15 +2694,15 @@ static void start_server() {
         struct sockaddr_in address;
         int opt = 1;
         int addrlen = sizeof(address);
-        char buffer[1024] = {0};
+        // Buffer removed (unused)
         
-        // Ports to try in order
-        int ports[] = {1234, 1235, 1236, 1237, 1238};
+        // Ports to try in order (12340+ to avoid debugserver conflict on 1234)
+        int ports[] = {12340, 12341, 12342, 12343, 12344};
         int num_ports = sizeof(ports) / sizeof(ports[0]);
         int bound_port = 0;
 
-        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-            SRLog(@"[RemoteCommand] ERROR: Failed to create socket");
+        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) { // Fix: check < 0
+            SRLog(@"[RemoteCommand] ERROR: Failed to create socket (errno: %d)", errno);
             return;
         }
 
@@ -2597,12 +2710,9 @@ static void start_server() {
         if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
             SRLog(@"[RemoteCommand] WARNING: Failed to set SO_REUSEADDR");
         }
-        #ifdef SO_REUSEPORT
-        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt))) {
-            SRLog(@"[RemoteCommand] WARNING: Failed to set SO_REUSEPORT");
-        }
-        #endif
-
+        
+        memset(&address, 0, sizeof(address));
+        address.sin_len = sizeof(address);
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = INADDR_ANY;
         
@@ -2632,42 +2742,68 @@ static void start_server() {
             return;
         }
 
-        SRLog(@"[RemoteCommand] Server listening on port %d", bound_port);
+        SRLog(@"[RemoteCommand] Server listening on port %d... Waiting for connections.", bound_port);
 
         while (1) {
-            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) continue;
+            // Reset addrlen for each accept call
+            addrlen = sizeof(address);
             
-            // Get client IP
-            char *client_ip = inet_ntoa(address.sin_addr);
-            BOOL isLocalhost = (strcmp(client_ip, "127.0.0.1") == 0);
+            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+                 // Only log serious errors, ignore EAGAIN/EINTR
+                 if (errno != EAGAIN && errno != EINTR) {
+                     SRLog(@"[RemoteCommand] Accept failed: %d (%s)", errno, strerror(errno));
+                 }
+                 continue;
+            }
             
-            // Check config if not localhost
-            if (!isLocalhost) {
-                // Check if TCP server is enabled in config (dynamic reload)
-                load_trigger_config();
-                BOOL tcpEnabled = NO; // Default
-                if (g_triggerConfig) {
-                    id tcpVal = g_triggerConfig[@"tcpEnabled"];
-                    tcpEnabled = (tcpVal == nil) ? NO : [tcpVal boolValue];
+            // Dispatch connection handling to concurrent queue to prevent blocking the listener
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                // Set receive timeout to 5 seconds to prevent hanging
+                struct timeval tv;
+                tv.tv_sec = 5;
+                tv.tv_usec = 0;
+                setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
+                // Get client IP (Thread Safe)
+                char client_ip[INET_ADDRSTRLEN] = {0};
+                if (inet_ntop(AF_INET, &(address.sin_addr), client_ip, INET_ADDRSTRLEN) == NULL) {
+                     strcpy(client_ip, "UNKNOWN");
                 }
                 
-                if (!tcpEnabled) {
-                    // Connection rejected by policy (only allow localhost)
-                    close(new_socket);
-                    continue;
+                BOOL isLocalhost = (strcmp(client_ip, "127.0.0.1") == 0);
+                
+                // Check config if not localhost
+                if (!isLocalhost) {
+                    load_trigger_config();
+                    BOOL tcpEnabled = NO;
+                    if (g_triggerConfig) {
+                         id tcpVal = g_triggerConfig[@"tcpEnabled"];
+                         tcpEnabled = (tcpVal == nil) ? NO : [tcpVal boolValue];
+                    }
+                    
+                    if (!tcpEnabled) {
+                        SRLog(@"[RemoteCommand] Rejected non-localhost connection from %s", client_ip);
+                        close(new_socket);
+                        return; 
+                    }
                 }
-            }
-            
-            ssize_t valread = read(new_socket, buffer, 1024);
-            if (valread > 0) {
-                NSString *cmd = [[NSString alloc] initWithBytes:buffer length:valread encoding:NSUTF8StringEncoding];
-                NSString *response = handle_command(cmd);
-                if (response) {
-                     write(new_socket, [response UTF8String], [response lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+                
+                char local_buffer[1024] = {0};
+                // SRLog(@"[RemoteCommand] Reading from %s...", client_ip);
+                ssize_t valread = read(new_socket, local_buffer, 1024);
+                if (valread > 0) {
+                    NSString *cmd = [[NSString alloc] initWithBytes:local_buffer length:valread encoding:NSUTF8StringEncoding];
+                    // SRLog(@"[RemoteCommand] Received: %@", cmd);
+                    NSString *response = handle_command(cmd);
+                    if (response) {
+                        write(new_socket, [response UTF8String], [response lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+                    }
+                    // SRLog(@"[RemoteCommand] Processed command");
+                } else if (valread < 0) {
+                     // SRLog(@"[RemoteCommand] Read error: %d", errno);
                 }
-            }
-            close(new_socket);
-            memset(buffer, 0, 1024);
+                close(new_socket);
+            });
         }
     });
 }

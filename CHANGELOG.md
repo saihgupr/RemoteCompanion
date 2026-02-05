@@ -2,21 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-02-05
+
+### Improved
+- **Export Configuration**: Replaced the document picker with a native iOS Share Sheet. This fixes the cut-off spinning indicator and provides more flexible export options (AirDrop, Messages, etc.).
+- **Action Labels**: Refined all system labels for clarity. "set-vol" is now "Set Volume", "brightness" is now "Set Brightness", and abbreviations like LPM, DND, and ANC have been expanded to their full names.
+- **Label Readability**: Increased truncation limit to 40 characters for better visibility of long device and shortcut names.
+- **Instant Commands**: Optimized `rc` command execution to be virtually instant (~0.25s) by fixing TCP probe timeouts that were causing unnecessary SSH fallbacks.
+- **Server Stability**: Rewrote the internal server to handle multiple connections concurrently, preventing freezes/crashes when a connection hangs.
+- **Port Reliability**: Moved server ports to 12340-12344 to avoid conflicts with system services like `debugserver`.
+
+### Added
+- **Action Editing**: You can now edit any existing action in your sequence just by tapping it. This re-opens the picker (for apps, shortcuts, devices) or an alert (for delay, volume, brightness) to quickly swap values.
+- **Unified Device Pickers**: Implemented a consistent, discovery-based picker for both AirPlay and Bluetooth devices. The app now fetches a live list of available devices (using `airplay list` and `bluetooth list`) to ensure you're always selecting from active nearby hardware.
+- **Home Button Action**: Added a new action to simulate a physical Home Button press with robust support across all device models (physical buttons and gesture-based), useful for returning home or closing apps within a sequence.
+- **Modern Code Editor**: Completely redesigned the Terminal and Lua editor pages with a modernized, edge-to-edge iOS 17 style. Removed unnecessary buttons for a cleaner, more focused editing experience.
+- **Refined Labels**: Simplified "Lua" and "Terminal" labels in the main panel for a cleaner look, and updated "Wait" labels to show the duration (e.g., "Wait 5s").
+- **Auto-Launch on Deploy**: The `deploy.sh` script now automatically opens the RemoteCompanion app on your device after a successful install, using a more robust launch method.
+- **iOS 14 & Rootful Compatibility**: Added support for iOS 14 and traditional rootful jailbreak environments. This includes dynamic path resolution for binaries like `springcuts` and `killall` (supporting both `/var/jb/usr/bin` and `/usr/bin`), SF Symbol fallbacks for older firmware, and iOS 14 specific DND fallback research.
+- **iPad Experience**: Added official support for iPads with full landscape orientation support and optimized layouts.
+- **Dependency-Free Client**: The `rc` command-line tool now uses native bash networking (`/dev/tcp`) instead of relying on `netcat`, ensuring higher reliability and performance on all jailbreak types.
+
+### Fixed
+- **Connectivity**: Fixed an issue where `rc lock` would execute but report failure due to a missing response from the server.
+
+
 ## [2.0.0] - 2026-02-02
 
 ### Fixed
 - **Safe Mode Crash**: Resolved a race condition and main-thread violation when re-enabling triggers from Settings.
-
-## [1.1.2] - 2026-01-30
-
-### Fixed
-- **Volume Button Responsiveness**: Improved reliability of native volume buttons when custom triggers are disabled.
-
-## [1.1.1] - 2026-01-29
-
-### Fixed
-- **Open App Action**: Fixed "Open App" action failing by restoring the missing `uiopen` command handler in the Tweak.
-- **Custom Command Repair**: Fixed "Custom Command" actions failing when using `rc <command>` by intercepting the `rc` prefix and executing it internally.
 
 ## [2.0.0~beta5] - 2026-01-31
 
@@ -65,6 +79,17 @@ All notable changes to this project will be documented in this file.
 - **Ringer Switch Automation**: Triggers for muting, unmuting, and toggling the ringer switch (works with hardware switch and Control Center).
 - **Respring Action**: Added a native "Respring Device" action to the UI and improved the `respring` command reliability by using `killall backboardd`.
 
+## [1.1.2] - 2026-01-30
+
+### Fixed
+- **Volume Button Responsiveness**: Improved reliability of native volume buttons when custom triggers are disabled.
+
+## [1.1.1] - 2026-01-29
+
+### Fixed
+- **Open App Action**: Fixed "Open App" action failing by restoring the missing `uiopen` command handler in the Tweak.
+- **Custom Command Repair**: Fixed "Custom Command" actions failing when using `rc <command>` by intercepting the `rc` prefix and executing it internally.
+
 ## [1.1.0] - 2026-01-29
 
 ### Added
@@ -90,7 +115,7 @@ All notable changes to this project will be documented in this file.
 ## [1.0.3] - 2026-01-22
 
 ### Added
-- Shortcuts (via Powercuts)
+- - Shortcuts (via Powercuts)
 - **Custom Command**: You can now use `rc haptic` / `rc screenshot` / `rc siri` (or any other `rc` command) directly in the Custom Command action to open apps or trigger any system action.
 - **Settings UI**: Added version label (e.g., `v1.0.3`) to the bottom of the Settings menu.
 - **Improved Layout**: Refactored Settings screen to pin the version label to the bottom of the view, ensuring consistent positioning regardless of screen size.

@@ -4,6 +4,7 @@
 #import "RCShortcutPickerViewController.h"
 #import "RCAppPickerViewController.h"
 #import "RCTextInputViewController.h"
+#import "RCServerClient.h"
 
 @interface UIImage (Private)
 + (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleIdentifier format:(int)format scale:(CGFloat)scale;
@@ -283,6 +284,36 @@
         
         UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:inputVC];
         [self presentViewController:nav animated:YES completion:nil];
+    } else if ([currentAction hasPrefix:@"set-vol "] || [currentAction hasPrefix:@"brightness "]) {
+        // Edit Volume/Brightness
+        BOOL isVolume = [currentAction hasPrefix:@"set-vol "];
+        NSString *title = isVolume ? @"Edit Volume" : @"Edit Brightness";
+        NSString *prefix = isVolume ? @"set-vol " : @"brightness ";
+        NSString *currentValue = [currentAction substringFromIndex:prefix.length];
+        
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:title 
+                                                                       message:@"Enter a value (0-100)" 
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        
+        [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
+            textField.keyboardType = UIKeyboardTypeNumberPad;
+            textField.text = currentValue;
+            textField.textAlignment = NSTextAlignmentCenter;
+        }];
+        
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Update" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+            UITextField *textField = alert.textFields.firstObject;
+            int val = [textField.text intValue];
+            if (val < 0) val = 0;
+            if (val > 100) val = 100;
+            
+            self.actions[indexPath.row] = [NSString stringWithFormat:@"%@%d", prefix, val];
+            [self saveActions];
+            [self.tableView reloadData];
+        }]];
+        
+        [self presentViewController:alert animated:YES completion:nil];
     } else if ([currentAction hasPrefix:@"Lua "] || [currentAction hasPrefix:@"lua_eval "] || [currentAction hasPrefix:@"lua "]) {
         // Edit Lua Script (Direct or File)
         BOOL isDirect = [currentAction hasPrefix:@"Lua "] || [currentAction hasPrefix:@"lua_eval "];
@@ -332,7 +363,136 @@
         }]];
         
         [self presentViewController:alert animated:YES completion:nil];
+    } else if ([currentAction hasPrefix:@"shortcut:"]) {
+        // Edit Shortcut
+        RCShortcutPickerViewController *shortcutPicker = [[RCShortcutPickerViewController alloc] init];
+        shortcutPicker.onShortcutSelected = ^(NSString *name) {
+            self.actions[indexPath.row] = [NSString stringWithFormat:@"shortcut:%@", name];
+            [self saveActions];
+            [self.tableView reloadData];
+        };
+        
+        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:shortcutPicker];
+        [self presentViewController:nav animated:YES completion:nil];
+    } else if ([currentAction hasPrefix:@"uiopen "]) {
+        // Edit App
+        RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
+        appPicker.onAppSelected = ^(NSString *name, NSString *bundleId) {
+            self.actions[indexPath.row] = [NSString stringWithFormat:@"uiopen %@", bundleId];
+            [self saveActions];
+            [self.tableView reloadData];
+        };
+        
+        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:appPicker];
+        [self presentViewController:nav animated:YES completion:nil];
+    } else if ([currentAction hasPrefix:@"airplay connect "] || [currentAction hasPrefix:@"airplay-connect "]) {
+        [self editAirPlayConnectAtIndex:indexPath.row];
+    } else if ([currentAction hasPrefix:@"bt connect "] || [currentAction hasPrefix:@"bluetooth connect "] || [currentAction hasPrefix:@"bt-connect "]) {
+        [self editBluetoothConnectAtIndex:indexPath.row isDisconnect:NO];
+    } else if ([currentAction hasPrefix:@"bt disconnect "] || [currentAction hasPrefix:@"bluetooth disconnect "] || [currentAction hasPrefix:@"bt-disconnect "]) {
+        [self editBluetoothConnectAtIndex:indexPath.row isDisconnect:YES];
     }
+}
+
+- (void)editAirPlayConnectAtIndex:(NSInteger)index {
+    UIAlertController *loading = [UIAlertController alertControllerWithTitle:@"Scanning for devices..." 
+                                                                     message:@"Please wait" 
+                                                              preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:loading animated:YES completion:nil];
+    
+    [[RCServerClient sharedClient] executeCommand:@"airplay list" completion:^(NSString * _Nullable output, NSError * _Nullable error) {
+        [loading dismissViewControllerAnimated:YES completion:^{
+            if (error) {
+                UIAlertController *errAlert = [UIAlertController alertControllerWithTitle:@"Error" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+                [errAlert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:errAlert animated:YES completion:nil];
+                return;
+            }
+            
+            NSArray *lines = [output componentsSeparatedByString:@"\n"];
+            NSMutableArray *devices = [NSMutableArray array];
+            for (NSString *line in lines) {
+                NSString *clean = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (clean.length == 0 || [clean isEqualToString:@"No AirPlay devices found."] || [clean hasPrefix:@"Error:"]) continue;
+                if (clean.length < 5) continue;
+                NSString *workingLine = clean;
+                if ([workingLine hasPrefix:@"* "] || [workingLine hasPrefix:@"  "]) workingLine = [workingLine substringFromIndex:2];
+                NSRange openBracket = [workingLine rangeOfString:@" [" options:NSBackwardsSearch];
+                NSRange closeBracket = [workingLine rangeOfString:@"]" options:NSBackwardsSearch];
+                if (openBracket.location != NSNotFound && closeBracket.location != NSNotFound && closeBracket.location > openBracket.location) {
+                    NSString *name = [[workingLine substringToIndex:openBracket.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                    NSString *uid = [[workingLine substringWithRange:NSMakeRange(openBracket.location + 2, closeBracket.location - openBracket.location - 2)] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                    [devices addObject:@{ @"uid": uid, @"name": name }];
+                }
+            }
+            
+            if (devices.count == 0) {
+                UIAlertController *empty = [UIAlertController alertControllerWithTitle:@"No Devices Found" message:@"Ensure AirPlay devices are reachable." preferredStyle:UIAlertControllerStyleAlert];
+                [empty addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:empty animated:YES completion:nil];
+                return;
+            }
+            
+            UIAlertController *picker = [UIAlertController alertControllerWithTitle:@"Update AirPlay Device" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+            for (NSDictionary *device in devices) {
+                [picker addAction:[UIAlertAction actionWithTitle:device[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                    self.actions[index] = [NSString stringWithFormat:@"airplay connect %@ # %@", device[@"uid"], device[@"name"]];
+                    [self saveActions];
+                    [self.tableView reloadData];
+                }]];
+            }
+            [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+            picker.popoverPresentationController.sourceView = self.view;
+            [self presentViewController:picker animated:YES completion:nil];
+        }];
+    }];
+}
+
+- (void)editBluetoothConnectAtIndex:(NSInteger)index isDisconnect:(BOOL)isDisconnect {
+    NSString *promptTitle = isDisconnect ? @"Update Bluetooth Disconnect" : @"Update Bluetooth Connection";
+    
+    UIAlertController *loading = [UIAlertController alertControllerWithTitle:@"Fetching paired devices..." 
+                                                                     message:@"Please wait" 
+                                                              preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:loading animated:YES completion:nil];
+    
+    [[RCServerClient sharedClient] executeCommand:@"bluetooth list" completion:^(NSString * _Nullable output, NSError * _Nullable error) {
+        [loading dismissViewControllerAnimated:YES completion:^{
+            if (error || !output) {
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error" message:error.localizedDescription ?: @"Failed to fetch devices" preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:alert animated:YES completion:nil];
+                return;
+            }
+            
+            NSArray *lines = [output componentsSeparatedByString:@"\n"];
+            NSMutableArray *devices = [NSMutableArray array];
+            for (NSString *line in lines) {
+                NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (trimmed.length > 0) [devices addObject:trimmed];
+            }
+            
+            if (devices.count == 0) {
+                UIAlertController *empty = [UIAlertController alertControllerWithTitle:@"No Devices Found" message:@"Ensure Bluetooth devices are paired." preferredStyle:UIAlertControllerStyleAlert];
+                [empty addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:empty animated:YES completion:nil];
+                return;
+            }
+            
+            UIAlertController *picker = [UIAlertController alertControllerWithTitle:promptTitle message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+            for (NSString *deviceName in devices) {
+                [picker addAction:[UIAlertAction actionWithTitle:deviceName style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                    NSString *prefix = isDisconnect ? @"bt disconnect" : @"bt connect";
+                    self.actions[index] = [NSString stringWithFormat:@"%@ %@", prefix, deviceName];
+                    [self saveActions];
+                    [self.tableView reloadData];
+                }]];
+            }
+            [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+            picker.popoverPresentationController.sourceView = self.view;
+            [self presentViewController:picker animated:YES completion:nil];
+        }];
+    }];
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -381,14 +541,26 @@
         cell.textLabel.text = @"Lua Script";
         subtitle = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
     } else if ([action hasPrefix:@"delay "]) {
-        cell.textLabel.text = @"Wait";
+        cell.textLabel.text = [NSString stringWithFormat:@"Wait %@s", [action substringFromIndex:6]];
         subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
     } else if ([action hasPrefix:@"shortcut:"]) {
-        cell.textLabel.text = @"Run Shortcut";
-        subtitle = [action substringFromIndex:9];
+        cell.textLabel.text = cleanName; // "Run Shortcut Name"
+        subtitle = @"Siri Shortcut";
     } else if ([action hasPrefix:@"uiopen "]) {
-        cell.textLabel.text = @"Open App";
-        subtitle = [action substringFromIndex:7];
+        cell.textLabel.text = cleanName; // "Open App Name"
+        subtitle = @"Application";
+    } else if ([action hasPrefix:@"airplay connect "]) {
+        cell.textLabel.text = cleanName; // Will be "Connect Speaker Name"
+        subtitle = @"AirPlay Device";
+    } else if ([action hasPrefix:@"bt connect "] || [action hasPrefix:@"bluetooth connect "]) {
+        cell.textLabel.text = cleanName; // "Connect Device Name"
+        subtitle = @"Bluetooth Device";
+    } else if ([action hasPrefix:@"bt disconnect "] || [action hasPrefix:@"bluetooth disconnect "]) {
+        cell.textLabel.text = cleanName; // "Disconnect Device Name"
+        subtitle = nil;
+    } else if ([action hasPrefix:@"airplay disconnect"]) {
+        cell.textLabel.text = cleanName; // "Disconnect Airplay"
+        subtitle = nil;
     } else {
         // Standard commands
         cell.textLabel.text = cleanName;

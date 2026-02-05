@@ -1,14 +1,21 @@
 # RemoteCompanion
 
-RemoteCompanion is a modern Activator replacement built specifically for rootless jailbreaks. It lets you bind physical gestures and hardware buttons to system actions, media controls, and custom scripts.
+RemoteCompanion brings fast, scriptable system control to modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons to system actions, media controls, and custom scripts.
 
-> [!NOTE] 
-> **What's New in v2.0**
-> - **Full UI Redesign**: Modern native look with Large Titles and translucent frosted glass effects.
-> - **Power & Touch ID Triggers**: Added **Power + Volume** combos, **Touch ID (Tap/Hold)**, and **Triple/Quadruple Power clicks**.
-> - **Ringer & Siri Automation**: Hardware ringer switch triggers and a dedicated native Siri action.
-> - **Search Everywhere**: Find actions and shortcuts instantly with new search bars in every picker.
-> - **Native Respring**: Dedicated "Respring Device" action added directly to the UI.
+> [!IMPORTANT]
+> **What's New in v2.1**
+> - **iOS 14 & Rootful Support**: Broader compatibility covering legacy firmware and rootful jailbreak environments.
+> - **Unified Device Pickers**: Discovery-based, searchable live lists for nearby AirPlay and Bluetooth hardware.
+> - **Action Editing**: Modify any existing action in your sequence by simply tapping it.
+> - **Port Change & Speed**: Default TCP port moved to `12340` with optimized local probes for instant (~0.25s) execution.
+> - **iPad Experience**: Official support for iPads with full landscape orientation and optimized layouts.
+> - **Home Button**: Native simulation of the Home button for all device models (physical and gesture-based).
+> - **Modern Code Editor**: Completely redesigned, edge-to-edge UI with iOS 17 aesthetics.
+> - **True Multitasking**: Concurrent server handling powered by GCD—zero battery drain, zero blocking.
+
+
+> [!WARNING]
+> **Breaking Change**: If you use the TCP server (e.g., via the `rc` script or Home Assistant), you **must** update your configuration to use port `12340`.
 
 <p align="center">
   <img src="images/IMG_1385.PNG" width="250" alt="RemoteCompanion Interface" />
@@ -22,9 +29,14 @@ RemoteCompanion is a modern Activator replacement built specifically for rootles
 </p>
 
 ## Features
-- **Lightning Fast**: Actions happen in milliseconds.
-- **Smart Control**: Run actions, open apps, or control settings remotely.
-- **Custom Triggers**: Use the companion app to assign action sequences to gestures, physical buttons, or NFC tags.
+- **Instant Response**: Actions execute in milliseconds using a optimized, dependency-free architecture.
+- **Smart Control**: Run multi-step action sequences, open apps, or control settings remotely.
+- **Hardware Triggers**: Bind actions to Power/Volume buttons, Home button, Touch ID (Tap/Hold), or the Ringer Switch.
+- **Visual Excellence**: Modern iOS aesthetics with Large Titles, SF Symbols, and frosted glass effects.
+- **Universal Search**: Instantly find actions, shortcuts, and devices with integrated search bars in every picker.
+- **Native Experience**: Redesigned edge-to-edge Terminal and Lua editors with full iPad landscape support.
+- **Advanced Automation**: Full support for NFC tags, custom scripts, and Siri integration.
+- **Live Discovery**: Real-time management and connection for nearby AirPlay and Bluetooth hardware.
 
 ## What you can do
 
@@ -88,7 +100,7 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 ## Getting Started
 
 ### 1. Requirements
-- A **Rootless Jailbroken Device** (iOS 15+). Tested on iOS 15, 16, and 17.
+- A **Jailbroken Device** (iOS 14+). Supports both Rootless (iOS 15+) and Rootful (iOS 14) environments.
 - The `RemoteCompanion` tweak installed.
 
 ### 2. Installation Options
@@ -150,7 +162,8 @@ Actions can even be fired from shortcuts using Powercuts.
 Add this to your `configuration.yaml`:
 ```yaml
 shell_command:
-  iphone_remote: 'echo -n "{{ cmd }}" | nc -w 1 YOUR_IPHONE_IP 1234'
+  iphone_remote: >
+    bash -c 'echo '\''{{ cmd }}'\'' > /dev/tcp/YOUR_IPHONE_IP/12340'
 ```
 Then call it with:
 

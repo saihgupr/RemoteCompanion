@@ -418,59 +418,60 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"lock": @"Lock Device",
         @"lock toggle": @"Lock Toggle",
         @"lock status": @"Lock Status",
-        @"dnd on": @"DND On",
-        @"dnd off": @"DND Off",
-        @"dnd toggle": @"DND Toggle",
+        @"dnd on": @"Do Not Disturb On",
+        @"dnd off": @"Do Not Disturb Off",
+        @"dnd toggle": @"Do Not Disturb Toggle",
         @"respring": @"Respring",
-        @"lpm on": @"LPM On",
-        @"lpm off": @"LPM Off",
-        @"lpm toggle": @"LPM Toggle",
-        @"anc on": @"ANC On",
-        @"anc off": @"ANC Off",
+        @"lpm on": @"Low Power Mode On",
+        @"lpm off": @"Low Power Mode Off",
+        @"lpm toggle": @"Low Power Mode Toggle",
+        @"anc on": @"Noise Cancellation On",
+        @"anc off": @"Noise Cancellation Off",
         @"anc transparency": @"Transparency Mode",
         @"airplay disconnect": @"Disconnect AirPlay",
         @"airplane on": @"Airplane On",
         @"airplane off": @"Airplane Off",
         @"airplane toggle": @"Airplane Toggle",
-        @"low power on": @"LPM On",
-        @"low power off": @"LPM Off",
-        @"low power mode on": @"LPM On",
-        @"low power mode off": @"LPM Off",
-        @"low power toggle": @"LPM Toggle",
-        @"low power mode toggle": @"LPM Toggle",
+        @"low power on": @"Low Power Mode On",
+        @"low power off": @"Low Power Mode Off",
+        @"low power mode on": @"Low Power Mode On",
+        @"low power mode off": @"Low Power Mode Off",
+        @"low power toggle": @"Low Power Mode Toggle",
+        @"low power mode toggle": @"Low Power Mode Toggle",
         @"mute toggle": @"Mute Toggle",
-        @"siri": @"Activate Siri"
+        @"siri": @"Activate Siri",
+        @"home": @"Home Button"
     };
     
     NSString *result = names[cmd];
     
     if (!result) {
         if ([cmd hasPrefix:@"exec "]) {
-            result = [cmd substringFromIndex:5];
+            result = @"Terminal Command";
         } else if ([cmd hasPrefix:@"delay "]) {
             result = [NSString stringWithFormat:@"Delay %@s", [cmd substringFromIndex:6]];
-        } else if ([cmd hasPrefix:@"bt connect "]) {
-            result = [NSString stringWithFormat:@"Connect BT: %@", [cmd substringFromIndex:11]];
-        } else if ([cmd hasPrefix:@"bluetooth connect "]) {
-            result = [NSString stringWithFormat:@"Connect BT: %@", [cmd substringFromIndex:18]];
-        } else if ([cmd hasPrefix:@"bt disconnect "]) {
-            result = [NSString stringWithFormat:@"Disconnect BT: %@", [cmd substringFromIndex:14]];
-        } else if ([cmd hasPrefix:@"bluetooth disconnect "]) {
-            result = [NSString stringWithFormat:@"Disconnect BT: %@", [cmd substringFromIndex:21]];
+        } else if ([cmd hasPrefix:@"bt connect "] || [cmd hasPrefix:@"bluetooth connect "]) {
+            NSString *val = [cmd hasPrefix:@"bluetooth connect "] ? [cmd substringFromIndex:18] : [cmd substringFromIndex:11];
+            result = [NSString stringWithFormat:@"Connect %@", val];
+        } else if ([cmd hasPrefix:@"bt disconnect "] || [cmd hasPrefix:@"bluetooth disconnect "]) {
+            NSString *val = [cmd hasPrefix:@"bluetooth disconnect "] ? [cmd substringFromIndex:21] : [cmd substringFromIndex:14];
+            result = [NSString stringWithFormat:@"Disconnect %@", val];
         } else if ([cmd hasPrefix:@"airplay connect "]) {
-            result = [NSString stringWithFormat:@"Connect AirPlay: %@", [cmd substringFromIndex:16]];
+            NSString *val = [cmd substringFromIndex:16];
+            if ([val containsString:@" # "]) {
+                val = [val componentsSeparatedByString:@" # "].lastObject;
+            }
+            result = [NSString stringWithFormat:@"Connect %@", val];
+        } else if ([cmd hasPrefix:@"airplay disconnect"]) {
+            result = @"Disconnect Airplay";
         } else if ([cmd hasPrefix:@"set-vol "]) {
-            result = [NSString stringWithFormat:@"Set Vol: %@", [cmd substringFromIndex:8]];
+            result = [NSString stringWithFormat:@"Set Volume %@", [cmd substringFromIndex:8]];
         } else if ([cmd hasPrefix:@"brightness "]) {
-            result = [NSString stringWithFormat:@"Set Brightness: %@", [cmd substringFromIndex:11]];
+            result = [NSString stringWithFormat:@"Set Brightness %@", [cmd substringFromIndex:11]];
         } else if ([cmd hasPrefix:@"shortcut:"]) {
-            result = [NSString stringWithFormat:@"Shortcut: %@", [cmd substringFromIndex:9]];
-        } else if ([cmd hasPrefix:@"Lua "]) {
-            result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:4]];
-        } else if ([cmd hasPrefix:@"lua_eval "]) {
-            result = [NSString stringWithFormat:@"Lua: %@", [cmd substringFromIndex:9]];
-        } else if ([cmd hasPrefix:@"lua "]) {
-            result = [[cmd substringFromIndex:4] lastPathComponent];
+            result = [NSString stringWithFormat:@"Run %@", [cmd substringFromIndex:9]];
+        } else if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) {
+            result = @"Lua Script";
         } else if ([cmd hasPrefix:@"spotify "]) {
             result = @"Spotify";
         } else if ([cmd hasPrefix:@"uiopen "]) {
@@ -498,8 +499,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     
     // Final truncation to keep the detail labels from overflowing
     // Use middle truncation: "Start...End"
-    if (shouldTruncate && result.length > 25) {
-        NSInteger keep = 10; 
+    if (shouldTruncate && result.length > 40) {
+        NSInteger keep = 18; 
         NSString *prefix = [result substringToIndex:keep];
         NSString *suffix = [result substringFromIndex:result.length - keep];
         result = [NSString stringWithFormat:@"%@...%@", prefix, suffix];
@@ -517,8 +518,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmd hasPrefix:@"shortcut:"]) return @"command";
     if ([cmd hasPrefix:@"set-vol "]) return @"speaker.wave.3.fill";
     if ([cmd hasPrefix:@"brightness "]) return @"sun.max.fill";
-    if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua "]) return @"scroll.fill";
+    if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) return @"scroll.fill";
     if ([cmd hasPrefix:@"spotify "]) return @"music.note";
+    if ([cmd isEqualToString:@"home"]) return @"house.fill";
     if ([cmd hasPrefix:@"uiopen "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:7]];
     
     NSDictionary *icons = @{

@@ -1,14 +1,14 @@
 FINALPACKAGE=1
 THEOS ?= /opt/theos
-ARCHS = arm64
-TARGET := iphone:clang:latest:15.0
-THEOS_PACKAGE_SCHEME = rootless
+ARCHS = arm64 arm64e
+TARGET := iphone:clang:latest:14.0
+THEOS_PACKAGE_SCHEME ?= rootless
 
 include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = RemoteCompanion
 
-RemoteCompanion_FILES = main.m RCAppDelegate.m RCConfigManager.m RCTriggersViewController.m RCActionsViewController.m RCActionPickerViewController.m RCSettingsViewController.m RCNFCTriggerViewController.m RCShortcutPickerViewController.m RCTextInputViewController.m RCAppPickerViewController.m
+RemoteCompanion_FILES = main.m RCAppDelegate.m RCConfigManager.m RCTriggersViewController.m RCActionsViewController.m RCActionPickerViewController.m RCSettingsViewController.m RCNFCTriggerViewController.m RCShortcutPickerViewController.m RCTextInputViewController.m RCAppPickerViewController.m RCServerClient.m
 RemoteCompanion_FRAMEWORKS = UIKit Foundation UserNotifications CoreNFC MobileCoreServices
 RemoteCompanion_CFLAGS = -fobjc-arc
 RemoteCompanion_CODESIGN_FLAGS = -SEntitlements.plist

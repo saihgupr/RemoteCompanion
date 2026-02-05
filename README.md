@@ -3,15 +3,19 @@
 RemoteCompanion brings fast, scriptable system control to modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons to system actions, media controls, and custom scripts.
 
 > [!IMPORTANT]
-> **What's New in v2.1** (Modernization Update)
-> - **iOS 14 & Rootful Support**: Broader compatibility covering iOS 14 firmware and traditional rootful jailbreak environments with dynamic path detection.
-> - **Home Button**: Added a new "Home Button" action that works across all device models (button and gesture-based).
-> - **Unified Device Pickers**: Consistently designed, searchable live lists for picking AirPlay and Bluetooth devices.
-> - **Modern Code Editor**: Completely redesigned, edge-to-edge UI for Terminal and Lua commands.
-> - **Faster & Conflict-Free**: Default TCP port moved to `12340` with optimized local probes making commands like `rc lock` run instantly (~0.25s).
-> - **iPad Experience**: Added official support for iPads with full landscape orientation support and optimized layouts.
-> - **Dependency-Free Client**: The `rc` command-line tool now uses native bash networking (`/dev/tcp`) instead of relying on `netcat`, ensuring higher reliability on all jailbreak types.
-> - **True Multitasking**: Powered by Apple's **Grand Central Dispatch**, the tweak now handles multiple commands simultaneously without blocking. It's incredibly efficient, using virtually zero battery while ensuring your actions execute instantly.
+> **What's New in v2.1**
+> - **Port Change**: Default TCP port moved to `12340` (requires update for Home Assistant / local scripts).
+> - **Action Editing**: Modify any existing action in your sequence by simply tapping it.
+> - **Home Button**: Native simulation of the Home button for all device models.
+> - **Unified Device Pickers**: Searchable live lists for AirPlay and Bluetooth hardware.
+> - **Modern Code Editor**: Redesigned, edge-to-edge UI with iOS 17 aesthetics.
+> - **iOS 14 & Rootful Support**: Compatibility for legacy firmware and rootful environments.
+> - **iPad Experience**: Official support for iPads with full landscape orientation.
+> - **Lightning Fast**: Optimized local probes and native bash networking (~0.25s).
+> - **True Multitasking**: Concurrent server handling powered by GCD.
+
+> [!WARNING]
+> **Breaking Change**: If you use the TCP server (e.g., via Home Assistant or the `rc` script), you **must** update your configuration to use port `12340`.
 
 <p align="center">
   <img src="images/IMG_1385.PNG" width="250" alt="RemoteCompanion Interface" />
@@ -25,14 +29,14 @@ RemoteCompanion brings fast, scriptable system control to modern rootless jailbr
 </p>
 
 ## Features
-- **Lightning Fast**: Actions happen in milliseconds (~0.25s).
-- **Smart Control**: Run actions, open apps, or control settings remotely.
-- **Custom Triggers**: Assign action sequences to gestures, physical buttons, or NFC tags.
-- **Robust System Actions**: Simulate Home, Power, Volume, and more with cross-device compatibility.
-- **Live Device Discovery**: Pickers for AirPlay and Bluetooth now show a live, searchable list of nearby hardware.
-- **Modern UI**: Redesigned with edge-to-edge editors, native iOS aesthetics, Large Titles, and frosted glass effects.
-- **Universal Search**: Instantly find actions and shortcuts with search bars in every picker.
-- **Advanced Automation**: Full support for Touch ID (Tap/Hold), Ringer Switch, and Siri triggers.
+- **Instant Response**: Actions execute in milliseconds using a optimized, dependency-free architecture.
+- **Smart Control**: Run multi-step action sequences, open apps, or control settings remotely.
+- **Hardware Triggers**: Bind actions to Power/Volume buttons, Home button, Touch ID (Tap/Hold), or the Ringer Switch.
+- **Visual Excellence**: Modern iOS aesthetics with Large Titles, SF Symbols, and frosted glass effects.
+- **Universal Search**: Instantly find actions, shortcuts, and devices with integrated search bars in every picker.
+- **Native Experience**: Redesigned edge-to-edge Terminal and Lua editors with full iPad landscape support.
+- **Advanced Automation**: Full support for NFC tags, custom scripts, and Siri integration.
+- **Live Discovery**: Real-time management and connection for nearby AirPlay and Bluetooth hardware.
 
 ## What you can do
 

@@ -18,14 +18,14 @@ RemoteCompanion brings fast, scriptable system control to modern rootless jailbr
 > **Breaking Change**: If you use the TCP server (e.g., via the `rc` script or Home Assistant), you **must** update your configuration to use port `12340`.
 
 <p align="center">
-  <img src="images/IMG_1385.PNG" width="250" alt="RemoteCompanion Interface" />
-  <img src="images/IMG_1386.PNG" width="250" alt="Trigger Config" />
-  <img src="images/IMG_1388.PNG" width="250" alt="Search and Select" />
+  <img src="images/IMG_1396.PNG" width="250" alt="RemoteCompanion Interface" />
+  <img src="images/IMG_1394.PNG" width="250" alt="Trigger Config" />
+  <img src="images/IMG_13966.PNG" width="250" alt="Search and Select" />
 </p>
 <p align="center">
   <img src="images/IMG_1389.PNG" width="250" alt="Haptic Settings" />
   <img src="images/IMG_1390.PNG" width="250" alt="Settings View" />
-  <img src="images/IMG_1387.PNG" width="250" alt="Action Picker" />
+  <img src="images/IMG_1395.PNG" width="250" alt="Action Picker" />
 </p>
 
 ## Features

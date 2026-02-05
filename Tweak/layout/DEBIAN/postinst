@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# Post-installation script for RemoteCompanion
+# Handles permissions, icon registration, and cleanup
+
+set -e
+
+# Determine if this is a rootless or rootful jailbreak
+if [ -d "/var/jb" ]; then
+    # Rootless jailbreak
+    APP_PATH="/var/jb/Applications/RemoteCompanion.app"
+else
+    # Rootful jailbreak
+    APP_PATH="/Applications/RemoteCompanion.app"
+fi
+
+echo "RemoteCompanion: Setting proper permissions for $APP_PATH"
+
+# Set ownership to mobile:mobile
+chown -R mobile:mobile "$APP_PATH" 2>/dev/null || chown -R 501:501 "$APP_PATH"
+
+# Set proper permissions
+chmod 755 "$APP_PATH"
+find "$APP_PATH" -type d -exec chmod 755 {} \;
+find "$APP_PATH" -type f -exec chmod 644 {} \;
+
+# Make the binary executable
+if [ -f "$APP_PATH/RemoteCompanion" ]; then
+    chmod 755 "$APP_PATH/RemoteCompanion"
+fi
+
+# Register the app icon with SpringBoard
+echo "RemoteCompanion: Registering app with uicache"
+if command -v uicache >/dev/null 2>&1; then
+    uicache -p "$APP_PATH" || echo "Warning: uicache failed, you may need to manually respring"
+else
+    echo "Warning: uicache not found, you may need to manually respring"
+fi
+
+echo "RemoteCompanion: Post-installation complete"
+echo "RemoteCompanion: Please respring to see the app icon"
+
+exit 0

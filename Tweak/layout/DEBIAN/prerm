@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Pre-removal script for RemoteCompanion
+# Stops running processes before package removal
+
+set -e
+
+echo "RemoteCompanion: Stopping running processes"
+
+# Kill the rc_server if it's running
+killall -9 rc_server.sh 2>/dev/null || true
+
+# Kill the RemoteCompanion app if it's running
+killall -9 RemoteCompanion 2>/dev/null || true
+
+echo "RemoteCompanion: Pre-removal cleanup complete"
+
+exit 0

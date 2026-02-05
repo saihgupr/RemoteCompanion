@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Pre-installation script for RemoteCompanion
+# Creates necessary directory structure for both rootless and rootful jailbreaks
+
+set -e
+
+# Determine if this is a rootless or rootful jailbreak
+if [ -d "/var/jb" ]; then
+    # Rootless jailbreak (iOS 15+, Dopamine, Roothide, etc.)
+    APP_DIR="/var/jb/Applications"
+    echo "RemoteCompanion: Detected rootless jailbreak"
+else
+    # Rootful jailbreak (Checkra1n, Unc0ver on iOS 14-, etc.)
+    APP_DIR="/Applications"
+    echo "RemoteCompanion: Detected rootful jailbreak"
+fi
+
+# Create the Applications directory if it doesn't exist
+if [ ! -d "$APP_DIR" ]; then
+    echo "RemoteCompanion: Creating $APP_DIR"
+    mkdir -p "$APP_DIR"
+    chmod 755 "$APP_DIR"
+fi
+
+# Create the RemoteCompanion.app directory if it doesn't exist
+if [ ! -d "$APP_DIR/RemoteCompanion.app" ]; then
+    echo "RemoteCompanion: Creating $APP_DIR/RemoteCompanion.app"
+    mkdir -p "$APP_DIR/RemoteCompanion.app"
+    chmod 755 "$APP_DIR/RemoteCompanion.app"
+fi
+
+echo "RemoteCompanion: Pre-installation setup complete"
+exit 0

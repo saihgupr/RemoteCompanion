@@ -99,17 +99,6 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 - A **Jailbroken Device** (iOS 14+). Supports both Rootless (iOS 15+) and Rootful (iOS 14) environments.
 - The `RemoteCompanion` tweak installed.
 
-### 2. Compatibility Matrix
-
-| Jailbreak / Environment | Status | Notes |
-| :--- | :--- | :--- |
-| **Dopamine** (iOS 15.0 - 16.6.1) | ✅ Working | Fully optimized for rootless. |
-| **NathanLR** (iOS 15.0 - 16.6.1) | ✅ Working | Native support. |
-| **palera1n** (Rootless / Rootful) | ✅ Working | Works on ARM64 and ARM64e. |
-| **checkra1n / Odysseyra1n** | ✅ Working | Tested on iOS 14. |
-| **Unc0ver / Taurine** | ✅ Working | Tested on iOS 14. |
-| **Bootstrap Roothide** (iOS 17.0) | ❌ **Not Working** | Currently unsupported. |
-
 ### 2. Installation Options
 
 #### Option 1: Repository (Recommended)

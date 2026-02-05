@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2026-02-05
+
+### Fixed
+- **Installation Failure on Rootless Jailbreaks**: Added proper `preinst`, `postinst`, and `prerm` scripts to fix dpkg "No such file or directory" error on Bootstrap Roothide and other rootless jailbreaks
+- **arm64e Support**: Package now properly supports both arm64 and arm64e architectures without requiring manual conversion
+- Directory creation is now automatic for both rootless (`/var/jb/Applications`) and rootful (`/Applications`) layouts
+
 ## [2.1.0] - 2026-02-05
 
 ### Improved

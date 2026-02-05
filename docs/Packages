@@ -173,10 +173,10 @@ Architecture: iphoneos-arm64
 Version: 2.1.0~beta2
 Installed-Size: 1920
 Filename: ./com.saihgupr.remotecompanion_2.1.0~beta2_iphoneos-arm64.deb
-Size: 285742
-MD5sum: 47c75522f4dfc62c9e5c09e134cd6ad4
-SHA1: 5c65ee0ff16c6e192f72d3c16f99cacd07f7c823
-SHA256: 65d129207f07911511d4b55acfb898bb1b02e1906f0029d7dad3d4a1d26cb4a1
+Size: 285586
+MD5sum: 5ac6c23f79f1ffbab4e46c7b923061cf
+SHA1: d0a39246e137cfc83343b17e163cb0fd83112a2d
+SHA256: a57e86d53d67c16ae740a29bfbfdeebce8fe65c99ec71843b84887229b49cab3
 
 Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion

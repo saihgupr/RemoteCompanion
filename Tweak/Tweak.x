@@ -1938,25 +1938,6 @@ static NSString *handle_command(NSString *cmd) {
             toggle_lpm(!current);
             return [NSString stringWithFormat:@"Low Power Mode %@\n", !current ? @"Enabled" : @"Disabled"];
         }
-    } else if ([cleanCmd isEqualToString:@"orientation lock"] || [cleanCmd isEqualToString:@"orientation"] || [cleanCmd isEqualToString:@"rotation"] || [cleanCmd isEqualToString:@"rotate"]) {
-        return handle_command(@"orientation toggle");
-    } else if ([cleanCmd hasPrefix:@"orientation "] || [cleanCmd hasPrefix:@"rotation "] || [cleanCmd hasPrefix:@"rotate "]) {
-        NSString *subCmd = [[cleanCmd componentsSeparatedByString:@" "] lastObject];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            Class managerClass = objc_getClass("SBOrientationLockManager");
-            if (managerClass) {
-                id manager = [managerClass sharedInstance];
-                if ([subCmd isEqualToString:@"on"] || [subCmd isEqualToString:@"lock"]) {
-                    [manager lock];
-                } else if ([subCmd isEqualToString:@"off"] || [subCmd isEqualToString:@"unlock"]) {
-                    [manager unlock];
-                } else if ([subCmd isEqualToString:@"toggle"]) {
-                    if ([manager isUserLocked]) [manager unlock];
-                    else [manager lock];
-                }
-            }
-        });
-        return @"OK\n";
     } else if ([cleanCmd isEqualToString:@"mute"]) {
         return @"Usage: rc mute [on|off|status]\n";
     } else if ([cleanCmd hasPrefix:@"mute "]) {

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.2] - 2026-02-06
+
+### Fixed
+- **RC Tool Compatibility**: Fixed an issue where the `rc` command-line tool would fail on iPhone with the error `nc: invalid option -- 4`. The tool now prefers native bash networking for maximum compatibility.
+
 ## [2.1.1] - 2026-02-06
 
 ### Fixed

@@ -130,12 +130,17 @@ fi
 IP="${RC_IPHONE_IP:-iphone.local}"
 
 # 1. FAST PATH: Direct TCP Connection
-# Try ports 1234-1238 directly. This is instant if it works.
+# Try ports 12340-12344 directly. This is instant if it works.
 PORTS=(12340 12341 12342 12343 12344)
 for PORT in "${PORTS[@]}"; do
     if timeout 0.5 bash -c "echo > /dev/tcp/$IP/$PORT" 2>/dev/null; then
         # Found open port, send command
-        echo -n "$CMD" | nc -4 -w 2 "$IP" "$PORT"
+        # Prefer bash's native /dev/tcp for sending as it's more universal than nc flags
+        if bash -c "echo -n '$CMD' > /dev/tcp/$IP/$PORT" 2>/dev/null; then
+            exit 0
+        fi
+        # Fallback to nc without -4 for wider compatibility
+        echo -n "$CMD" | nc -w 2 "$IP" "$PORT"
         if [ $? -eq 0 ]; then
             exit 0
         fi

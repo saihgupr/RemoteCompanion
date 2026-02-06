@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2026-02-06
+
+### Fixed
+- **Installation Failures**: Fixed a critical bug where the package would fail to install on rootless/Roothide jailbreaks due to an incorrect architecture and nested file paths.
+
 ## [2.1.0] - 2026-02-05
 
 ### Improved

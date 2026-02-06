@@ -5,11 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [2.1.2] - 2026-02-06
 
 ### Fixed
-- **RC Tool Compatibility**: Fixed an issue where the `rc` command-line tool would fail on iPhone with the error `nc: invalid option -- 4`. The tool now prefers native bash networking for maximum compatibility.
-
-## [2.1.1] - 2026-02-06
-
-### Fixed
+- **RC Tool Output**: Fixed an issue where the `rc` tool would not display the server's response (e.g., for `status` commands).
+- **RC Tool Compatibility**: Removed `-4` flag from `nc` calls and prioritized bash `/dev/tcp` for wider compatibility.
 - **Installation Failures**: Fixed a critical bug where the package would fail to install on rootless/Roothide jailbreaks due to an incorrect architecture and nested file paths.
 
 ## [2.1.0] - 2026-02-05

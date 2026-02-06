@@ -89,6 +89,19 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 - `rc key <hex>` - Specific keyboard keys (e.g., `0x04` for 'A', `0x28` for Enter).
 - `rc notify -t "Title" -m "Msg" [-p priority]` - Send push notifications (via ntfy). Priority: `min`, `low`, `default`, `high`, `urgent`.
 
+### Checking Status
+- `rc lock status` - Get lock state (`locked`/`unlocked`).
+- `rc app` - Get current foreground app's bundle ID.
+- `rc volume` - Get current volume percentage.
+- `rc mute status` - Get media mute state.
+- `rc rotate status` - Get orientation lock state.
+- `rc dnd status` - Get Do Not Disturb state.
+- `rc lpm status` / `rc low power mode status` - Get Low Power Mode state.
+- `rc wifi status` - Get WiFi power state.
+- `rc bluetooth status` - Get Bluetooth power state.
+- `rc bluetooth list` - List paired Bluetooth devices.
+- `rc airplay list` - List available AirPlay speakers and their UIDs.
+
 ### System & Diagnostics
 - `rc respring` - Restart SpringBoard.
 - `rc is-locked` - Check if device contains a passcode lock and is currently locked.

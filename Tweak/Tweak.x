@@ -231,6 +231,7 @@ extern Boolean MRMediaRemoteSendCommandToApp(MRMediaRemoteCommand command, NSDic
 @interface SBWiFiManager : NSObject
 + (instancetype)sharedInstance;
 - (void)setWiFiEnabled:(BOOL)enabled;
+- (BOOL)wiFiEnabled;
 @end
 
 // MediaRemote APIs - these are stable and work on iOS 15.8
@@ -1895,6 +1896,8 @@ static NSString *handle_command(NSString *cmd) {
             BOOL current = get_dnd_state();
             toggle_dnd(!current);
             return [NSString stringWithFormat:@"DND %@\n", !current ? @"Enabled" : @"Disabled"];
+        } else if ([subCmd isEqualToString:@"status"]) {
+            return [NSString stringWithFormat:@"DND %@\n", get_dnd_state() ? @"Enabled" : @"Disabled"];
         }
     } else if ([cleanCmd hasPrefix:@"lpm "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -2177,6 +2180,17 @@ static NSString *handle_command(NSString *cmd) {
             }
         }
         return @"Error: BluetoothManager not found\n";
+    } else if ([cleanCmd isEqualToString:@"bluetooth status"] || [cleanCmd isEqualToString:@"bt status"]) {
+        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
+        if (btHandle) {
+            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
+            if (BluetoothManagerClass) {
+                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
+                BOOL enabled = [btManager enabled];
+                return [NSString stringWithFormat:@"Bluetooth %@\n", enabled ? @"Enabled" : @"Disabled"];
+            }
+        }
+        return @"Error: BluetoothManager not found\n";
     } else if ([cleanCmd isEqualToString:@"bluetooth list"] || [cleanCmd isEqualToString:@"bt list"]) {
         NSMutableString *output = [NSMutableString string];
         void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
@@ -2249,6 +2263,13 @@ static NSString *handle_command(NSString *cmd) {
             [manager setWiFiEnabled:NO];
             SRLog(@"[SpringRemote] WiFi disabled");
             return @"WiFi Disabled\n";
+        }
+        return @"Error: SBWiFiManager not found\n";
+    } else if ([cleanCmd isEqualToString:@"wifi status"] || [cleanCmd isEqualToString:@"wi status"]) {
+        SBWiFiManager *manager = [objc_getClass("SBWiFiManager") sharedInstance];
+        if (manager) {
+            BOOL enabled = [manager wiFiEnabled];
+            return [NSString stringWithFormat:@"WiFi %@\n", enabled ? @"Enabled" : @"Disabled"];
         }
         return @"Error: SBWiFiManager not found\n";
     } else if ([cleanCmd isEqualToString:@"airplane on"]) {

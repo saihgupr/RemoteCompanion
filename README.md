@@ -100,6 +100,7 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 - `rc wifi status` - Get WiFi power state.
 - `rc bluetooth status` - Get Bluetooth power state.
 - `rc bluetooth list` - List paired Bluetooth devices.
+- `rc player status` - Get current media playback state (Playing, Paused, etc.).
 - `rc airplay list` - List available AirPlay speakers and their UIDs.
 
 ### System & Diagnostics

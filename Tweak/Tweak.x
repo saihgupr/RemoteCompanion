@@ -245,6 +245,7 @@ typedef enum {
 
 extern void MRMediaRemoteSendCommand(MRCommand command, NSDictionary *options);
 extern void MRMediaRemoteGetNowPlayingApplicationIsPlaying(dispatch_queue_t queue, void (^completion)(Boolean isPlaying));
+extern void MRMediaRemoteGetNowPlayingApplicationPlaybackState(dispatch_queue_t queue, void (^completion)(unsigned int state));
 
 // AVOutputDevice for ANC control (used by Sonitus)
 @interface AVOutputDevice : NSObject
@@ -2396,6 +2397,26 @@ static NSString *handle_command(NSString *cmd) {
             return [NSString stringWithFormat:@"%@\n", pid];
         }
         return @"com.apple.springboard\n"; // Fallback
+    } else if ([cleanCmd isEqualToString:@"player status"]) {
+        __block NSString *status = @"Unknown";
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+        
+        MRMediaRemoteGetNowPlayingApplicationPlaybackState(dispatch_get_main_queue(), ^(unsigned int state) {
+            switch (state) {
+                case 0: status = @"Unknown"; break;
+                case 1: status = @"Playing"; break;
+                case 2: status = @"Paused"; break;
+                case 3: status = @"Stopped"; break;
+                case 4: status = @"Interrupted"; break;
+                case 5: status = @"Seeking Forward"; break;
+                case 6: status = @"Seeking Backward"; break;
+                default: status = [NSString stringWithFormat:@"Other (%u)", state]; break;
+            }
+            dispatch_semaphore_signal(sema);
+        });
+        
+        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
+        return [NSString stringWithFormat:@"%@\n", status];
     } else if ([cleanCmd hasPrefix:@"rotate "]) {
         NSString *arg = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         

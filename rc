@@ -135,8 +135,9 @@ PORTS=(12340 12341 12342 12343 12344)
 for PORT in "${PORTS[@]}"; do
     if timeout 0.5 bash -c "echo > /dev/tcp/$IP/$PORT" 2>/dev/null; then
         # Found open port, send command
-        # Prefer bash's native /dev/tcp for sending as it's more universal than nc flags
-        if bash -c "echo -n '$CMD' > /dev/tcp/$IP/$PORT" 2>/dev/null; then
+        # Prefer bash's native /dev/tcp with a two-way socket to capture response
+        # exec 3<>/dev/tcp/$IP/$PORT opens a bidirectional connection on FD 3
+        if bash -c "exec 3<>/dev/tcp/$IP/$PORT && echo -n '$CMD' >&3 && cat <&3 && exec 3>&-" 2>/dev/null; then
             exit 0
         fi
         # Fallback to nc without -4 for wider compatibility

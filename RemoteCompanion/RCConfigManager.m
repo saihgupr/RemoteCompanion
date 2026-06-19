@@ -727,7 +727,16 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"swipeL": @"Swipe Left",
         @"swipeLeft": @"Swipe Left",
         @"swipeR": @"Swipe Right",
-        @"swipeRight": @"Swipe Right"
+        @"swipeRight": @"Swipe Right",
+        // System Vibration
+        @"vibration silent-on": @"Silent Vibrate On",
+        @"vibration silent-off": @"Silent Vibrate Off",
+        @"vibration silent-toggle": @"Silent Vibrate Toggle",
+        @"vibration silent-status": @"Silent Vibrate Status",
+        @"vibration ring-on": @"Ring Vibrate On",
+        @"vibration ring-off": @"Ring Vibrate Off",
+        @"vibration ring-toggle": @"Ring Vibrate Toggle",
+        @"vibration ring-status": @"Ring Vibrate Status"
     };
     
     NSString *result = names[cmd];

@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **Status Bar Double Tap Trigger**: Added a new gesture trigger to bind actions to double-tapping the status bar.
 - **AudioMix Integration**: Added first-class control actions (`audiomix`, `audiomix on`, `audiomix off`, `audiomix toggle`, `audiomix status`) to control KingPuffdaddi's AudioMix tweak settings.
-- **Heads-Up Display (HUD) Toast**: Implemented a system-wide dropdown glassmorphism HUD toast notification that animates with spring physics to confirm AudioMix toggling states.
+- **Heads-Up Display (HUD) Toast**: Implemented a system-wide dropdown glassmorphism HUD toast notification that animates with spring physics to confirm AudioMix toggling states. Features dynamic styling supporting both Dark Mode and Light Mode (light translucent blur, dark charcoal text, and gray subtitles) to match the native iOS 15 HUD precisely.
 
 ## [3.3.1] - 2026-06-19
 

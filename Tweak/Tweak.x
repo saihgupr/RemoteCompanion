@@ -739,8 +739,20 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
         rootVC.view.backgroundColor = [UIColor clearColor];
         g_rcHUDWindow.rootViewController = rootVC;
         
-        // Blur background (matching native dark translucent ringer HUD pill - no border)
-        UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
+        BOOL isDarkMode = YES;
+        if (@available(iOS 12.0, *)) {
+            if ([UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleLight) {
+                isDarkMode = NO;
+            }
+        }
+        
+        UIBlurEffectStyle blurStyle = isDarkMode ? UIBlurEffectStyleSystemMaterialDark : UIBlurEffectStyleSystemMaterialLight;
+        UIColor *titleColor = isDarkMode ? [UIColor whiteColor] : [UIColor colorWithWhite:0.0 alpha:0.8];
+        UIColor *subColor = isDarkMode ? [UIColor colorWithWhite:1.0 alpha:0.6] : [UIColor colorWithWhite:0.0 alpha:0.48];
+        UIColor *iconColor = isDarkMode ? [UIColor whiteColor] : [UIColor colorWithWhite:0.0 alpha:0.7];
+        
+        // Blur background (matching native ringer HUD pill - no border)
+        UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:blurStyle];
         UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
         blurView.frame = CGRectMake(0, 0, pillWidth, pillHeight);
         blurView.layer.cornerRadius = pillHeight / 2.0;
@@ -758,7 +770,7 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
             
             if (iconImage) {
                 UIImageView *iconView = [[UIImageView alloc] initWithImage:iconImage];
-                iconView.tintColor = [UIColor whiteColor];
+                iconView.tintColor = iconColor;
                 iconView.contentMode = UIViewContentModeScaleAspectFit;
                 iconView.frame = CGRectMake(leftPadding, (pillHeight - 20) / 2.0, 20, 20);
                 [rootVC.view addSubview:iconView];
@@ -771,21 +783,21 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
         if (hasSubtitle) {
             UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 8.0, pillWidth, 18.0)];
             titleLabel.text = title;
-            titleLabel.textColor = [UIColor whiteColor];
+            titleLabel.textColor = titleColor;
             titleLabel.font = titleFont;
             titleLabel.textAlignment = alignment;
             [rootVC.view addSubview:titleLabel];
             
             UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 26.0, pillWidth, 16.0)];
             subLabel.text = subtitle;
-            subLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.6];
+            subLabel.textColor = subColor;
             subLabel.font = subtitleFont;
             subLabel.textAlignment = alignment;
             [rootVC.view addSubview:subLabel];
         } else {
             UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, pillWidth, pillHeight)];
             titleLabel.text = title;
-            titleLabel.textColor = [UIColor whiteColor];
+            titleLabel.textColor = titleColor;
             titleLabel.font = titleFont;
             titleLabel.textAlignment = alignment;
             [rootVC.view addSubview:titleLabel];

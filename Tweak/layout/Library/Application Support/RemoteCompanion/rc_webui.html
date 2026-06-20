@@ -2067,8 +2067,51 @@ function changeToggleState(event, idx) {
 function renderActionNameHtml(action, idx) {
   const toggleInfo = parseToggleCmd(action);
   if (toggleInfo) {
-    return `${escHtml(toggleInfo.name)} <span class="toggle-link" style="color:#f2c350;cursor:pointer;font-weight:500;" onclick="changeToggleState(event, ${idx})">${escHtml(toggleInfo.currentDisplaySuffix)}</span>`;
+    return `${escHtml(toggleInfo.name)} <span class="toggle-link" style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="changeToggleState(event, ${idx})">${escHtml(toggleInfo.currentDisplaySuffix)}</span>`;
   }
+
+  if (typeof action === 'string') {
+    const lower = action.toLowerCase();
+    let baseText = null;
+    let paramText = null;
+
+    if (lower.startsWith('set-vol ')) {
+      baseText = 'Set Volume ';
+      paramText = action.slice(8) + '%';
+    } else if (lower.startsWith('brightness ')) {
+      baseText = 'Set Brightness ';
+      paramText = action.slice(11) + '%';
+    } else if (lower.startsWith('flashlight ') || lower.startsWith('flash ')) {
+      const val = action.slice(lower.startsWith('flashlight ') ? 11 : 6);
+      if (!isNaN(val) && val.trim() !== '') {
+        baseText = 'Flashlight ';
+        paramText = val + '%';
+      }
+    } else if (lower.startsWith('delay ')) {
+      baseText = 'Wait ';
+      paramText = action.slice(6) + 's';
+    } else if (lower.startsWith('shortcut:')) {
+      baseText = 'Shortcut: ';
+      paramText = action.slice(9);
+    } else if (lower.startsWith('uiopen ')) {
+      baseText = 'Open: ';
+      paramText = action.slice(7);
+    } else if (lower.startsWith('airplay connect ')) {
+      baseText = 'AirPlay Connect ';
+      paramText = action.slice(16);
+    } else if (lower.startsWith('bt connect ') || lower.startsWith('bluetooth connect ')) {
+      baseText = 'Connect ';
+      paramText = action.slice(lower.startsWith('bt connect ') ? 11 : 18);
+    } else if (lower.startsWith('bt disconnect ') || lower.startsWith('bluetooth disconnect ')) {
+      baseText = 'Disconnect ';
+      paramText = action.slice(lower.startsWith('bt disconnect ') ? 14 : 21);
+    }
+
+    if (baseText && paramText) {
+      return `${escHtml(baseText)}<span style="color:#0a84ff;cursor:pointer;font-weight:500;">${escHtml(paramText)}</span>`;
+    }
+  }
+
   return escHtml(nameForCmd(action));
 }
 

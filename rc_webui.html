@@ -314,6 +314,39 @@
       letter-spacing: -0.02em;
       padding: 18px 20px 0; margin: 0;
     }
+    .panel-large-title-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 18px 20px 0;
+    }
+    .panel-large-title-row .panel-large-title {
+      padding: 0;
+      margin: 0;
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .panel-large-title-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 2px;
+    }
+    .panel-large-title-actions .panel-action {
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      color: #fff;
+    }
     .panel-content { padding-bottom: 80px; }
 
     /* ── Settings panel action lists ── */
@@ -724,7 +757,17 @@
     </button>
   </div>
   <div class="panel-content">
-    <h1 class="panel-large-title" id="actions-large-title"></h1>
+    <div class="panel-large-title-row">
+      <h1 class="panel-large-title" id="actions-large-title"></h1>
+      <div class="panel-large-title-actions">
+        <button class="panel-action white" onclick="showActionPickerPanel()" title="Add Action">
+          <i class="f7-icons">plus</i>
+        </button>
+        <button class="panel-action white" onclick="showEllipsisMenu(event)" title="More Options">
+          <i class="f7-icons">ellipsis_circle</i>
+        </button>
+      </div>
+    </div>
 
     <div class="action-list-header" style="margin-top:28px">Trigger Configuration</div>
     <div class="action-list-card">
@@ -739,11 +782,6 @@
       <!-- Rendered by renderActionList() -->
     </div>
 
-    <div class="action-btn-row">
-      <button class="add-action-btn" onclick="showActionPickerPanel()" style="flex: 2; margin: 0;">+ Add Action</button>
-      <button class="add-action-btn" onclick="showImportDialog()" style="flex: 1; margin: 0; background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.1); color: #007aff;">Import</button>
-      <button class="add-action-btn" onclick="exportActions()" style="flex: 1; margin: 0; background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.1); color: #007aff;">Export</button>
-    </div>
     <div style="padding:8px 32px 0;color:#636366;font-size:12px">
       Swipe left on an action to delete it
     </div>
@@ -860,11 +898,15 @@
   <div class="dialog-box" style="max-width: 480px; width: 90%;">
     <div class="dialog-title">Import Actions</div>
     <div class="dialog-msg" style="padding-bottom: 8px;">Paste JSON array or line-separated action commands:</div>
-    <textarea class="dialog-input" id="import-dialog-textarea" rows="8" placeholder='["flashlight toggle", "delay 1"]' style="height:180px; text-align:left; resize:none; font-family:monospace; font-size:12px; margin-bottom:12px;"></textarea>
+    <div style="position: relative; width: 100%;">
+      <textarea class="dialog-input" id="import-dialog-textarea" rows="8" placeholder='["flashlight toggle", "delay 1"]' style="height:180px; text-align:left; resize:none; font-family:monospace; font-size:12px; margin-bottom:12px; width: 100%; box-sizing: border-box; padding-right: 32px;"></textarea>
+      <button onclick="clearImportTextarea()" style="position: absolute; right: 8px; top: 8px; background: none; border: none; padding: 0; color: #8e8e93; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px;" title="Clear">
+        <i class="f7-icons" style="font-size: 18px;">xmark_circle_fill</i>
+      </button>
+    </div>
     <div class="dialog-btns">
       <button onclick="closeImportDialog()" style="color: #ff3b30;">Cancel</button>
-      <button onclick="importDialogOk(false)">Append</button>
-      <button onclick="importDialogOk(true)" style="font-weight: 600;">Replace</button>
+      <button onclick="importDialogOk()" style="font-weight: 600;">Import</button>
     </div>
   </div>
 </div>
@@ -1818,7 +1860,7 @@ function renderActionList() {
   const actions = triggerData(currentKey).actions || [];
 
   if (actions.length === 0) {
-    card.innerHTML = `<div style="padding:20px 16px;color:#636366;font-size:15px;font-style:italic">No actions — tap "+ Add Action" below</div>`;
+    card.innerHTML = `<div style="padding:20px 16px;color:#636366;font-size:15px;font-style:italic">No actions — tap "+" in the top right to add</div>`;
     return;
   }
 
@@ -3135,14 +3177,29 @@ function _importDialogBackdropClick(e) {
 }
 function showImportDialog() {
   const textarea = document.getElementById('import-dialog-textarea');
-  textarea.value = '';
+  if (currentKey) {
+    const activeTrigger = triggerData(currentKey);
+    const actions = activeTrigger.actions || [];
+    if (actions.length > 0) {
+      textarea.value = JSON.stringify(actions, null, 2);
+    } else {
+      textarea.value = '';
+    }
+  } else {
+    textarea.value = '';
+  }
   document.getElementById('import-dialog-backdrop').classList.add('visible');
   setTimeout(() => textarea.focus(), 150);
+}
+function clearImportTextarea() {
+  const textarea = document.getElementById('import-dialog-textarea');
+  textarea.value = '';
+  textarea.focus();
 }
 function closeImportDialog() {
   document.getElementById('import-dialog-backdrop').classList.remove('visible');
 }
-function importDialogOk(replace) {
+function importDialogOk() {
   const textarea = document.getElementById('import-dialog-textarea');
   const text = textarea.value.trim();
   if (!text) {
@@ -3180,14 +3237,11 @@ function importDialogOk(replace) {
     if (validCmds.length > 0) {
       const activeTrigger = triggerData(currentKey);
       if (activeTrigger) {
-        if (!activeTrigger.actions || replace) {
-          activeTrigger.actions = [];
-        }
-        activeTrigger.actions.push(...validCmds);
+        activeTrigger.actions = validCmds; // Always replace
         saveConfig();
         renderActionList();
         closeImportDialog();
-        showToast(replace ? `✓ Replaced with ${validCmds.length} action(s)` : `✓ Imported ${validCmds.length} action(s)`);
+        showToast(`✓ Replaced with ${validCmds.length} action(s)`);
       } else {
         closeImportDialog();
         showToast('⚠ Error: No active trigger');
@@ -3198,6 +3252,29 @@ function importDialogOk(replace) {
   } else {
     showToast('⚠ Error: Could not parse input');
   }
+}
+
+function showEllipsisMenu(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const items = [
+    {
+      label: 'Import Actions',
+      icon: 'square_arrow_down',
+      action: () => showImportDialog()
+    },
+    {
+      label: 'Export Actions',
+      icon: 'square_arrow_up',
+      action: () => exportActions()
+    }
+  ];
+  
+  const fakeEvent = {
+    preventDefault: () => {},
+    clientX: rect.left,
+    clientY: rect.bottom + 8
+  };
+  showContextMenu(fakeEvent, items);
 }
 
 function copyToClipboard(text) {

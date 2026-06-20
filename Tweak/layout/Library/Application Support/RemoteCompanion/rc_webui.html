@@ -427,6 +427,9 @@
       padding: 14px; text-align: center; cursor: pointer;
     }
     .add-action-btn:active { opacity: 0.7; }
+    .action-btn-row {
+      display: flex; gap: 10px; margin: 12px 16px 0;
+    }
 
     /* ── Search bar ── */
     .search-wrap {
@@ -736,7 +739,11 @@
       <!-- Rendered by renderActionList() -->
     </div>
 
-    <button class="add-action-btn" onclick="showActionPickerPanel()">+ Add Action</button>
+    <div class="action-btn-row">
+      <button class="add-action-btn" onclick="showActionPickerPanel()" style="flex: 2; margin: 0;">+ Add Action</button>
+      <button class="add-action-btn" onclick="showImportDialog()" style="flex: 1; margin: 0; background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.1); color: #007aff;">Import</button>
+      <button class="add-action-btn" onclick="exportActions()" style="flex: 1; margin: 0; background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.1); color: #007aff;">Export</button>
+    </div>
     <div style="padding:8px 32px 0;color:#636366;font-size:12px">
       Swipe left on an action to delete it
     </div>
@@ -844,6 +851,19 @@
       <button onclick="closeDialog()">Cancel</button>
       <button id="dialog-record" style="display:none;" onclick="dialogRecord()">Record</button>
       <button id="dialog-ok" onclick="dialogOk()">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ IMPORT ACTION DIALOG ════════════════════════════════════════════ -->
+<div class="dialog-backdrop" id="import-dialog-backdrop" onclick="_importDialogBackdropClick(event)">
+  <div class="dialog-box">
+    <div class="dialog-title">Import Actions</div>
+    <div class="dialog-msg" style="padding-bottom: 8px;">Paste JSON array or line-separated action commands:</div>
+    <textarea class="dialog-input" id="import-dialog-textarea" rows="5" placeholder='["flashlight toggle", "delay 1"]' style="height:100px; text-align:left; resize:none; font-family:monospace; font-size:12px; margin-bottom:12px;"></textarea>
+    <div class="dialog-btns">
+      <button onclick="closeImportDialog()">Cancel</button>
+      <button id="import-dialog-ok" onclick="importDialogOk()">Import</button>
     </div>
   </div>
 </div>
@@ -1113,6 +1133,7 @@ function nameForCmd(cmd) {
   if (typeof cmd === 'object') {
     const t = (cmd.type||'').toLowerCase();
     if (t === 'if') return `If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
+    if (t === 'else_if') return `Else If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
     if (t === 'else') return 'Else';
     if (t === 'end_if' || t === 'end') return 'End If';
     if (t === 'repeat') return `Repeat ${cmd.count||''}`;
@@ -1156,7 +1177,7 @@ function iconForCmd(cmd) {
   if (!cmd) return { icon:'questionmark', cls:'icon-gray' };
   if (typeof cmd === 'object') {
     const t = (cmd.type||'').toLowerCase();
-    if (t === 'if' || t === 'else') return { icon:'arrow_triangle_branch', cls:'icon-purple' };
+    if (t === 'if' || t === 'else_if' || t === 'else') return { icon:'arrow_triangle_branch', cls:'icon-purple' };
     if (t === 'end_if' || t === 'end') return { icon:'arrow_turn_up_left', cls:'icon-purple' };
     return { icon:'repeat', cls:'icon-green' };
   }
@@ -1261,7 +1282,7 @@ const CONDITION_DEFS = [
   { key:'bluetooth',  title:'Bluetooth',    values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'airplane',   title:'Airplane Mode',values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'orientation',title:'Orientation',  values:[{value:'PORTRAIT',title:'Portrait'},{value:'LANDSCAPE',title:'Landscape'}] },
-  { key:'frontApp',   title:'Front App is', values:null, freeText:true },
+  { key:'front_app',   title:'Front App is', values:null, freeText:true },
 ];
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -1806,8 +1827,9 @@ function renderActionList() {
     const type   = isCtrl ? (action.type||'').toLowerCase() : null;
     const isEnd  = type === 'end_if' || type === 'end';
     const isElse = type === 'else';
+    const isElseIf = type === 'else_if';
     const isIf   = type === 'if';
-    const rowIndent = (isEnd || isElse) ? Math.max(0, indent - 1) : indent;
+    const rowIndent = (isEnd || isElse || isElseIf) ? Math.max(0, indent - 1) : indent;
     const { icon, cls } = iconForCmd(action);
 
     // Outer wrapper
@@ -1900,12 +1922,64 @@ function renderActionList() {
       window.addEventListener('mouseup', onMouseUp);
     });
 
-    // ── Context menu (Right-click) ──
+    // ── Context menu (Right-click / Long press) ──
     inner.addEventListener('contextmenu', e => {
       const items = [];
       if (typeof action === 'string') {
         items.push({ label: 'Run Action', icon: 'play_fill', action: () => runSingleAction(action) });
       }
+
+      if (isCtrl) {
+        if (type === 'if' || type === 'else_if' || type === 'else' || type === 'end_if' || type === 'end') {
+          const parentIf = findParentIfIndex(actions, idx);
+          if (parentIf > -1) {
+            if (type === 'if' || type === 'else_if') {
+              items.push({
+                label: 'Edit Condition',
+                icon: 'pencil',
+                action: () => showConditionPicker(idx, undefined, type)
+              });
+            }
+
+            const insertIdx = getElseIfInsertionIndex(actions, idx);
+            if (insertIdx > -1) {
+              items.push({
+                label: 'Add Else If',
+                icon: 'arrow_triangle_branch',
+                action: () => showConditionPicker(undefined, insertIdx, 'else_if')
+              });
+            }
+
+            const siblingElse = findSiblingElseIndex(actions, parentIf);
+            if (siblingElse > -1) {
+              if (type === 'else' || type === 'if') {
+                items.push({
+                  label: 'Remove Else',
+                  icon: 'trash_fill',
+                  destructive: true,
+                  action: () => {
+                    actions.splice(siblingElse, 1);
+                    saveConfig(); renderActionList();
+                  }
+                });
+              }
+            } else {
+              items.push({
+                label: 'Add Else',
+                icon: 'arrow_triangle_branch',
+                action: () => {
+                  const endIdx = findMatchingEndIfIndex(actions, parentIf);
+                  if (endIdx > -1) {
+                    actions.splice(endIdx, 0, { type: 'else' });
+                    saveConfig(); renderActionList();
+                  }
+                }
+              });
+            }
+          }
+        }
+      }
+
       items.push({ label: 'Delete Action', icon: 'trash_fill', action: () => removeAction(idx), destructive: true });
       showContextMenu(e, items);
     });
@@ -1918,8 +1992,8 @@ function renderActionList() {
 
     card.appendChild(row);
 
-    if (isIf || isElse) indent++;
-    if (isEnd || isElse) indent = Math.max(0, indent - 1);
+    if (isIf || isElse || isElseIf) indent++;
+    if (isEnd || isElse || isElseIf) indent = Math.max(0, indent - 1);
   });
 
   if (window._actionSortable) {
@@ -2187,6 +2261,16 @@ function renderActionNameHtml(action, idx) {
     return `${escHtml(toggleInfo.name)} <span class="toggle-link" style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="changeToggleState(event, ${idx})">${escHtml(toggleInfo.currentDisplaySuffix)}</span>`;
   }
 
+  if (typeof action === 'object') {
+    const t = (action.type || '').toLowerCase();
+    if (t === 'if' || t === 'else_if') {
+      const prefix = t === 'if' ? 'If' : 'Else If';
+      const condTitle = action.conditionTitle || 'Condition';
+      const expTitle = action.expectedTitle || 'Value';
+      return `${prefix} ${escHtml(condTitle)} is <span class="toggle-link" style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="event.stopPropagation(); showConditionPicker(${idx}, undefined, '${t}')">${escHtml(expTitle)}</span>`;
+    }
+  }
+
   if (typeof action === 'string') {
     const lower = action.toLowerCase();
     let baseText = null;
@@ -2370,34 +2454,155 @@ function addAction(cmd) {
   closePickerPanel();
 }
 
-function showConditionPicker() {
+function findParentIfIndex(actions, index) {
+  const item = actions[index];
+  if (!item || typeof item !== 'object') return -1;
+  const type = (item.type || '').toLowerCase();
+  
+  if (type === 'if') return index;
+  
+  if (type === 'else_if' || type === 'else') {
+    let depth = 0;
+    for (let idx = index - 1; idx >= 0; idx--) {
+      const checkItem = actions[idx];
+      if (typeof checkItem === 'object') {
+        const cType = (checkItem.type || '').toLowerCase();
+        if (cType === 'end_if' || cType === 'end') {
+          depth++;
+        } else if (cType === 'if') {
+          depth--;
+          if (depth < 0) return idx;
+        }
+      }
+    }
+  } else if (type === 'end_if' || type === 'end') {
+    let depth = 0;
+    for (let idx = index - 1; idx >= 0; idx--) {
+      const checkItem = actions[idx];
+      if (typeof checkItem === 'object') {
+        const cType = (checkItem.type || '').toLowerCase();
+        if (cType === 'end_if' || cType === 'end') {
+          depth++;
+        } else if (cType === 'if') {
+          depth--;
+          if (depth === 0) return idx;
+        }
+      }
+    }
+  }
+  return -1;
+}
+
+function findSiblingElseIndex(actions, ifIndex) {
+  if (ifIndex < 0) return -1;
+  let depth = 0;
+  for (let idx = ifIndex; idx < actions.length; idx++) {
+    const checkItem = actions[idx];
+    if (typeof checkItem === 'object') {
+      const cType = (checkItem.type || '').toLowerCase();
+      if (cType === 'if') {
+        depth++;
+      } else if (cType === 'end_if' || cType === 'end') {
+        depth--;
+        if (depth === 0) return -1;
+      } else if (cType === 'else') {
+        if (depth === 1) return idx;
+      }
+    }
+  }
+  return -1;
+}
+
+function findMatchingEndIfIndex(actions, ifIndex) {
+  if (ifIndex < 0) return -1;
+  let depth = 0;
+  for (let idx = ifIndex; idx < actions.length; idx++) {
+    const checkItem = actions[idx];
+    if (typeof checkItem === 'object') {
+      const cType = (checkItem.type || '').toLowerCase();
+      if (cType === 'if') {
+        depth++;
+      } else if (cType === 'end_if' || cType === 'end') {
+        depth--;
+        if (depth === 0) return idx;
+      }
+    }
+  }
+  return -1;
+}
+
+function getElseIfInsertionIndex(actions, index) {
+  const ifIndex = findParentIfIndex(actions, index);
+  if (ifIndex < 0) return -1;
+  
+  let depth = 0;
+  for (let idx = ifIndex; idx < actions.length; idx++) {
+    const checkItem = actions[idx];
+    if (typeof checkItem === 'object') {
+      const cType = (checkItem.type || '').toLowerCase();
+      if (cType === 'if') {
+        depth++;
+      } else if (cType === 'end_if' || cType === 'end') {
+        depth--;
+        if (depth === 0) return idx;
+      } else if (cType === 'else') {
+        if (depth === 1) return idx;
+      }
+    }
+  }
+  return -1;
+}
+
+function showConditionPicker(existingIdx, insertIdx, type) {
+  const actionType = type || 'if';
+  const isEdit = existingIdx !== undefined && existingIdx !== null;
+  const isInsert = insertIdx !== undefined && insertIdx !== null;
+  const sheetTitle = actionType === 'else_if' ? 'Else If Condition' : 'If Condition';
+  
   const btns = CONDITION_DEFS.map(c => ({
     label: c.title,
     action: () => {
       if (c.freeText) {
-        showDialog(`If ${c.title}`, 'App bundle ID (e.g. com.apple.Music):', '', 'Add', val => {
+        let initialVal = '';
+        if (isEdit) {
+          const act = triggerData(currentKey).actions[existingIdx];
+          initialVal = act.expectedValue || '';
+        }
+        showDialog(`${actionType === 'else_if' ? 'Else If' : 'If'} ${c.title}`, 'App bundle ID (e.g. com.apple.Music):', initialVal, isEdit ? 'Save' : 'Add', val => {
           if (!val) return;
-          const ifAction = { type:'if', conditionKey:c.key, conditionTitle:c.title, expectedValue:val, expectedTitle:val };
+          const ifAction = { type: actionType, conditionKey: c.key, conditionTitle: c.title, expectedValue: val, expectedTitle: val };
           const data = triggerData(currentKey);
           if (!data.actions) data.actions = [];
-          data.actions.push(ifAction, { type:'end_if' });
+          if (isEdit) {
+            data.actions[existingIdx] = ifAction;
+          } else if (isInsert) {
+            data.actions.splice(insertIdx, 0, ifAction);
+          } else {
+            data.actions.push(ifAction, { type: 'end_if' });
+          }
           saveConfig(); renderActionList(); closePickerPanel();
         });
       } else if (c.values) {
         showSheet(`${c.title} is…`, c.values.map(v => ({
           label: v.title,
           action: () => {
-            const ifAction = { type:'if', conditionKey:c.key, conditionTitle:c.title, expectedValue:v.value, expectedTitle:v.title };
+            const ifAction = { type: actionType, conditionKey: c.key, conditionTitle: c.title, expectedValue: v.value, expectedTitle: v.title };
             const data = triggerData(currentKey);
             if (!data.actions) data.actions = [];
-            data.actions.push(ifAction, { type:'end_if' });
+            if (isEdit) {
+              data.actions[existingIdx] = ifAction;
+            } else if (isInsert) {
+              data.actions.splice(insertIdx, 0, ifAction);
+            } else {
+              data.actions.push(ifAction, { type: 'end_if' });
+            }
             saveConfig(); renderActionList(); closePickerPanel();
           }
         })));
       }
     }
   }));
-  showSheet('If Condition', btns);
+  showSheet(sheetTitle, btns);
 }
 
 // ── Add trigger ───────────────────────────────────────────────────────────────
@@ -2921,6 +3126,111 @@ function closeDialog() {
     msgEl.style.color = '';
     originalDialogMsg = '';
   }
+}
+
+// ── Import/Export Action Sequences ──
+function _importDialogBackdropClick(e) {
+  if (e.target === document.getElementById('import-dialog-backdrop')) closeImportDialog();
+}
+function showImportDialog() {
+  const textarea = document.getElementById('import-dialog-textarea');
+  textarea.value = '';
+  document.getElementById('import-dialog-backdrop').classList.add('visible');
+  setTimeout(() => textarea.focus(), 150);
+}
+function closeImportDialog() {
+  document.getElementById('import-dialog-backdrop').classList.remove('visible');
+}
+function importDialogOk() {
+  const textarea = document.getElementById('import-dialog-textarea');
+  const text = textarea.value.trim();
+  if (!text) {
+    closeImportDialog();
+    return;
+  }
+  
+  let newCommands = null;
+  if (text.startsWith('[') && text.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        newCommands = parsed;
+      }
+    } catch (e) {}
+  }
+  
+  if (!newCommands) {
+    newCommands = text.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+  }
+  
+  if (newCommands && newCommands.length > 0) {
+    const validCmds = [];
+    newCommands.forEach(cmd => {
+      if (typeof cmd === 'string') {
+        const clean = cmd.trim();
+        if (clean) validCmds.push(clean);
+      }
+    });
+    
+    if (validCmds.length > 0) {
+      const activeTrigger = triggerData(currentKey);
+      if (activeTrigger) {
+        if (!activeTrigger.actions) activeTrigger.actions = [];
+        activeTrigger.actions.push(...validCmds);
+        saveConfig();
+        renderActionList();
+        closeImportDialog();
+        showToast(`✓ Imported ${validCmds.length} action(s)`);
+      } else {
+        closeImportDialog();
+        showToast('⚠ Error: No active trigger');
+      }
+    } else {
+      showToast('⚠ Error: No valid commands found');
+    }
+  } else {
+    showToast('⚠ Error: Could not parse input');
+  }
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  } else {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (err) {
+      console.error('Fallback clipboard copy failed', err);
+    }
+    document.body.removeChild(textarea);
+    return Promise.resolve();
+  }
+}
+
+function exportActions() {
+  if (!currentKey) {
+    showToast('⚠ No active trigger selected');
+    return;
+  }
+  const actions = triggerData(currentKey).actions || [];
+  if (actions.length === 0) {
+    showToast('Sequence is empty');
+    return;
+  }
+  const jsonStr = JSON.stringify(actions, null, 2);
+  copyToClipboard(jsonStr).then(() => {
+    showToast('✓ Sequence copied to clipboard');
+  }).catch(() => {
+    showToast('Failed to copy sequence');
+  });
 }
 async function dialogRecord() {
   const msgEl = document.getElementById('dialog-msg');

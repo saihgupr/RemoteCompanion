@@ -657,6 +657,14 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             }
             NSString *legacy = dict[@"condition"] ?: @"Condition";
             return [NSString stringWithFormat:@"If %@", legacy];
+        } else if ([type isEqualToString:@"else_if"]) {
+            NSString *conditionTitle = dict[@"conditionTitle"] ?: dict[@"conditionName"];
+            NSString *expectedTitle = dict[@"expectedTitle"] ?: dict[@"expectedLabel"];
+            if (conditionTitle.length > 0 && expectedTitle.length > 0) {
+                return [NSString stringWithFormat:@"Else If %@ is %@", conditionTitle, expectedTitle];
+            }
+            NSString *legacy = dict[@"condition"] ?: @"Condition";
+            return [NSString stringWithFormat:@"Else If %@", legacy];
         } else if ([type isEqualToString:@"else"]) {
             return @"Else";
         } else if ([type isEqualToString:@"repeat"]) {
@@ -855,7 +863,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmdId isKindOfClass:[NSDictionary class]]) {
         NSDictionary *dict = (NSDictionary *)cmdId;
         NSString *type = [[dict[@"type"] description] lowercaseString];
-        if ([type isEqualToString:@"if"] || [type isEqualToString:@"else"]) {
+        if ([type isEqualToString:@"if"] || [type isEqualToString:@"else_if"] || [type isEqualToString:@"else"]) {
             return @"arrow.triangle.branch";
         } else if ([type isEqualToString:@"repeat"]) {
             return @"repeat";

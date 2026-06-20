@@ -624,6 +624,10 @@ static id g_actionClipboard = nil;
     return [[self actionTypeForItem:item] isEqualToString:@"else"];
 }
 
+- (BOOL)isElseIfActionItem:(id)item {
+    return [[self actionTypeForItem:item] isEqualToString:@"else_if"];
+}
+
 - (BOOL)isEndIfActionItem:(id)item {
     NSString *type = [self actionTypeForItem:item];
     return [type isEqualToString:@"end_if"] || [type isEqualToString:@"end"];
@@ -731,7 +735,7 @@ static id g_actionClipboard = nil;
     }
     
     id current = self.actions[row];
-    if ([self isEndIfActionItem:current] || [self isElseActionItem:current]) {
+    if ([self isEndIfActionItem:current] || [self isElseActionItem:current] || [self isElseIfActionItem:current]) {
         return MAX(depth - 1, 0);
     }
     return depth;
@@ -828,7 +832,9 @@ static id g_actionClipboard = nil;
     };
 }
 
-- (void)presentIfValuePickerForCondition:(NSDictionary *)condition existingIndex:(NSInteger)index {
+- (void)presentIfValuePickerForCondition:(NSDictionary *)condition existingIndex:(NSInteger)existingIndex insertIndex:(NSInteger)insertIndex type:(NSString *)type {
+    NSString *actionType = type ?: @"if";
+    
     if ([condition[@"key"] isEqualToString:@"front_app"]) {
         RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
         __weak typeof(self) weakSelf = self;
@@ -837,15 +843,17 @@ static id g_actionClipboard = nil;
             if (!strongSelf) return;
             
             NSDictionary *ifAction = @{
-                @"type": @"if",
+                @"type": actionType,
                 @"conditionKey": @"front_app",
                 @"conditionTitle": @"Front Application",
                 @"expectedValue": bundleId,
                 @"expectedTitle": name
             };
             
-            if (index != NSNotFound && index >= 0 && index < (NSInteger)strongSelf.actions.count) {
-                strongSelf.actions[index] = ifAction;
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)strongSelf.actions.count) {
+                strongSelf.actions[existingIndex] = ifAction;
+            } else if (insertIndex != NSNotFound && insertIndex >= 0 && insertIndex <= (NSInteger)strongSelf.actions.count) {
+                [strongSelf.actions insertObject:ifAction atIndex:insertIndex];
             } else {
                 [strongSelf.actions addObject:ifAction];
                 [strongSelf.actions addObject:@{ @"type": @"end_if" }];
@@ -872,9 +880,17 @@ static id g_actionClipboard = nil;
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (!strongSelf) return;
             
-            NSDictionary *ifAction = [strongSelf buildIfActionWithCondition:condition expectedValue:value];
-            if (index != NSNotFound && index >= 0 && index < (NSInteger)strongSelf.actions.count) {
-                strongSelf.actions[index] = ifAction;
+            NSDictionary *ifAction = @{
+                @"type": actionType,
+                @"conditionKey": condition[@"key"] ?: @"",
+                @"conditionTitle": condition[@"title"] ?: @"Condition",
+                @"expectedValue": value[@"value"] ?: @"",
+                @"expectedTitle": value[@"title"] ?: @"Value"
+            };
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)strongSelf.actions.count) {
+                strongSelf.actions[existingIndex] = ifAction;
+            } else if (insertIndex != NSNotFound && insertIndex >= 0 && insertIndex <= (NSInteger)strongSelf.actions.count) {
+                [strongSelf.actions insertObject:ifAction atIndex:insertIndex];
             } else {
                 [strongSelf.actions addObject:ifAction];
                 [strongSelf.actions addObject:@{ @"type": @"end_if" }];
@@ -889,8 +905,9 @@ static id g_actionClipboard = nil;
     [self presentViewController:picker animated:YES completion:nil];
 }
 
-- (void)presentIfConditionPickerForIndex:(NSInteger)index {
-    UIAlertController *picker = [UIAlertController alertControllerWithTitle:@"If Condition"
+- (void)presentIfConditionPickerForIndex:(NSInteger)existingIndex insertIndex:(NSInteger)insertIndex type:(NSString *)type {
+    NSString *title = [type isEqualToString:@"else_if"] ? @"Else If Condition" : @"If Condition";
+    UIAlertController *picker = [UIAlertController alertControllerWithTitle:title
                                                                      message:@"Choose a status to evaluate"
                                                               preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
@@ -901,13 +918,72 @@ static id g_actionClipboard = nil;
                                                 handler:^(__unused UIAlertAction * _Nonnull action) {
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (!strongSelf) return;
-            [strongSelf presentIfValuePickerForCondition:condition existingIndex:index];
+            [strongSelf presentIfValuePickerForCondition:condition existingIndex:existingIndex insertIndex:insertIndex type:type];
         }]];
     }
     
     [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self configurePopoverSourceForAlert:picker];
     [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)presentIfConditionPickerForIndex:(NSInteger)index {
+    NSString *type = @"if";
+    if (index != NSNotFound && index >= 0 && index < (NSInteger)self.actions.count) {
+        id actionItem = self.actions[index];
+        if ([self isElseIfActionItem:actionItem]) {
+            type = @"else_if";
+        }
+    }
+    [self presentIfConditionPickerForIndex:index insertIndex:NSNotFound type:type];
+}
+
+- (void)presentIfValuePickerForCondition:(NSDictionary *)condition existingIndex:(NSInteger)index {
+    [self presentIfValuePickerForCondition:condition existingIndex:index insertIndex:NSNotFound type:@"if"];
+}
+
+- (NSInteger)elseIfInsertionIndexForBlockIndex:(NSInteger)index {
+    id item = self.actions[index];
+    NSInteger ifIndex = NSNotFound;
+    if ([self isIfActionItem:item]) {
+        ifIndex = index;
+    } else if ([self isElseIfActionItem:item] || [self isElseActionItem:item]) {
+        NSInteger depth = 0;
+        for (NSInteger idx = index; idx >= 0; idx--) {
+            id checkItem = self.actions[idx];
+            if ([self isEndIfActionItem:checkItem]) {
+                depth++;
+            } else if ([self isIfActionItem:checkItem]) {
+                depth--;
+                if (depth < 0) {
+                    ifIndex = idx;
+                    break;
+                }
+            }
+        }
+    } else if ([self isEndIfActionItem:item]) {
+        ifIndex = [self matchingIfIndexForEndAtIndex:index];
+    }
+    
+    if (ifIndex == NSNotFound) return NSNotFound;
+    
+    NSInteger depth = 0;
+    for (NSInteger idx = ifIndex; idx < (NSInteger)self.actions.count; idx++) {
+        id checkItem = self.actions[idx];
+        if ([self isIfActionItem:checkItem]) {
+            depth++;
+        } else if ([self isEndIfActionItem:checkItem]) {
+            depth--;
+            if (depth == 0) {
+                return idx;
+            }
+        } else if ([self isElseActionItem:checkItem]) {
+            if (depth == 1) {
+                return idx;
+            }
+        }
+    }
+    return NSNotFound;
 }
 
 - (NSInteger)moveActionFromIndex:(NSInteger)sourceIndex toFinalIndex:(NSInteger)finalIndex {
@@ -982,30 +1058,70 @@ static id g_actionClipboard = nil;
         }
 
         // If-specific options
-        if ([self isIfActionItem:item]) {
-            NSInteger elseIndex = [self matchingElseIndexForIfAtIndex:indexPath.row];
-            BOOL hasElse = (elseIndex != NSNotFound);
-            
-            if (hasElse) {
-                [alert addAction:[UIAlertAction actionWithTitle:@"Remove Else" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
-                    [self.actions removeObjectAtIndex:elseIndex];
-                    [self saveActions];
-                    [self.tableView reloadData];
-                }]];
-            } else {
-                [alert addAction:[UIAlertAction actionWithTitle:@"Add Else" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-                    NSInteger endIndex = [self matchingEndIndexForIfAtIndex:indexPath.row];
-                    if (endIndex != NSNotFound) {
-                        [self.actions insertObject:@{ @"type": @"else" } atIndex:endIndex];
-                        [self saveActions];
-                        [self.tableView reloadData];
-                    }
+        if ([self isIfActionItem:item] || [self isElseIfActionItem:item] || [self isElseActionItem:item] || [self isEndIfActionItem:item]) {
+            NSInteger insertionIndex = [self elseIfInsertionIndexForBlockIndex:indexPath.row];
+            if (insertionIndex != NSNotFound) {
+                [alert addAction:[UIAlertAction actionWithTitle:@"Add Else If" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                    [self presentIfConditionPickerForIndex:NSNotFound insertIndex:insertionIndex type:@"else_if"];
                 }]];
             }
             
-            [alert addAction:[UIAlertAction actionWithTitle:@"Edit Condition" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-                [self presentIfConditionPickerForIndex:indexPath.row];
-            }]];
+            NSInteger ifIndex = NSNotFound;
+            if ([self isIfActionItem:item]) {
+                ifIndex = indexPath.row;
+            } else {
+                NSInteger depth = 0;
+                for (NSInteger idx = indexPath.row; idx >= 0; idx--) {
+                    id checkItem = self.actions[idx];
+                    if ([self isEndIfActionItem:checkItem]) {
+                        depth++;
+                    } else if ([self isIfActionItem:checkItem]) {
+                        depth--;
+                        if (depth < 0) {
+                            ifIndex = idx;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (ifIndex != NSNotFound) {
+                NSInteger elseIndex = [self matchingElseIndexForIfAtIndex:ifIndex];
+                BOOL hasElse = (elseIndex != NSNotFound);
+                
+                if (hasElse) {
+                    if ([self isElseActionItem:item] || [self isIfActionItem:item]) {
+                        [alert addAction:[UIAlertAction actionWithTitle:@"Remove Else" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+                            [self.actions removeObjectAtIndex:elseIndex];
+                            [self saveActions];
+                            [self.tableView reloadData];
+                        }]];
+                    }
+                } else {
+                    [alert addAction:[UIAlertAction actionWithTitle:@"Add Else" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                        NSInteger endIndex = [self matchingEndIndexForIfAtIndex:ifIndex];
+                        if (endIndex != NSNotFound) {
+                            [self.actions insertObject:@{ @"type": @"else" } atIndex:endIndex];
+                            [self saveActions];
+                            [self.tableView reloadData];
+                        }
+                    }]];
+                }
+            }
+            
+            if ([self isIfActionItem:item] || [self isElseIfActionItem:item]) {
+                [alert addAction:[UIAlertAction actionWithTitle:@"Edit Condition" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                    [self presentIfConditionPickerForIndex:indexPath.row];
+                }]];
+            }
+            
+            if ([self isElseIfActionItem:item]) {
+                [alert addAction:[UIAlertAction actionWithTitle:@"Delete Else If" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+                    [self.actions removeObjectAtIndex:indexPath.row];
+                    [self saveActions];
+                    [self.tableView reloadData];
+                }]];
+            }
         }
     } else {
         // Long press on empty space
@@ -1071,7 +1187,7 @@ static id g_actionClipboard = nil;
     id actionData = self.actions[indexPath.row];
     
     if ([actionData isKindOfClass:[NSDictionary class]]) {
-        if ([self isIfActionItem:actionData]) {
+        if ([self isIfActionItem:actionData] || [self isElseIfActionItem:actionData]) {
             [self presentIfConditionPickerForIndex:indexPath.row];
         }
         return;

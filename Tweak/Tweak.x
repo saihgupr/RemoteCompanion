@@ -691,12 +691,12 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
             }
         }
         
-        CGFloat iconWidth = hasIcon ? 20.0 : 0.0;
-        CGFloat iconGap = hasIcon ? 8.0 : 0.0;
         CGFloat leftPadding = 16.0;
-        CGFloat rightPadding = 16.0;
+        CGFloat iconWidth = hasIcon ? 20.0 : 0.0;
+        CGFloat iconGap = hasIcon ? 10.0 : 0.0;
+        CGFloat leftMargin = leftPadding + iconWidth + iconGap;
         
-        CGFloat pillWidth = leftPadding + iconWidth + iconGap + maxTextWidth + rightPadding;
+        CGFloat pillWidth = maxTextWidth + 2 * leftMargin;
         // Enforce native-looking bounds (min 140, max screenWidth - 32)
         pillWidth = MAX(140.0, MIN(pillWidth, screenWidth - 32.0));
         
@@ -747,7 +747,6 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
         blurView.layer.masksToBounds = YES;
         [rootVC.view addSubview:blurView];
         
-        CGFloat contentLeft = leftPadding;
         if (hasIcon) {
             UIImage *iconImage = nil;
             if (@available(iOS 13.0, *)) {
@@ -763,34 +762,28 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
                 iconView.contentMode = UIViewContentModeScaleAspectFit;
                 iconView.frame = CGRectMake(leftPadding, (pillHeight - 20) / 2.0, 20, 20);
                 [rootVC.view addSubview:iconView];
-                contentLeft = leftPadding + 20 + iconGap;
             }
         }
         
-        // Text alignment: Center if no icon, Left if has icon
-        NSTextAlignment alignment = hasIcon ? NSTextAlignmentLeft : NSTextAlignmentCenter;
+        // Text alignment: Center relative to the entire bubble
+        NSTextAlignment alignment = NSTextAlignmentCenter;
         
         if (hasSubtitle) {
-            CGFloat textWidth = pillWidth - contentLeft - rightPadding;
-            
-            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(contentLeft, 8.0, textWidth, 18.0)];
+            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 8.0, pillWidth, 18.0)];
             titleLabel.text = title;
             titleLabel.textColor = [UIColor whiteColor];
             titleLabel.font = titleFont;
             titleLabel.textAlignment = alignment;
             [rootVC.view addSubview:titleLabel];
             
-            UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(contentLeft, 26.0, textWidth, 16.0)];
+            UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 26.0, pillWidth, 16.0)];
             subLabel.text = subtitle;
             subLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.6];
             subLabel.font = subtitleFont;
             subLabel.textAlignment = alignment;
             [rootVC.view addSubview:subLabel];
         } else {
-            // For single-line (no subtitle), use full pill width so centering is accurate
-            CGFloat labelX = hasIcon ? contentLeft : 0;
-            CGFloat labelW = hasIcon ? (pillWidth - contentLeft - rightPadding) : pillWidth;
-            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(labelX, 0, labelW, pillHeight)];
+            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, pillWidth, pillHeight)];
             titleLabel.text = title;
             titleLabel.textColor = [UIColor whiteColor];
             titleLabel.font = titleFont;

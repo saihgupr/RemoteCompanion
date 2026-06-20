@@ -1067,6 +1067,7 @@ static NSString *get_human_name_for_trigger(NSString *key, NSDictionary *trigger
             @"trigger_statusbar_right_hold": @"Status Bar Right Hold",
             @"trigger_statusbar_swipe_left": @"Status Bar Swipe Left",
             @"trigger_statusbar_swipe_right": @"Status Bar Swipe Right",
+            @"trigger_statusbar_double_tap": @"Status Bar Double Tap",
             @"trigger_home_triple_click": @"Home Button (Triple Click)",
             @"trigger_home_quadruple_click": @"Home Button (Quadruple Click)",
             @"trigger_home_double_click": @"Home Button (Double Click)",
@@ -7491,56 +7492,75 @@ static BOOL g_statusBarSwipeTriggered = NO;
                 g_statusBarSwipeTriggered = NO;
                 g_statusBarHoldTriggered = NO;
                 
-                // Determine region for status bar hold (Left, Center, Right)
-                CGFloat progress = 0;
-                if (orientation == UIInterfaceOrientationPortrait) {
-                    progress = loc.x / lw;
-                } else if (orientation == UIInterfaceOrientationPortraitUpsideDown) {
-                    progress = 1.0 - (loc.x / lw);
-                } else if (orientation == UIInterfaceOrientationLandscapeLeft) {
-                    progress = 1.0 - (loc.y / lh);
-                } else if (orientation == UIInterfaceOrientationLandscapeRight) {
-                    progress = loc.y / lh;
-                }
-                
-                if (progress < 0.33) {
-                    g_pendingStatusBarTrigger = @"trigger_statusbar_left_hold";
-                } else if (progress > 0.66) {
-                    g_pendingStatusBarTrigger = @"trigger_statusbar_right_hold";
-                } else {
-                    g_pendingStatusBarTrigger = @"trigger_statusbar_center_hold";
-                }
-                
-                SRLog(@"[RCStatus] Top Region Touch at progress=%.2f -> Key: %@", progress, g_pendingStatusBarTrigger);
-                
-                // Cancel any existing timer
-                if (g_statusBarHoldTimer) {
-                    [g_statusBarHoldTimer invalidate];
-                    g_statusBarHoldTimer = nil;
-                }
-                
-                // Start 0.3s hold timer
-                g_statusBarHoldTimer = [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:NO block:^(NSTimer *timer) {
-                    g_statusBarHoldTimer = nil;
+                if (touch.tapCount == 2) {
+                    if (g_statusBarHoldTimer) {
+                        [g_statusBarHoldTimer invalidate];
+                        g_statusBarHoldTimer = nil;
+                    }
+                    g_pendingStatusBarTrigger = nil;
                     
-                    // Ignore stale timer callbacks (e.g., touch already ended/cancelled).
-                    if (!g_statusBarTouchActive || g_statusBarSwipeTriggered || !g_pendingStatusBarTrigger) {
-                        return;
+                    load_trigger_config();
+                    BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
+                                   [g_triggerConfig[@"triggers"][@"trigger_statusbar_double_tap"][@"enabled"] boolValue];
+                    
+                    if (enabled) {
+                        g_statusBarHoldTriggered = YES;
+                        trigger_haptic();
+                        RCExecuteTrigger(@"trigger_statusbar_double_tap");
+                        SRLog(@"[RCStatus] Status Bar Double Tap FIRED!");
                     }
-
-                    if (g_pendingStatusBarTrigger) {
-                        load_trigger_config();
-                        BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                                       [g_triggerConfig[@"triggers"][g_pendingStatusBarTrigger][@"enabled"] boolValue];
+                } else {
+                    // Determine region for status bar hold (Left, Center, Right)
+                    CGFloat progress = 0;
+                    if (orientation == UIInterfaceOrientationPortrait) {
+                        progress = loc.x / lw;
+                    } else if (orientation == UIInterfaceOrientationPortraitUpsideDown) {
+                        progress = 1.0 - (loc.x / lw);
+                    } else if (orientation == UIInterfaceOrientationLandscapeLeft) {
+                        progress = 1.0 - (loc.y / lh);
+                    } else if (orientation == UIInterfaceOrientationLandscapeRight) {
+                        progress = loc.y / lh;
+                    }
+                    
+                    if (progress < 0.33) {
+                        g_pendingStatusBarTrigger = @"trigger_statusbar_left_hold";
+                    } else if (progress > 0.66) {
+                        g_pendingStatusBarTrigger = @"trigger_statusbar_right_hold";
+                    } else {
+                        g_pendingStatusBarTrigger = @"trigger_statusbar_center_hold";
+                    }
+                    
+                    SRLog(@"[RCStatus] Top Region Touch at progress=%.2f -> Key: %@", progress, g_pendingStatusBarTrigger);
+                    
+                    // Cancel any existing timer
+                    if (g_statusBarHoldTimer) {
+                        [g_statusBarHoldTimer invalidate];
+                        g_statusBarHoldTimer = nil;
+                    }
+                    
+                    // Start 0.3s hold timer
+                    g_statusBarHoldTimer = [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:NO block:^(NSTimer *timer) {
+                        g_statusBarHoldTimer = nil;
                         
-                        if (enabled) {
-                            g_statusBarHoldTriggered = YES;
-                            trigger_haptic();
-                            RCExecuteTrigger(g_pendingStatusBarTrigger);
-                            SRLog(@"%@ FIRED!", g_pendingStatusBarTrigger);
+                        // Ignore stale timer callbacks (e.g., touch already ended/cancelled).
+                        if (!g_statusBarTouchActive || g_statusBarSwipeTriggered || !g_pendingStatusBarTrigger) {
+                            return;
                         }
-                    }
-                }];
+
+                        if (g_pendingStatusBarTrigger) {
+                            load_trigger_config();
+                            BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
+                                           [g_triggerConfig[@"triggers"][g_pendingStatusBarTrigger][@"enabled"] boolValue];
+                            
+                            if (enabled) {
+                                g_statusBarHoldTriggered = YES;
+                                trigger_haptic();
+                                RCExecuteTrigger(g_pendingStatusBarTrigger);
+                                SRLog(@"%@ FIRED!", g_pendingStatusBarTrigger);
+                            }
+                        }
+                    }];
+                }
             }
             
             // Bottom bar region = bottom 50pts

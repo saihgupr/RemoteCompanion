@@ -374,99 +374,68 @@ static id g_actionClipboard = nil;
 }
 
 - (void)importActions {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Actions"
-                                                                   message:@"Paste JSON code or newline-separated command lines below:"
-                                                             preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
     
-    [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Actions"
+                                                                   message:nil
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.placeholder = @"Paste action code here…";
         textField.clearButtonMode = UITextFieldViewModeWhileEditing;
-        
-        NSString *clip = [[UIPasteboard generalPasteboard].string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (clip.length > 0) {
-            textField.text = clip;
-        }
+        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        textField.autocorrectionType = UITextAutocorrectionTypeNo;
+        textField.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
     }];
     
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     
-    __weak typeof(self) weakSelf = self;
-    
-    void (^processImport)(NSString *, BOOL) = ^(NSString *text, BOOL replace) {
+    [alert addAction:[UIAlertAction actionWithTitle:@"Import" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
+        NSString *text = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if (!strongSelf || text.length == 0) return;
         
         NSArray *newCommands = nil;
         if ([text hasPrefix:@"["] && [text hasSuffix:@"]"]) {
             NSError *jsonErr = nil;
-            id parsedObj = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&jsonErr];
-            if (!jsonErr && [parsedObj isKindOfClass:[NSArray class]]) {
-                newCommands = parsedObj;
-            }
+            id parsed = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&jsonErr];
+            if (!jsonErr && [parsed isKindOfClass:[NSArray class]]) newCommands = parsed;
         }
-        
         if (!newCommands) {
             NSMutableArray *lines = [NSMutableArray array];
-            NSArray *split = [text componentsSeparatedByString:@"\n"];
-            for (NSString *rawLine in split) {
+            for (NSString *rawLine in [text componentsSeparatedByString:@"\n"]) {
                 NSString *line = [rawLine stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                if (line.length > 0) {
-                    [lines addObject:line];
-                }
+                if (line.length > 0) [lines addObject:line];
             }
-            if (lines.count > 0) {
-                newCommands = lines;
+            if (lines.count > 0) newCommands = lines;
+        }
+        NSMutableArray *validCmds = [NSMutableArray array];
+        for (id cmd in newCommands) {
+            if ([cmd isKindOfClass:[NSString class]]) {
+                NSString *clean = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (clean.length > 0) [validCmds addObject:clean];
+            } else if ([cmd isKindOfClass:[NSDictionary class]]) {
+                [validCmds addObject:cmd];
             }
         }
-        
-        if (newCommands.count > 0) {
-            NSMutableArray *validCmds = [NSMutableArray array];
-            for (id cmd in newCommands) {
-                if ([cmd isKindOfClass:[NSString class]]) {
-                    NSString *cleanCmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                    if (cleanCmd.length > 0) {
-                        [validCmds addObject:cleanCmd];
-                    }
-                } else if ([cmd isKindOfClass:[NSDictionary class]]) {
-                    [validCmds addObject:cmd];
-                }
-            }
-            
-            if (validCmds.count > 0) {
-                if (replace) {
-                    [strongSelf.actions removeAllObjects];
-                }
-                [strongSelf.actions addObjectsFromArray:validCmds];
-                [strongSelf saveActions];
-                [strongSelf.tableView reloadData];
-                
-                [strongSelf showHUDToast:replace ? @"Sequence Replaced" : @"Import Successful"
-                               subtitle:[NSString stringWithFormat:@"Loaded %lu action(s).", (unsigned long)validCmds.count]
-                                   icon:@"square.and.arrow.down"];
-            } else {
-                [strongSelf showHUDToast:@"Import Failed" subtitle:@"No valid actions found." icon:@"exclamationmark.triangle"];
-            }
+        if (validCmds.count > 0) {
+            [strongSelf.actions addObjectsFromArray:validCmds];
+            [strongSelf saveActions];
+            [strongSelf.tableView reloadData];
+            [strongSelf showHUDToast:@"Import Successful"
+                           subtitle:[NSString stringWithFormat:@"Loaded %lu action(s).", (unsigned long)validCmds.count]
+                               icon:@"square.and.arrow.down"];
         } else {
-            [strongSelf showHUDToast:@"Import Failed" subtitle:@"Could not parse commands." icon:@"exclamationmark.triangle"];
+            [strongSelf showHUDToast:@"Import Failed" subtitle:@"No valid actions found." icon:@"exclamationmark.triangle"];
         }
-    };
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Append" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-        UITextField *textField = alert.textFields.firstObject;
-        NSString *text = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        processImport(text, NO);
-    }]];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Replace" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
-        UITextField *textField = alert.textFields.firstObject;
-        NSString *text = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        processImport(text, YES);
     }]];
     
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+
 - (void)addAction {
+
     RCActionPickerViewController *picker = [[RCActionPickerViewController alloc] init];
     picker.onActionSelected = ^(NSString *action) {
         if ([action isEqualToString:@"__SHORTCUT_PICKER__"]) {

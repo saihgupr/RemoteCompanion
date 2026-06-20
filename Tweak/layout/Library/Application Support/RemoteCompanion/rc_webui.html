@@ -1096,7 +1096,11 @@ function nameForCmd(cmd) {
   if (lowCmd.startsWith('set-vol '))      return `Set Volume ${cmd.slice(8)}%`;
   if (lowCmd.startsWith('brightness '))   return `Set Brightness ${cmd.slice(11)}%`;
   if (lowCmd.startsWith('shortcut:'))     return `Shortcut: ${cmd.slice(9)}`;
-  if (lowCmd.startsWith('uiopen '))       return `Open: ${cmd.slice(7)}`;
+  if (lowCmd.startsWith('uiopen ')) {
+    const bundleId = cmd.slice(7);
+    const app = cachedApps.find(a => a.bundleId === bundleId);
+    return `Open ${app ? app.name : bundleId}`;
+  }
   // Touch gesture display names
   if (lowCmd.startsWith('tap '))   { const p=cmd.slice(4).trim().split(/\s+/); return `Tap (${p[0]||'?'}, ${p[1]||'?'})`; }
   if (lowCmd.startsWith('hold '))  { const p=cmd.slice(5).trim().split(/\s+/); return `Hold (${p[0]||'?'}, ${p[1]||'?'})${p[2]?` ${p[2]}ms`:''}`; }
@@ -1233,6 +1237,7 @@ async function loadData() {
     hasLoadedData = true;
     renderAll();
     loadVersion();
+    refreshDatalists();
   } catch(e) {
     document.getElementById('conn-banner').classList.add('visible');
   }
@@ -2094,8 +2099,10 @@ function renderActionNameHtml(action, idx) {
       baseText = 'Shortcut: ';
       paramText = action.slice(9);
     } else if (lower.startsWith('uiopen ')) {
-      baseText = 'Open: ';
-      paramText = action.slice(7);
+      baseText = 'Open ';
+      const bundleId = action.slice(7);
+      const app = cachedApps.find(a => a.bundleId === bundleId);
+      paramText = app ? app.name : bundleId;
     } else if (lower.startsWith('airplay connect ')) {
       baseText = 'AirPlay Connect ';
       paramText = action.slice(16);

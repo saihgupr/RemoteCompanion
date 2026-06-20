@@ -58,8 +58,23 @@ static id g_actionClipboard = nil;
         baseText = @"Shortcut: ";
         paramText = [cmd substringFromIndex:9];
     } else if ([lower hasPrefix:@"uiopen "]) {
-        baseText = @"Open: ";
-        paramText = [cmd substringFromIndex:7];
+        baseText = @"Open ";
+        NSString *bundleId = [cmd substringFromIndex:7];
+        NSString *appName = bundleId;
+        Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+        if (proxyClass) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            id proxy = [proxyClass performSelector:@selector(applicationProxyForIdentifier:) withObject:bundleId];
+            if (proxy) {
+                NSString *name = [proxy performSelector:@selector(localizedName)];
+                if (name.length > 0) {
+                    appName = name;
+                }
+            }
+#pragma clang diagnostic pop
+        }
+        paramText = appName;
     } else if ([lower hasPrefix:@"airplay connect "]) {
         baseText = @"AirPlay Connect ";
         paramText = [cmd substringFromIndex:16];

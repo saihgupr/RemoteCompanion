@@ -121,23 +121,21 @@ static id g_actionClipboard = nil;
     
     self.title = [[RCConfigManager sharedManager] displayNameForTrigger:_triggerKey];
     
-    // Setup Navigation Items with UIMenu (Add, Import, Export)
+    // Plus Button to add action directly
+    UIBarButtonItem *plusButton = [[UIBarButtonItem alloc] 
+        initWithImage:[UIImage systemImageNamed:@"plus"] 
+        style:UIBarButtonItemStylePlain 
+        target:self 
+        action:@selector(addAction)];
+    
+    // More options menu (Import, Export)
     NSMutableArray *menuActions = [NSMutableArray array];
-    
-    [menuActions addObject:[UIAction actionWithTitle:@"Add Action" 
-                                               image:[UIImage systemImageNamed:@"plus"] 
-                                          identifier:nil 
-                                             handler:^(__kindof UIAction * _Nonnull action) {
-        [self addAction];
-    }]];
-    
     [menuActions addObject:[UIAction actionWithTitle:@"Import Actions" 
                                                image:[UIImage systemImageNamed:@"square.and.arrow.down"] 
                                           identifier:nil 
                                              handler:^(__kindof UIAction * _Nonnull action) {
         [self importActions];
     }]];
-    
     [menuActions addObject:[UIAction actionWithTitle:@"Export Actions" 
                                                image:[UIImage systemImageNamed:@"square.and.arrow.up"] 
                                           identifier:nil 
@@ -145,19 +143,28 @@ static id g_actionClipboard = nil;
         [self exportActions];
     }]];
     
-    UIMenu *actionMenu = [UIMenu menuWithTitle:@"" children:menuActions];
-    UIBarButtonItem *menuButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"plus"] menu:actionMenu];
+    UIMenu *shareMenu = [UIMenu menuWithTitle:@"" children:menuActions];
+    UIBarButtonItem *moreButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis.circle"] menu:shareMenu];
     
-    self.navigationItem.rightBarButtonItem = menuButton;
-
-    // Add Settings Button for configurable triggers
-    UIBarButtonItem *settingsButton = [[UIBarButtonItem alloc] 
-        initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"] 
-        style:UIBarButtonItemStylePlain 
-        target:self 
-        action:@selector(editTriggerSettings)];
+    NSMutableArray *rightItems = [NSMutableArray arrayWithArray:@[plusButton, moreButton]];
     
-    self.navigationItem.rightBarButtonItems = @[menuButton, settingsButton];
+    // Only show Settings Button if the trigger is configurable
+    BOOL isConfigurable = [_triggerKey hasPrefix:@"sched_"] ||
+                          [_triggerKey hasPrefix:@"notif_"] ||
+                          [_triggerKey hasPrefix:@"wifi_"] ||
+                          [_triggerKey hasPrefix:@"bt_"] ||
+                          [_triggerKey hasPrefix:@"app_launch_"];
+    
+    if (isConfigurable) {
+        UIBarButtonItem *settingsButton = [[UIBarButtonItem alloc] 
+            initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"] 
+            style:UIBarButtonItemStylePlain 
+            target:self 
+            action:@selector(editTriggerSettings)];
+        [rightItems addObject:settingsButton];
+    }
+    
+    self.navigationItem.rightBarButtonItems = rightItems;
 
     // Add tap gesture to title if it's an NFC trigger
     if ([_triggerKey hasPrefix:@"nfc_"]) {
@@ -350,13 +357,13 @@ static id g_actionClipboard = nil;
     NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
     [UIPasteboard generalPasteboard].string = jsonString;
     
-    [self showHUDToast:@"Sequence Copied" subtitle:@"Ready to share or paste to AI" icon:@"square.and.arrow.up"];
+    [self showHUDToast:@"Code Copied!" subtitle:@"Copied to clipboard" icon:@"doc.on.doc"];
 }
 
 - (void)importActions {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Actions"
                                                                    message:@"Paste JSON code or newline-separated command lines below:"
-                                                            preferredStyle:UIAlertControllerStyleAlert];
+                                                             preferredStyle:UIAlertControllerStyleAlert];
     
     [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
         textField.placeholder = @"Paste action code here…";
@@ -369,13 +376,14 @@ static id g_actionClipboard = nil;
     }];
     
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Import" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-        UITextField *textField = alert.textFields.firstObject;
-        NSString *text = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (text.length == 0) return;
+    
+    __weak typeof(self) weakSelf = self;
+    
+    void (^processImport)(NSString *, BOOL) = ^(NSString *text, BOOL replace) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || text.length == 0) return;
         
         NSArray *newCommands = nil;
-        
         if ([text hasPrefix:@"["] && [text hasSuffix:@"]"]) {
             NSError *jsonErr = nil;
             id parsedObj = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&jsonErr];
@@ -406,23 +414,40 @@ static id g_actionClipboard = nil;
                     if (cleanCmd.length > 0) {
                         [validCmds addObject:cleanCmd];
                     }
+                } else if ([cmd isKindOfClass:[NSDictionary class]]) {
+                    [validCmds addObject:cmd];
                 }
             }
             
             if (validCmds.count > 0) {
-                [_actions addObjectsFromArray:validCmds];
-                [self saveActions];
-                [self.tableView reloadData];
+                if (replace) {
+                    [strongSelf.actions removeAllObjects];
+                }
+                [strongSelf.actions addObjectsFromArray:validCmds];
+                [strongSelf saveActions];
+                [strongSelf.tableView reloadData];
                 
-                [self showHUDToast:@"Import Successful" 
-                          subtitle:[NSString stringWithFormat:@"Added %lu action(s) to sequence.", (unsigned long)validCmds.count] 
-                              icon:@"square.and.arrow.down"];
+                [strongSelf showHUDToast:replace ? @"Sequence Replaced" : @"Import Successful"
+                               subtitle:[NSString stringWithFormat:@"Loaded %lu action(s).", (unsigned long)validCmds.count]
+                                   icon:@"square.and.arrow.down"];
             } else {
-                [self showHUDToast:@"Import Failed" subtitle:@"No valid action strings found." icon:@"exclamationmark.triangle"];
+                [strongSelf showHUDToast:@"Import Failed" subtitle:@"No valid actions found." icon:@"exclamationmark.triangle"];
             }
         } else {
-            [self showHUDToast:@"Import Failed" subtitle:@"Could not parse commands." icon:@"exclamationmark.triangle"];
+            [strongSelf showHUDToast:@"Import Failed" subtitle:@"Could not parse commands." icon:@"exclamationmark.triangle"];
         }
+    };
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Append" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        UITextField *textField = alert.textFields.firstObject;
+        NSString *text = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        processImport(text, NO);
+    }]];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Replace" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        UITextField *textField = alert.textFields.firstObject;
+        NSString *text = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        processImport(text, YES);
     }]];
     
     [self presentViewController:alert animated:YES completion:nil];
@@ -860,7 +885,6 @@ static id g_actionClipboard = nil;
             }
             [strongSelf saveActions];
             [strongSelf.tableView reloadData];
-            [strongSelf.navigationController popViewControllerAnimated:YES];
         };
         [self.navigationController pushViewController:appPicker animated:YES];
         return;

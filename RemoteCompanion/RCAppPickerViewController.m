@@ -112,10 +112,10 @@
         self.onAppSelected(name, bundleId);
     }
     
-    if (self.presentingViewController) {
-        [self dismissViewControllerAnimated:YES completion:nil];
-    } else {
+    if (self.navigationController && self.navigationController.viewControllers.count > 1) {
         [self.navigationController popViewControllerAnimated:YES];
+    } else if (self.presentingViewController) {
+        [self dismissViewControllerAnimated:YES completion:nil];
     }
 }
 

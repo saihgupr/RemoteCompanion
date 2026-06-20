@@ -857,13 +857,14 @@
 
 <!-- ══ IMPORT ACTION DIALOG ════════════════════════════════════════════ -->
 <div class="dialog-backdrop" id="import-dialog-backdrop" onclick="_importDialogBackdropClick(event)">
-  <div class="dialog-box">
+  <div class="dialog-box" style="max-width: 480px; width: 90%;">
     <div class="dialog-title">Import Actions</div>
     <div class="dialog-msg" style="padding-bottom: 8px;">Paste JSON array or line-separated action commands:</div>
-    <textarea class="dialog-input" id="import-dialog-textarea" rows="5" placeholder='["flashlight toggle", "delay 1"]' style="height:100px; text-align:left; resize:none; font-family:monospace; font-size:12px; margin-bottom:12px;"></textarea>
+    <textarea class="dialog-input" id="import-dialog-textarea" rows="8" placeholder='["flashlight toggle", "delay 1"]' style="height:180px; text-align:left; resize:none; font-family:monospace; font-size:12px; margin-bottom:12px;"></textarea>
     <div class="dialog-btns">
-      <button onclick="closeImportDialog()">Cancel</button>
-      <button id="import-dialog-ok" onclick="importDialogOk()">Import</button>
+      <button onclick="closeImportDialog()" style="color: #ff3b30;">Cancel</button>
+      <button onclick="importDialogOk(false)">Append</button>
+      <button onclick="importDialogOk(true)" style="font-weight: 600;">Replace</button>
     </div>
   </div>
 </div>
@@ -3141,7 +3142,7 @@ function showImportDialog() {
 function closeImportDialog() {
   document.getElementById('import-dialog-backdrop').classList.remove('visible');
 }
-function importDialogOk() {
+function importDialogOk(replace) {
   const textarea = document.getElementById('import-dialog-textarea');
   const text = textarea.value.trim();
   if (!text) {
@@ -3171,18 +3172,22 @@ function importDialogOk() {
       if (typeof cmd === 'string') {
         const clean = cmd.trim();
         if (clean) validCmds.push(clean);
+      } else if (cmd && typeof cmd === 'object') {
+        validCmds.push(cmd);
       }
     });
     
     if (validCmds.length > 0) {
       const activeTrigger = triggerData(currentKey);
       if (activeTrigger) {
-        if (!activeTrigger.actions) activeTrigger.actions = [];
+        if (!activeTrigger.actions || replace) {
+          activeTrigger.actions = [];
+        }
         activeTrigger.actions.push(...validCmds);
         saveConfig();
         renderActionList();
         closeImportDialog();
-        showToast(`✓ Imported ${validCmds.length} action(s)`);
+        showToast(replace ? `✓ Replaced with ${validCmds.length} action(s)` : `✓ Imported ${validCmds.length} action(s)`);
       } else {
         closeImportDialog();
         showToast('⚠ Error: No active trigger');

@@ -11,6 +11,15 @@ All notable changes to this project will be documented in this file.
 - **Consolidated Toggle Actions**: Consolidated redundant toggle options (On/Off/Toggle) into single entries in the Action Picker for both the iOS app and Web UI, displaying states as interactive links that open slide-up sheets to edit them.
 - **Native iOS Alert Styling in Web UI**: Redesigned the Web UI edit action dialog to mirror the native iOS `UIAlertController` style, featuring a translucent dark-mode card, centered text input field, and hairline-separated blue buttons.
 - **Auto-Sync & Pull-to-Refresh**: Integrated background configuration reloading when returning to the iOS app, and implemented a manual pull-to-refresh control on the main screen.
+- **Sequential Else If Conditional Blocks**: Added first-class support for sequential `Else If` (`else_if`) blocks in the execution engine, iOS App, and Web UI. Sibling conditions are evaluated sequentially if preceding branches are false.
+- **Action Sequence Import/Export Sharing Enhancements**:
+  - Separated action creation (direct `+` button) from action sharing/importing (moved to a new ellipsis `...` menu).
+  - Added option to **Append** vs **Replace** when importing sequences on both the iOS app and the Web UI.
+  - Fixed a bug to support importing full dictionary block structures (like `if` / `else_if`) rather than discarding them.
+  - Enlarged the import text container in the Web UI to twice its original height and simplified clipboard confirmation messages.
+- **Improved UI Navigation & Settings**:
+  - Fixed a bug where selecting a Front App condition dismissed the entire view stack, returning the user to the main menu.
+  - Hid the non-functional settings edit icon for non-configurable triggers in the action view navigation bar.
 
 
 ## [3.3.1] - 2026-06-19

@@ -1079,6 +1079,10 @@ function nameForCmd(cmd) {
     if (t === 'repeat') return `Repeat ${cmd.count||''}`;
     return 'Block';
   }
+  const toggleInfo = parseToggleCmd(cmd);
+  if (toggleInfo) {
+    return `${toggleInfo.name}: ${toggleInfo.currentDisplaySuffix}`;
+  }
   const lowCmd = cmd.toLowerCase();
   if (CMD_NAMES[lowCmd]) return CMD_NAMES[lowCmd];
   if (lowCmd.startsWith('flashlight ')) return `Flashlight ${cmd.slice(11)}%`;
@@ -1131,6 +1135,8 @@ function iconForCmd(cmd) {
   };
   const lowCmd = cmd.toLowerCase();
   if (map[lowCmd]) return { icon:map[lowCmd], cls:'icon-dark' };
+  const toggleInfo = parseToggleCmd(cmd);
+  if (toggleInfo) return { icon:toggleInfo.icon, cls:'icon-dark' };
   if (lowCmd.startsWith('flashlight ')) return { icon:'bolt_fill',       cls:'icon-orange' };
   if (lowCmd.startsWith('lua:'))          return { icon:'command',         cls:'icon-purple' };
   if (lowCmd.startsWith('delay '))        return { icon:'timer',           cls:'icon-orange' };
@@ -1163,24 +1169,14 @@ const ACTION_SECTIONS = [
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
   ]},
   { title:'Device Controls', actions:[
-    { name:'Flashlight Toggle', cmd:'flashlight toggle', icon:'bolt_fill' },
-    { name:'Flashlight On',     cmd:'flashlight on',     icon:'bolt_fill' },
-    { name:'Flashlight Off',    cmd:'flashlight off',    icon:'bolt_slash_fill' },
+    { name:'Flashlight',        cmd:'flashlight toggle', icon:'bolt_fill', is_toggle:true },
     { name:'Flashlight Intensity…', cmd:'__SET_FLASHLIGHT__', icon:'bolt_fill', needs_input:true },
-    { name:'Rotate Lock',       cmd:'rotate lock',       icon:'lock_rotation' },
-    { name:'Rotate Unlock',     cmd:'rotate unlock',     icon:'lock_rotation_open' },
-    { name:'Rotate Toggle',     cmd:'rotate toggle',     icon:'lock_rotation' },
+    { name:'Rotation Lock',     cmd:'rotate toggle',     icon:'lock_rotation', is_toggle:true },
   ]},
   { title:'Connectivity', actions:[
-    { name:'WiFi On',           cmd:'wifi on',      icon:'wifi' },
-    { name:'WiFi Off',          cmd:'wifi off',     icon:'wifi_slash' },
-    { name:'WiFi Toggle',       cmd:'wifi toggle',  icon:'wifi' },
-    { name:'Bluetooth On',      cmd:'bluetooth on', icon:'bolt_horizontal_fill' },
-    { name:'Bluetooth Off',     cmd:'bluetooth off',icon:'bolt_horizontal' },
-    { name:'Bluetooth Toggle',  cmd:'bluetooth toggle',icon:'bolt_horizontal_fill' },
-    { name:'Airplane Mode On',  cmd:'airplane on',  icon:'airplane' },
-    { name:'Airplane Mode Off', cmd:'airplane off', icon:'airplane' },
-    { name:'Airplane Toggle',   cmd:'airplane toggle',icon:'airplane' },
+    { name:'Wi-Fi',             cmd:'wifi toggle',  icon:'wifi', is_toggle:true },
+    { name:'Bluetooth',         cmd:'bluetooth toggle',icon:'bolt_horizontal_fill', is_toggle:true },
+    { name:'Airplane Mode',     cmd:'airplane toggle',icon:'airplane', is_toggle:true },
     { name:'Connect Bluetooth…',cmd:'__BT_CONNECT__',icon:'link', needs_input:true },
     { name:'Disconnect Bluetooth…',cmd:'__BT_DISCONNECT__',icon:'xmark_circle', needs_input:true },
     { name:'Connect AirPlay…',   cmd:'__AIRPLAY_CONNECT__',icon:'airplayaudio', needs_input:true },
@@ -1193,12 +1189,8 @@ const ACTION_SECTIONS = [
     { name:'Open App…',         cmd:'__OPEN_APP__',  icon:'square_grid_2x2_fill', needs_input:true },
     { name:'Lock Device',       cmd:'lock',          icon:'lock_fill' },
     { name:'Unlock Device',     cmd:'unlock',        icon:'lock_open_fill' },
-    { name:'Do Not Disturb On', cmd:'dnd on',        icon:'moon_fill' },
-    { name:'Do Not Disturb Off',cmd:'dnd off',       icon:'moon' },
-    { name:'DND Toggle',        cmd:'dnd toggle',    icon:'moon_circle_fill' },
-    { name:'AudioMix On',       cmd:'audiomix on',   icon:'equalizer' },
-    { name:'AudioMix Off',      cmd:'audiomix off',  icon:'equalizer' },
-    { name:'AudioMix Toggle',   cmd:'audiomix toggle',icon:'equalizer' },
+    { name:'Do Not Disturb',    cmd:'dnd toggle',    icon:'moon_fill', is_toggle:true },
+    { name:'AudioMix',          cmd:'audiomix toggle',icon:'equalizer', is_toggle:true },
     { name:'Activate Siri',     cmd:'siri',          icon:'mic_fill' },
     { name:'Home Button',       cmd:'home',          icon:'house_fill' },
     { name:'App Switcher',      cmd:'switcher',      icon:'square_stack_3d_up_fill' },
@@ -1206,9 +1198,9 @@ const ACTION_SECTIONS = [
     { name:'Control Center',    cmd:'open control center',icon:'gear' },
     { name:'Respring',          cmd:'respring',      icon:'arrow_2_circlepath' },
     { name:'Soft Reboot',       cmd:'ldrestart',     icon:'arrow_clockwise' },
-    { name:'Low Power On',      cmd:'low power on',  icon:'battery_25' },
-    { name:'Low Power Off',     cmd:'low power off', icon:'battery_100' },
-    { name:'Low Power Toggle',  cmd:'low power toggle',icon:'battery_25' },
+    { name:'Low Power Mode',    cmd:'low power toggle',icon:'battery_25', is_toggle:true },
+    { name:'Silent Vibration',  cmd:'vibration silent-toggle', icon:'bell_slash', is_toggle:true },
+    { name:'Ring Vibration',    cmd:'vibration ring-toggle', icon:'bell', is_toggle:true },
   ]},
   { title:'Scripting & Logic', actions:[
     { name:'If Condition…',     cmd:'__IF_CONDITION__',icon:'arrow_triangle_branch', needs_input:true },
@@ -1793,7 +1785,7 @@ function renderActionList() {
       <div class="action-row-icon ${cls}" style="width:24px;height:24px;border-radius:6px;margin-right:14px;flex-shrink:0">
         <i class="f7-icons" style="font-size:13px">${icon}</i>
       </div>
-      <div style="flex:1;min-width:0;font-size:16px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(nameForCmd(action))}</div>
+      <div style="flex:1;min-width:0;font-size:16px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${renderActionNameHtml(action, idx)}</div>
       <i class="f7-icons drag-handle" style="color:#3a3a3c;font-size:18px;flex-shrink:0;margin-left:8px;cursor:grab;">bars</i>
     `;
     row.appendChild(inner);
@@ -1909,6 +1901,177 @@ function removeAction(idx) {
   saveConfig(); renderActionList();
 }
 
+function parseToggleCmd(cmd) {
+  if (!cmd || typeof cmd !== 'string') return null;
+  const lower = cmd.toLowerCase();
+
+  const definitions = [
+    {
+      key: 'airplane',
+      name: 'Airplane Mode',
+      icon: 'airplane',
+      prefixes: ['airplane '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'low_power',
+      name: 'Low Power Mode',
+      icon: 'battery_25',
+      prefixes: ['low power ', 'lpm ', 'low power mode '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'dnd',
+      name: 'Do Not Disturb',
+      icon: 'moon_fill',
+      prefixes: ['dnd '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'wifi',
+      name: 'Wi-Fi',
+      icon: 'wifi',
+      prefixes: ['wifi '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'bluetooth',
+      name: 'Bluetooth',
+      icon: 'bolt_horizontal_fill',
+      prefixes: ['bluetooth ', 'bt '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'flashlight',
+      name: 'Flashlight',
+      icon: 'bolt_fill',
+      prefixes: ['flashlight ', 'flash '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'audiomix',
+      name: 'AudioMix',
+      icon: 'equalizer',
+      prefixes: ['audiomix '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle'],
+      exactMatches: { 'audiomix': 'toggle' }
+    },
+    {
+      key: 'rotate',
+      name: 'Rotation Lock',
+      icon: 'lock_rotation',
+      prefixes: ['rotate '],
+      suffixes: ['lock', 'unlock', 'toggle'],
+      displaySuffixes: ['Lock', 'Unlock', 'Toggle']
+    },
+    {
+      key: 'vibration_silent',
+      name: 'Silent Vibration',
+      icon: 'bell_slash',
+      prefixes: ['vibration silent-'],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'vibration_ring',
+      name: 'Ring Vibration',
+      icon: 'bell',
+      prefixes: ['vibration ring-'],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    }
+  ];
+
+  for (const def of definitions) {
+    if (def.exactMatches && def.exactMatches[lower]) {
+      const suffix = def.exactMatches[lower];
+      const idx = def.suffixes.indexOf(suffix);
+      const displaySuffix = def.displaySuffixes[idx];
+      return {
+        key: def.key,
+        name: def.name,
+        icon: def.icon,
+        currentSuffix: suffix,
+        currentDisplaySuffix: displaySuffix,
+        suffixes: def.suffixes,
+        displaySuffixes: def.displaySuffixes,
+        matchedPrefix: '',
+        prefixes: def.prefixes
+      };
+    }
+
+    for (const prefix of def.prefixes) {
+      if (lower.startsWith(prefix)) {
+        const suffix = lower.slice(prefix.length);
+        const idx = def.suffixes.indexOf(suffix);
+        if (idx !== -1) {
+          const displaySuffix = def.displaySuffixes[idx];
+          return {
+            key: def.key,
+            name: def.name,
+            icon: def.icon,
+            currentSuffix: suffix,
+            currentDisplaySuffix: displaySuffix,
+            suffixes: def.suffixes,
+            displaySuffixes: def.displaySuffixes,
+            matchedPrefix: prefix,
+            prefixes: def.prefixes
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function changeToggleState(event, idx) {
+  if (event) event.stopPropagation();
+  const actions = triggerData(currentKey).actions || [];
+  const action = actions[idx];
+  const toggleInfo = parseToggleCmd(action);
+  if (!toggleInfo) return;
+
+  const buttons = toggleInfo.suffixes.map((suffix, sIdx) => {
+    const displaySuffix = toggleInfo.displaySuffixes[sIdx];
+    return {
+      label: displaySuffix,
+      action: () => {
+        const canonicalPrefix = toggleInfo.matchedPrefix || toggleInfo.prefixes[0] || '';
+        let newCommand = canonicalPrefix + suffix;
+        if (!toggleInfo.matchedPrefix && toggleInfo.key === 'audiomix' && suffix === 'toggle') {
+          newCommand = 'audiomix';
+        }
+        actions[idx] = newCommand;
+        saveConfig();
+        renderActionList();
+      }
+    };
+  });
+
+  buttons.push({
+    label: 'Cancel',
+    action: () => {}
+  });
+
+  showSheet(toggleInfo.name, buttons);
+}
+
+function renderActionNameHtml(action, idx) {
+  const toggleInfo = parseToggleCmd(action);
+  if (toggleInfo) {
+    return `${escHtml(toggleInfo.name)}: <span class="toggle-link" style="color:#007aff;cursor:pointer;font-weight:500;" onclick="changeToggleState(event, ${idx})">${escHtml(toggleInfo.currentDisplaySuffix)}</span>`;
+  }
+  return escHtml(nameForCmd(action));
+}
+
 // ── Action picker ─────────────────────────────────────────────────────────────
 function showActionPickerPanel() {
   document.getElementById('action-search').value = '';
@@ -1963,6 +2126,33 @@ function renderPickerSections() {
 
 async function selectAction(action) {
   const cmd = action.cmd;
+
+  if (action.is_toggle) {
+    const toggleInfo = parseToggleCmd(cmd);
+    if (toggleInfo) {
+      const buttons = toggleInfo.suffixes.map((suffix, sIdx) => {
+        const displaySuffix = toggleInfo.displaySuffixes[sIdx];
+        return {
+          label: displaySuffix,
+          action: () => {
+            const canonicalPrefix = toggleInfo.matchedPrefix || toggleInfo.prefixes[0] || '';
+            let newCommand = canonicalPrefix + suffix;
+            if (!toggleInfo.matchedPrefix && toggleInfo.key === 'audiomix' && suffix === 'toggle') {
+              newCommand = 'audiomix';
+            }
+            addAction(newCommand);
+            closePickerPanel();
+          }
+        };
+      });
+      buttons.push({
+        label: 'Cancel',
+        action: () => {}
+      });
+      showSheet(toggleInfo.name, buttons);
+      return;
+    }
+  }
 
   const needsText = {
     '__DELAY__':          { title:'Add Delay',        msg:'Seconds:', def:'1', type:'number', build: v => `delay ${v}` },

@@ -864,6 +864,55 @@ static id g_actionClipboard = nil;
     }
     
     NSString *currentAction = (NSString *)actionData;
+    NSDictionary *toggleInfo = [[RCConfigManager sharedManager] toggleInfoForCommand:currentAction];
+    
+    if (toggleInfo) {
+        UIAlertController *picker = [UIAlertController alertControllerWithTitle:toggleInfo[@"name"]
+                                                                         message:@"Select desired state"
+                                                                  preferredStyle:UIAlertControllerStyleActionSheet];
+        
+        NSArray *suffixes = toggleInfo[@"suffixes"];
+        NSArray *displaySuffixes = toggleInfo[@"displaySuffixes"];
+        NSString *matchedPrefix = toggleInfo[@"matchedPrefix"];
+        NSArray *prefixes = toggleInfo[@"prefixes"];
+        NSString *canonicalPrefix = (matchedPrefix.length > 0) ? matchedPrefix : (prefixes.firstObject ?: @"");
+        
+        __weak typeof(self) weakSelf = self;
+        for (NSUInteger idx = 0; idx < suffixes.count; idx++) {
+            NSString *suffix = suffixes[idx];
+            NSString *displaySuffix = displaySuffixes[idx];
+            
+            [picker addAction:[UIAlertAction actionWithTitle:displaySuffix
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(__unused UIAlertAction * _Nonnull action) {
+                __strong typeof(weakSelf) strongSelf = weakSelf;
+                if (!strongSelf) return;
+                
+                NSString *newCommand = [NSString stringWithFormat:@"%@%@", canonicalPrefix, suffix];
+                if (matchedPrefix.length == 0 && [toggleInfo[@"key"] isEqualToString:@"audiomix"] && [suffix isEqualToString:@"toggle"]) {
+                    newCommand = @"audiomix";
+                }
+                
+                strongSelf.actions[indexPath.row] = newCommand;
+                [strongSelf saveActions];
+                [strongSelf.tableView reloadData];
+            }]];
+        }
+        
+        [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        
+        picker.popoverPresentationController.sourceView = self.view;
+        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+        if (cell) {
+            picker.popoverPresentationController.sourceRect = cell.bounds;
+            picker.popoverPresentationController.sourceView = cell;
+        } else {
+            picker.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1);
+        }
+        
+        [self presentViewController:picker animated:YES completion:nil];
+        return;
+    }
     
     if ([currentAction hasPrefix:@"exec "] || [currentAction hasPrefix:@"root "]) {
         // Edit Terminal Command
@@ -1310,9 +1359,13 @@ static id g_actionClipboard = nil;
     }
 
     NSString *action = (NSString *)actionItem;
+    NSDictionary *toggleInfo = [[RCConfigManager sharedManager] toggleInfoForCommand:action];
 
     // Logic to separate "Type" from "Value"
-    if ([action hasPrefix:@"exec "]) {
+    if (toggleInfo) {
+        cell.textLabel.text = toggleInfo[@"name"];
+        subtitle = toggleInfo[@"currentDisplaySuffix"];
+    } else if ([action hasPrefix:@"exec "]) {
         cell.textLabel.text = [action substringFromIndex:5];
         subtitle = @"Terminal Command";
     } else if ([action hasPrefix:@"root "]) {
@@ -1358,7 +1411,10 @@ static id g_actionClipboard = nil;
         cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
 
         // Use monospace for code-like things
-        if ([action hasPrefix:@"exec "] || [action hasPrefix:@"root "] || [action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
+        if (toggleInfo) {
+            cell.detailTextLabel.textColor = [UIColor linkColor];
+            cell.detailTextLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+        } else if ([action hasPrefix:@"exec "] || [action hasPrefix:@"root "] || [action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
             cell.textLabel.font = [UIFont monospacedSystemFontOfSize:15 weight:UIFontWeightRegular];
             cell.textLabel.numberOfLines = 1;
             cell.textLabel.lineBreakMode = NSLineBreakByTruncatingTail;

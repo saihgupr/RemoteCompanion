@@ -79,24 +79,14 @@
         ],
         // Device Controls
         @[
-            @{ @"name": @"Flashlight Toggle", @"command": @"flashlight toggle", @"icon": @"flashlight.on.fill" },
-            @{ @"name": @"Flashlight On", @"command": @"flashlight on", @"icon": @"flashlight.on.fill" },
-            @{ @"name": @"Flashlight Off", @"command": @"flashlight off", @"icon": @"flashlight.off.fill" },
-            @{ @"name": @"Rotate Lock", @"command": @"rotate lock", @"icon": @"lock.rotation" },
-            @{ @"name": @"Rotate Unlock", @"command": @"rotate unlock", @"icon": @"lock.rotation.open" },
-            @{ @"name": @"Rotate Toggle", @"command": @"rotate toggle", @"icon": @"lock.rotation" }
+            @{ @"name": @"Flashlight", @"command": @"flashlight toggle", @"icon": @"flashlight.on.fill" },
+            @{ @"name": @"Rotation Lock", @"command": @"rotate toggle", @"icon": @"lock.rotation" }
         ],
         // Connectivity
         @[
-            @{ @"name": @"WiFi On", @"command": @"wifi on", @"icon": @"wifi" },
-            @{ @"name": @"WiFi Off", @"command": @"wifi off", @"icon": @"wifi.slash" },
-            @{ @"name": @"WiFi Toggle", @"command": @"wifi toggle", @"icon": @"wifi" },
-            @{ @"name": @"Bluetooth On", @"command": @"bluetooth on", @"icon": @"bolt.horizontal.fill" },
-            @{ @"name": @"Bluetooth Off", @"command": @"bluetooth off", @"icon": @"bolt.horizontal" },
-            @{ @"name": @"Bluetooth Toggle", @"command": @"bluetooth toggle", @"icon": @"bolt.horizontal.fill" },
-            @{ @"name": @"Airplane Mode On", @"command": @"airplane on", @"icon": @"airplane" },
-            @{ @"name": @"Airplane Mode Off", @"command": @"airplane off", @"icon": @"airplane" },
-            @{ @"name": @"Airplane Mode Toggle", @"command": @"airplane toggle", @"icon": @"airplane" },
+            @{ @"name": @"Wi-Fi", @"command": @"wifi toggle", @"icon": @"wifi" },
+            @{ @"name": @"Bluetooth", @"command": @"bluetooth toggle", @"icon": @"bolt.horizontal.fill" },
+            @{ @"name": @"Airplane Mode", @"command": @"airplane toggle", @"icon": @"airplane" },
             @{ @"name": @"Connect Bluetooth...", @"command": @"__BT_CONNECT__", @"icon": @"link" },
             @{ @"name": @"Disconnect Bluetooth...", @"command": @"__BT_DISCONNECT__", @"icon": @"xmark.circle" },
             @{ @"name": @"Connect AirPlay...", @"command": @"__AIRPLAY_CONNECT__", @"icon": @"airplayaudio" },
@@ -110,9 +100,7 @@
             @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
             @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
             @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
-            @{ @"name": @"Do Not Disturb On", @"command": @"dnd on", @"icon": @"moon.fill" },
-            @{ @"name": @"Do Not Disturb Off", @"command": @"dnd off", @"icon": @"moon" },
-            @{ @"name": @"Do Not Disturb Toggle", @"command": @"dnd toggle", @"icon": @"moon.circle.fill" },
+            @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
             @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
             @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
             @{ @"name": @"App Switcher", @"command": @"switcher", @"icon": @"square.stack.3d.up.fill" },
@@ -126,21 +114,17 @@
             @{ @"name": @"Orientation Status", @"command": @"orientation status", @"icon": @"iphone.badge.play" },
             
             // System Vibration
-            @{ @"name": @"Silent Vibrate Toggle", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
-            @{ @"name": @"Ring Vibrate Toggle", @"command": @"vibration ring-toggle", @"icon": @"bell" },
+            @{ @"name": @"Silent Vibration", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
+            @{ @"name": @"Ring Vibration", @"command": @"vibration ring-toggle", @"icon": @"bell" },
  
-            @{ @"name": @"Low Power Mode On", @"command": @"low power on", @"icon": @"battery.25" },
-            @{ @"name": @"Low Power Mode Off", @"command": @"low power off", @"icon": @"battery.100" },
-            @{ @"name": @"Low Power Mode Toggle", @"command": @"low power toggle", @"icon": @"battery.25" }
+            @{ @"name": @"Low Power Mode", @"command": @"low power toggle", @"icon": @"battery.25" }
         ],
         // Audio (ANC & AudioMix)
         @[
             @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
             @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
             @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
-            @{ @"name": @"AudioMix On", @"command": @"audiomix on", @"icon": @"music.note" },
-            @{ @"name": @"AudioMix Off", @"command": @"audiomix off", @"icon": @"music.note" },
-            @{ @"name": @"AudioMix Toggle", @"command": @"audiomix toggle", @"icon": @"music.note" }
+            @{ @"name": @"AudioMix", @"command": @"audiomix toggle", @"icon": @"music.note" }
         ],
         // Scripting & Logic
         @[

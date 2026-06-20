@@ -43,6 +43,7 @@
 - (NSString *)nameForCommand:(id)cmd truncate:(BOOL)shouldTruncate;
 - (NSString *)nameForBundleId:(NSString *)bundleId;
 - (NSString *)iconForCommand:(id)cmd;
+- (NSDictionary *)toggleInfoForCommand:(NSString *)cmd;
 
 // Backup/Restore
 - (NSData *)exportConfigAsJSON;

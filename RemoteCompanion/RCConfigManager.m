@@ -974,4 +974,137 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     return result ?: @"circle.fill";
 }
 
+- (NSDictionary *)toggleInfoForCommand:(NSString *)cmd {
+    if (![cmd isKindOfClass:[NSString class]]) return nil;
+    
+    NSString *lower = [cmd lowercaseString];
+    
+    NSArray *definitions = @[
+        @{
+            @"key": @"airplane",
+            @"name": @"Airplane Mode",
+            @"icon": @"airplane",
+            @"prefixes": @[@"airplane "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"low_power",
+            @"name": @"Low Power Mode",
+            @"icon": @"battery.25",
+            @"prefixes": @[@"low power ", @"lpm ", @"low power mode "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"dnd",
+            @"name": @"Do Not Disturb",
+            @"icon": @"moon.fill",
+            @"prefixes": @[@"dnd "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"wifi",
+            @"name": @"Wi-Fi",
+            @"icon": @"wifi",
+            @"prefixes": @[@"wifi "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"bluetooth",
+            @"name": @"Bluetooth",
+            @"icon": @"bolt.horizontal.fill",
+            @"prefixes": @[@"bluetooth ", @"bt "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"flashlight",
+            @"name": @"Flashlight",
+            @"icon": @"flashlight.on.fill",
+            @"prefixes": @[@"flashlight ", @"flash "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"audiomix",
+            @"name": @"AudioMix",
+            @"icon": @"music.note",
+            @"prefixes": @[@"audiomix "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"],
+            @"exactMatches": @{ @"audiomix": @"toggle" }
+        },
+        @{
+            @"key": @"rotate",
+            @"name": @"Rotation Lock",
+            @"icon": @"lock.rotation",
+            @"prefixes": @[@"rotate "],
+            @"suffixes": @[@"lock", @"unlock", @"toggle"],
+            @"displaySuffixes": @[@"Lock", @"Unlock", @"Toggle"]
+        },
+        @{
+            @"key": @"vibration_silent",
+            @"name": @"Silent Vibration",
+            @"icon": @"bell.slash",
+            @"prefixes": @[@"vibration silent-"],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"vibration_ring",
+            @"name": @"Ring Vibration",
+            @"icon": @"bell",
+            @"prefixes": @[@"vibration ring-"],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        }
+    ];
+    
+    for (NSDictionary *def in definitions) {
+        NSDictionary *exactMatches = def[@"exactMatches"];
+        if (exactMatches && exactMatches[lower]) {
+            NSString *suffix = exactMatches[lower];
+            NSUInteger idx = [def[@"suffixes"] indexOfObject:suffix];
+            NSString *displaySuffix = def[@"displaySuffixes"][idx];
+            return @{
+                @"key": def[@"key"],
+                @"name": def[@"name"],
+                @"icon": def[@"icon"],
+                @"currentSuffix": suffix,
+                @"currentDisplaySuffix": displaySuffix,
+                @"suffixes": def[@"suffixes"],
+                @"displaySuffixes": def[@"displaySuffixes"],
+                @"matchedPrefix": @"",
+                @"prefixes": def[@"prefixes"]
+            };
+        }
+        
+        for (NSString *prefix in def[@"prefixes"]) {
+            if ([lower hasPrefix:prefix]) {
+                NSString *suffix = [lower substringFromIndex:prefix.length];
+                NSUInteger idx = [def[@"suffixes"] indexOfObject:suffix];
+                if (idx != NSNotFound) {
+                    NSString *displaySuffix = def[@"displaySuffixes"][idx];
+                    return @{
+                        @"key": def[@"key"],
+                        @"name": def[@"name"],
+                        @"icon": def[@"icon"],
+                        @"currentSuffix": suffix,
+                        @"currentDisplaySuffix": displaySuffix,
+                        @"suffixes": def[@"suffixes"],
+                        @"displaySuffixes": def[@"displaySuffixes"],
+                        @"matchedPrefix": prefix,
+                        @"prefixes": def[@"prefixes"]
+                    };
+                }
+            }
+        }
+    }
+    
+    return nil;
+}
+
 @end

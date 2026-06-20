@@ -381,11 +381,18 @@ static id g_actionClipboard = nil;
                                                             preferredStyle:UIAlertControllerStyleAlert];
     
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.placeholder = @"Paste action code here…";
         textField.clearButtonMode = UITextFieldViewModeWhileEditing;
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         textField.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
+        // Pre-fill with current sequence so user can see and clear it
+        if (self.actions.count > 0) {
+            NSError *serErr = nil;
+            NSData *jsonData = [NSJSONSerialization dataWithJSONObject:self.actions options:NSJSONWritingPrettyPrinted error:&serErr];
+            if (!serErr && jsonData) {
+                textField.text = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+            }
+        }
     }];
     
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
@@ -419,6 +426,7 @@ static id g_actionClipboard = nil;
             }
         }
         if (validCmds.count > 0) {
+            [strongSelf.actions removeAllObjects];
             [strongSelf.actions addObjectsFromArray:validCmds];
             [strongSelf saveActions];
             [strongSelf.tableView reloadData];

@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - **AudioMix Integration**: Added first-class control actions (`audiomix`, `audiomix on`, `audiomix off`, `audiomix toggle`, `audiomix status`) to control KingPuffdaddi's AudioMix tweak settings.
 - **Heads-Up Display (HUD) Toast**: Implemented a system-wide dropdown glassmorphism HUD toast notification that animates with spring physics to confirm toggling states.
 - **Consolidated Toggle Actions**: Consolidated redundant toggle options (On/Off/Toggle) into single entries in the Action Picker for both the iOS app and Web UI, displaying states as interactive links that open slide-up sheets to edit them.
+- **Native iOS Alert Styling in Web UI**: Redesigned the Web UI edit action dialog to mirror the native iOS `UIAlertController` style, featuring a translucent dark-mode card, centered text input field, and hairline-separated blue buttons.
+- **Auto-Sync & Pull-to-Refresh**: Integrated background configuration reloading when returning to the iOS app, and implemented a manual pull-to-refresh control on the main screen.
 
 
 ## [3.3.1] - 2026-06-19

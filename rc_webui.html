@@ -517,85 +517,58 @@
       backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     }
     .dialog-box {
-      background: rgba(44,44,46,0.92);
+      background: rgba(30,30,30,0.88);
       backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px);
-      border-radius: 16px;
-      width: calc(100% - 52px); max-width: 340px;
+      border-radius: 14px;
+      width: 270px;
       overflow: hidden;
-      box-shadow: 0 24px 60px rgba(0,0,0,0.5);
-      transform: scale(0.92); opacity: 0;
-      transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1), opacity 0.18s ease;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+      transform: scale(0.9); opacity: 0;
+      transition: transform 0.26s cubic-bezier(0.18, 0.89, 0.32, 1.15), opacity 0.22s ease;
     }
     .dialog-backdrop.visible .dialog-box {
       transform: scale(1); opacity: 1;
     }
     .dialog-title {
       font-size: 17px; font-weight: 600; color: #fff;
-      text-align: center; padding: 20px 20px 6px;
+      text-align: center; padding: 20px 16px 4px;
+      line-height: 1.25;
     }
     .dialog-msg {
       font-size: 13px; color: #8e8e93;
-      text-align: center; padding: 0 20px 14px;
-      line-height: 1.4;
+      text-align: center; padding: 0 16px 14px;
+      line-height: 1.35;
     }
     .dialog-input {
-      width: calc(100% - 32px); margin: 0 16px 4px;
-      background: rgba(255,255,255,0.08); border: none; color: #fff;
-      font-size: 17px; font-family: inherit;
-      border-radius: 10px; padding: 11px 14px; outline: none;
-      display: block;
-      caret-color: #007aff;
+      width: calc(100% - 32px); margin: 0 16px 16px;
+      background: rgba(0,0,0,0.35); border: 0.5px solid rgba(255,255,255,0.2); color: #fff;
+      font-size: 14px; font-family: inherit;
+      border-radius: 6px; padding: 6px 10px; outline: none;
+      display: block; text-align: center;
+      caret-color: #0a84ff;
+      box-sizing: border-box;
       -webkit-appearance: none; appearance: none;
     }
     /* Hide native number spinners */
     .dialog-input::-webkit-inner-spin-button,
     .dialog-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     .dialog-input[type=number] { -moz-appearance: textfield; }
-    .dialog-input:focus { background: rgba(255,255,255,0.12); }
-    /* Numeric slider row */
-    .dialog-slider-row {
-      display: none; align-items: center; gap: 10px;
-      padding: 4px 16px 14px;
-    }
-    .dialog-slider-row.visible { display: flex; }
-    .dialog-slider-val {
-      min-width: 38px; text-align: right;
-      font-size: 15px; font-weight: 600; color: #fff;
-      font-variant-numeric: tabular-nums;
-    }
-    .dialog-slider {
-      flex: 1; -webkit-appearance: none; appearance: none;
-      height: 4px; border-radius: 2px; outline: none; border: none;
-      background: rgba(255,255,255,0.15);
-      background-image: linear-gradient(#007aff, #007aff);
-      background-repeat: no-repeat;
-    }
-    .dialog-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 22px; height: 22px; border-radius: 50%;
-      background: #fff;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-      cursor: pointer;
-    }
-    .dialog-slider::-moz-range-thumb {
-      width: 22px; height: 22px; border-radius: 50%;
-      background: #fff; border: none;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-      cursor: pointer;
-    }
+    .dialog-input:focus { border-color: rgba(255,255,255,0.35); }
     .dialog-btns {
-      display: flex; border-top: 0.5px solid rgba(255,255,255,0.1);
-      margin-top: 6px;
+      display: flex; border-top: 0.5px solid rgba(255,255,255,0.15);
+      margin-top: 0;
     }
     .dialog-btns button {
-      flex: 1; background: none; border: none; color: #007aff;
-      font-size: 17px; font-family: inherit; padding: 14px; cursor: pointer;
-      transition: opacity 0.1s;
+      flex: 1; height: 44px; background: none; border: none; color: #0a84ff;
+      font-size: 17px; font-family: inherit; padding: 0; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background-color 0.1s;
+      outline: none;
     }
-    .dialog-btns button:active { opacity: 0.6; }
-    .dialog-btns button:not(:last-child) { border-right: 0.5px solid rgba(255,255,255,0.1); }
-    .dialog-btns button:first-child { color: #8e8e93; }
-    #dialog-record { color: #ff9500; }
+    .dialog-btns button:active { background-color: rgba(255,255,255,0.08); }
+    .dialog-btns button:not(:last-child) { border-right: 0.5px solid rgba(255,255,255,0.15); }
+    .dialog-btns button:last-child { font-weight: 600; }
+    #dialog-record { color: #ff9500; font-weight: 400; }
 
     /* ── Context Menu (Right-click) ── */
     .context-menu {
@@ -867,10 +840,6 @@
     <div class="dialog-title" id="dialog-title"></div>
     <div class="dialog-msg" id="dialog-msg"></div>
     <input class="dialog-input" id="dialog-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-    <div class="dialog-slider-row" id="dialog-slider-row">
-      <input class="dialog-slider" id="dialog-slider" type="range" min="0" max="100" step="1">
-      <span class="dialog-slider-val" id="dialog-slider-val">50</span>
-    </div>
     <div class="dialog-btns">
       <button onclick="closeDialog()">Cancel</button>
       <button id="dialog-record" style="display:none;" onclick="dialogRecord()">Record</button>
@@ -885,7 +854,7 @@
     <div class="dialog-msg" id="complex-dialog-msg">Select Device</div>
     
     <div style="margin: 16px 0;">
-      <div style="display:flex; background:rgba(255,255,255,0.1); border-radius:8px; overflow:hidden; margin-bottom: 12px;">
+      <div style="display:flex; background:rgba(255,255,255,0.1); border-radius:8px; overflow:hidden; margin: 0 16px 12px;">
         <div id="complex-seg-connect" onclick="setComplexSegment('connect')" style="flex:1; padding:8px; text-align:center; background:#007aff; color:#fff; font-size:14px; font-weight:500; cursor:pointer;">Connect</div>
         <div id="complex-seg-disconnect" onclick="setComplexSegment('disconnect')" style="flex:1; padding:8px; text-align:center; color:#fff; font-size:14px; font-weight:500; cursor:pointer;">Disconnect</div>
       </div>
@@ -2910,64 +2879,25 @@ function _dialogBackdropClick(e) {
 function showDialog(title, msg, defaultVal, okLabel, callback, inputType='text', listId=null) {
   document.getElementById('dialog-title').textContent = title;
 
-  const isNumeric = inputType === 'number';
   const msgEl = document.getElementById('dialog-msg');
-  // Show subtitle only for non-numeric (numeric gets slider label), or for special hints
-  msgEl.textContent = isNumeric ? '' : (msg || '');
+  msgEl.textContent = msg || '';
   msgEl.style.display = (msgEl.textContent ? 'block' : 'none');
 
   const input = document.getElementById('dialog-input');
-  const sliderRow = document.getElementById('dialog-slider-row');
-  const slider   = document.getElementById('dialog-slider');
-  const sliderVal = document.getElementById('dialog-slider-val');
+  input.value = defaultVal || '';
 
-  if (isNumeric) {
-    // Use text input so no spinners; restrict to numbers via inputmode
+  if (inputType === 'number') {
     input.type = 'text';
     input.inputMode = 'numeric';
     input.pattern = '[0-9]*';
-
-    // Detect range from msg (e.g. "Value (0-100):" → min 0, max 100)
-    let min = 0, max = 100;
-    const rangeMatch = (msg || '').match(/(\d+)[^\d]+(\d+)/);
-    if (rangeMatch) { min = +rangeMatch[1]; max = +rangeMatch[2]; }
-    // Delay for delay actions (max 60s is sensible)
-    if (title.toLowerCase().includes('delay')) { min = 0; max = 60; }
-
-    slider.min = min; slider.max = max; slider.step = 1;
-    const initVal = Math.max(min, Math.min(max, parseFloat(defaultVal) || min));
-    slider.value = initVal;
-    input.value = String(initVal);
-    sliderVal.textContent = initVal;
-    _updateSliderTrack(slider);
-
-    // Sync slider → input
-    slider.oninput = () => {
-      input.value = slider.value;
-      sliderVal.textContent = slider.value;
-      _updateSliderTrack(slider);
-    };
-    // Sync input → slider
-    input.oninput = () => {
-      const v = Math.max(min, Math.min(max, parseFloat(input.value) || min));
-      slider.value = v;
-      sliderVal.textContent = v;
-      _updateSliderTrack(slider);
-    };
-
-    sliderRow.classList.add('visible');
   } else {
     input.type = 'text';
     input.inputMode = '';
     input.pattern = '';
-    input.oninput = null;
-    if (slider) slider.oninput = null;
-    sliderRow.classList.remove('visible');
   }
 
   if (listId) input.setAttribute('list', listId);
   else input.removeAttribute('list');
-  if (!isNumeric) input.value = defaultVal || '';
 
   document.getElementById('dialog-ok').textContent = okLabel || 'OK';
   dialogCallback = callback;
@@ -2977,11 +2907,6 @@ function showDialog(title, msg, defaultVal, okLabel, callback, inputType='text',
 
   document.getElementById('dialog-backdrop').classList.add('visible');
   setTimeout(() => input.focus(), 150);
-}
-
-function _updateSliderTrack(slider) {
-  const pct = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
-  slider.style.backgroundSize = pct + '% 100%';
 }
 function closeDialog() {
   document.getElementById('dialog-backdrop').classList.remove('visible');

@@ -24,6 +24,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 - **Universal Search**: Instantly find actions, shortcuts, and devices with integrated search bars in every picker.
 - **Cross-Version Support**: Full compatibility for iOS 14 through iOS 16+, supporting Rootless, Rootful, and RootHide environments.
 - **Advanced Automation**: Full support for NFC tags, custom Lua scripts (with `objc_call` support), and native Siri integration.
+- **AI-Assisted Scripting**: Use any AI assistant to generate action sequences from plain English — see [SCRIPTING.md](SCRIPTING.md).
 - **iPad Experience**: Native landscape orientation and optimized layouts for iPad power users.
 - **Live Discovery**: Discovery-based live lists for nearby AirPlay and Bluetooth hardware.
 - **Trigger Favorites**: Mark any trigger as a favorite for instant access at the top of the picker.
@@ -308,6 +309,27 @@ end
 
 > [!NOTE]
 > `objc_call` works like standard Objective-C messaging — it does not scan memory for existing instances. To call an instance method, you first need to obtain the instance via a class-level accessor (e.g. `sharedInstance`, `currentDevice`) or by allocating a new one with `alloc`/`init`.
+
+</details>
+
+<details>
+<summary><b>AI-Assisted Sequence Builder</b></summary>
+
+Use any AI assistant (ChatGPT, Claude, Gemini, etc.) to build action sequences from plain English, then paste the result directly into the app using **Import**.
+
+**[→ Full guide + copy-paste AI prompt: SCRIPTING.md](SCRIPTING.md)**
+
+Example prompt:
+```
+Read this guide: https://github.com/saihgupr/remotecompanion/blob/main/SCRIPTING.md
+
+Using the action format defined there, create a RemoteCompanion sequence that:
+pause music, wait 2 seconds, take a screenshot, then play music again
+
+Return ONLY the raw JSON array. No explanation, no markdown, no code fences.
+```
+
+Copy the JSON output → open your trigger → tap **⋯** → **Import** → paste → **Import**.
 
 </details>
 

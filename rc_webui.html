@@ -1081,7 +1081,7 @@ function nameForCmd(cmd) {
   }
   const toggleInfo = parseToggleCmd(cmd);
   if (toggleInfo) {
-    return `${toggleInfo.name}: ${toggleInfo.currentDisplaySuffix}`;
+    return `${toggleInfo.name} ${toggleInfo.currentDisplaySuffix}`;
   }
   const lowCmd = cmd.toLowerCase();
   if (CMD_NAMES[lowCmd]) return CMD_NAMES[lowCmd];
@@ -2067,7 +2067,7 @@ function changeToggleState(event, idx) {
 function renderActionNameHtml(action, idx) {
   const toggleInfo = parseToggleCmd(action);
   if (toggleInfo) {
-    return `${escHtml(toggleInfo.name)}: <span class="toggle-link" style="color:#007aff;cursor:pointer;font-weight:500;" onclick="changeToggleState(event, ${idx})">${escHtml(toggleInfo.currentDisplaySuffix)}</span>`;
+    return `${escHtml(toggleInfo.name)} <span class="toggle-link" style="color:#f2c350;cursor:pointer;font-weight:500;" onclick="changeToggleState(event, ${idx})">${escHtml(toggleInfo.currentDisplaySuffix)}</span>`;
   }
   return escHtml(nameForCmd(action));
 }

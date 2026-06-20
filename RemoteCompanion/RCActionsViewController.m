@@ -1363,58 +1363,81 @@ static id g_actionClipboard = nil;
 
     // Logic to separate "Type" from "Value"
     if (toggleInfo) {
-        cell.textLabel.text = toggleInfo[@"name"];
-        subtitle = toggleInfo[@"currentDisplaySuffix"];
-    } else if ([action hasPrefix:@"exec "]) {
-        cell.textLabel.text = [action substringFromIndex:5];
-        subtitle = @"Terminal Command";
-    } else if ([action hasPrefix:@"root "]) {
-        cell.textLabel.text = [action substringFromIndex:5];
-        subtitle = @"Root Command";
-    } else if ([action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
-        cell.textLabel.text = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
-        subtitle = @"Lua Script";
-    } else if ([action hasPrefix:@"delay "]) {
-        cell.textLabel.text = [NSString stringWithFormat:@"Wait %@s", [action substringFromIndex:6]];
-        subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
-    } else if ([action hasPrefix:@"shortcut:"]) {
-        cell.textLabel.text = cleanName;
-        subtitle = @"Siri Shortcut";
-    } else if ([action hasPrefix:@"uiopen "]) {
-        cell.textLabel.text = cleanName;
-        subtitle = @"Application";
-    } else if ([action hasPrefix:@"airplay connect "]) {
-        cell.textLabel.text = cleanName;
-        subtitle = @"AirPlay Device";
-    } else if ([action hasPrefix:@"bt connect "] || [action hasPrefix:@"bluetooth connect "]) {
-        cell.textLabel.text = cleanName;
-        subtitle = @"Bluetooth Device";
-    } else if ([action hasPrefix:@"bt disconnect "] || [action hasPrefix:@"bluetooth disconnect "]) {
-        cell.textLabel.text = cleanName;
-        subtitle = nil;
-    } else if ([action hasPrefix:@"airplay disconnect"]) {
-        cell.textLabel.text = cleanName;
-        subtitle = nil;
-    } else if ([action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
-        cell.textLabel.text = cleanName;
+        NSString *baseName = toggleInfo[@"name"];
+        NSString *suffix = toggleInfo[@"currentDisplaySuffix"];
+        NSString *fullText = [NSString stringWithFormat:@"%@ %@", baseName, suffix];
+        NSMutableAttributedString *attrStr = [[NSMutableAttributedString alloc] initWithString:fullText];
+        
+        NSRange baseRange = NSMakeRange(0, baseName.length + 1); // includes the space
+        NSRange suffixRange = [fullText rangeOfString:suffix options:NSBackwardsSearch];
+        
+        UIColor *accentColor = [UIColor colorWithDynamicProvider:^UIColor * _Nonnull(UITraitCollection * _Nonnull traitCollection) {
+            if (traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
+                return [UIColor colorWithRed:242/255.0 green:195/255.0 blue:80/255.0 alpha:1.0];
+            } else {
+                return [UIColor colorWithRed:200/255.0 green:150/255.0 blue:40/255.0 alpha:1.0]; // amber in light mode
+            }
+        }];
+        
+        [attrStr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:17 weight:UIFontWeightMedium] range:NSMakeRange(0, fullText.length)];
+        [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor labelColor] range:baseRange];
+        if (suffixRange.location != NSNotFound) {
+            [attrStr addAttribute:NSForegroundColorAttributeName value:accentColor range:suffixRange];
+        }
+        cell.textLabel.attributedText = attrStr;
         subtitle = nil;
     } else {
-        cell.textLabel.text = cleanName;
-        subtitle = nil;
+        cell.textLabel.attributedText = nil; // Clear any attributed text
+        if ([action hasPrefix:@"exec "]) {
+            cell.textLabel.text = [action substringFromIndex:5];
+            subtitle = @"Terminal Command";
+        } else if ([action hasPrefix:@"root "]) {
+            cell.textLabel.text = [action substringFromIndex:5];
+            subtitle = @"Root Command";
+        } else if ([action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
+            cell.textLabel.text = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
+            subtitle = @"Lua Script";
+        } else if ([action hasPrefix:@"delay "]) {
+            cell.textLabel.text = [NSString stringWithFormat:@"Wait %@s", [action substringFromIndex:6]];
+            subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
+        } else if ([action hasPrefix:@"shortcut:"]) {
+            cell.textLabel.text = cleanName;
+            subtitle = @"Siri Shortcut";
+        } else if ([action hasPrefix:@"uiopen "]) {
+            cell.textLabel.text = cleanName;
+            subtitle = @"Application";
+        } else if ([action hasPrefix:@"airplay connect "]) {
+            cell.textLabel.text = cleanName;
+            subtitle = @"AirPlay Device";
+        } else if ([action hasPrefix:@"bt connect "] || [action hasPrefix:@"bluetooth connect "]) {
+            cell.textLabel.text = cleanName;
+            subtitle = @"Bluetooth Device";
+        } else if ([action hasPrefix:@"bt disconnect "] || [action hasPrefix:@"bluetooth disconnect "]) {
+            cell.textLabel.text = cleanName;
+            subtitle = nil;
+        } else if ([action hasPrefix:@"airplay disconnect"]) {
+            cell.textLabel.text = cleanName;
+            subtitle = nil;
+        } else if ([action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
+            cell.textLabel.text = cleanName;
+            subtitle = nil;
+        } else {
+            cell.textLabel.text = cleanName;
+            subtitle = nil;
+        }
     }
 
-    cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
-    cell.textLabel.textColor = [UIColor labelColor];
+    if (!toggleInfo) {
+        cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
+        cell.textLabel.textColor = [UIColor labelColor];
+    }
 
     if (subtitle) {
         cell.detailTextLabel.text = subtitle;
         cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
 
         // Use monospace for code-like things
-        if (toggleInfo) {
-            cell.detailTextLabel.textColor = [UIColor linkColor];
-            cell.detailTextLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-        } else if ([action hasPrefix:@"exec "] || [action hasPrefix:@"root "] || [action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
+        if ([action hasPrefix:@"exec "] || [action hasPrefix:@"root "] || [action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
             cell.textLabel.font = [UIFont monospacedSystemFontOfSize:15 weight:UIFontWeightRegular];
             cell.textLabel.numberOfLines = 1;
             cell.textLabel.lineBreakMode = NSLineBreakByTruncatingTail;

@@ -628,7 +628,35 @@ static BOOL get_dnd_state() {
 
 static UIWindow *g_rcHUDWindow = nil;
 
-static void rc_show_hud_toast(NSString *title, NSString *iconSymbol) {
+static NSArray<NSString *> *rc_parse_quoted_arguments(NSString *argString) {
+    NSMutableArray *arguments = [NSMutableArray array];
+    NSScanner *scanner = [NSScanner scannerWithString:argString];
+    [scanner setCharactersToBeSkipped:nil]; // Do not skip whitespace automatically
+    
+    while (![scanner isAtEnd]) {
+        // Skip whitespace
+        [scanner scanCharactersFromSet:[NSCharacterSet whitespaceCharacterSet] intoString:NULL];
+        if ([scanner isAtEnd]) break;
+        
+        NSString *arg = nil;
+        if ([scanner scanString:@"\"" intoString:NULL]) {
+            // Scan until closing quote
+            [scanner scanUpToString:@"\"" intoString:&arg];
+            [scanner scanString:@"\"" intoString:NULL];
+            if (!arg) arg = @"";
+        } else {
+            // Scan until next space
+            [scanner scanUpToCharactersFromSet:[NSCharacterSet whitespaceCharacterSet] intoString:&arg];
+        }
+        
+        if (arg) {
+            [arguments addObject:arg];
+        }
+    }
+    return arguments;
+}
+
+static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *iconSymbol) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (g_rcHUDWindow) {
             g_rcHUDWindow.hidden = YES;
@@ -638,24 +666,80 @@ static void rc_show_hud_toast(NSString *title, NSString *iconSymbol) {
         CGRect screenBounds = [UIScreen mainScreen].bounds;
         CGFloat screenWidth = screenBounds.size.width;
         
-        CGFloat pillWidth = 220.0;
-        CGFloat pillHeight = 44.0;
+        // Define fonts matching native iOS 15 Ringer HUD
+        UIFont *titleFont = [UIFont systemFontOfSize:13.0 weight:UIFontWeightMedium];
+        UIFont *subtitleFont = [UIFont systemFontOfSize:12.0 weight:UIFontWeightRegular];
+        
+        // Measure text to determine dynamic width
+        CGFloat maxTextWidth = 0;
+        if (title) {
+            CGSize titleSize = [title sizeWithAttributes:@{NSFontAttributeName: titleFont}];
+            maxTextWidth = titleSize.width;
+        }
+        if (subtitle) {
+            CGSize subSize = [subtitle sizeWithAttributes:@{NSFontAttributeName: subtitleFont}];
+            if (subSize.width > maxTextWidth) {
+                maxTextWidth = subSize.width;
+            }
+        }
+        
+        // Check if icon exists and is a valid symbol image
+        BOOL hasIcon = NO;
+        if (iconSymbol && ![iconSymbol isEqualToString:@""] && ![iconSymbol isEqualToString:@"none"]) {
+            if ([UIImage systemImageNamed:iconSymbol]) {
+                hasIcon = YES;
+            }
+        }
+        
+        CGFloat iconWidth = hasIcon ? 20.0 : 0.0;
+        CGFloat iconGap = hasIcon ? 8.0 : 0.0;
+        CGFloat leftPadding = 16.0;
+        CGFloat rightPadding = 16.0;
+        
+        CGFloat pillWidth = leftPadding + iconWidth + iconGap + maxTextWidth + rightPadding;
+        // Enforce native-looking bounds (min 140, max screenWidth - 32)
+        pillWidth = MAX(140.0, MIN(pillWidth, screenWidth - 32.0));
+        
+        // Determine height based on whether we have a subtitle
+        BOOL hasSubtitle = (subtitle && ![subtitle isEqualToString:@""]);
+        CGFloat pillHeight = hasSubtitle ? 50.0 : 40.0;
+        
         CGFloat pillX = (screenWidth - pillWidth) / 2.0;
         CGFloat startY = -pillHeight - 20.0;
-        CGFloat targetY = 55.0; // Sits nicely below status bar/notch
+        
+        // Query status bar height for target Y
+        CGFloat statusBarHeight = 20.0;
+        if (@available(iOS 13.0, *)) {
+            UIWindow *keyWin = nil;
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            keyWin = [UIApplication sharedApplication].keyWindow;
+            #pragma clang diagnostic pop
+            if (keyWin && keyWin.windowScene && keyWin.windowScene.statusBarManager) {
+                statusBarHeight = keyWin.windowScene.statusBarManager.statusBarFrame.size.height;
+            }
+        }
+        if (statusBarHeight == 0) {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            statusBarHeight = [UIApplication sharedApplication].statusBarFrame.size.height;
+            #pragma clang diagnostic pop
+        }
+        
+        // targetY places it right in status bar overlay position (matching native iOS ringer HUD)
+        CGFloat targetY = (statusBarHeight > 24.0) ? 15.0 : 12.0;
         
         g_rcHUDWindow = [[UIWindow alloc] initWithFrame:CGRectMake(pillX, startY, pillWidth, pillHeight)];
         g_rcHUDWindow.windowLevel = UIWindowLevelAlert + 3000.0;
         g_rcHUDWindow.backgroundColor = [UIColor clearColor];
         g_rcHUDWindow.userInteractionEnabled = NO;
         
-        // Root VC
         UIViewController *rootVC = [[UIViewController alloc] init];
         rootVC.view.frame = CGRectMake(0, 0, pillWidth, pillHeight);
         rootVC.view.backgroundColor = [UIColor clearColor];
         g_rcHUDWindow.rootViewController = rootVC;
         
-        // Blur background
+        // Blur background (matching native dark translucent ringer HUD pill)
         UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
         UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
         blurView.frame = CGRectMake(0, 0, pillWidth, pillHeight);
@@ -665,39 +749,62 @@ static void rc_show_hud_toast(NSString *title, NSString *iconSymbol) {
         blurView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.15].CGColor;
         [rootVC.view addSubview:blurView];
         
-        // Shadow (on the root view layer)
+        // Shadow
         rootVC.view.layer.shadowColor = [UIColor blackColor].CGColor;
         rootVC.view.layer.shadowOffset = CGSizeMake(0, 4);
         rootVC.view.layer.shadowOpacity = 0.3;
         rootVC.view.layer.shadowRadius = 6.0;
         
-        // Content container inside VC view
-        CGFloat contentLeft = 16.0;
-        
-        // Optional SF Symbol Icon
-        if (iconSymbol) {
-            UIImage *iconImage = [UIImage systemImageNamed:iconSymbol];
+        CGFloat contentLeft = leftPadding;
+        if (hasIcon) {
+            UIImage *iconImage = nil;
+            if (@available(iOS 13.0, *)) {
+                UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:16.0 weight:UIImageSymbolWeightMedium];
+                iconImage = [UIImage systemImageNamed:iconSymbol withConfiguration:config];
+            } else {
+                iconImage = [UIImage systemImageNamed:iconSymbol];
+            }
+            
             if (iconImage) {
                 UIImageView *iconView = [[UIImageView alloc] initWithImage:iconImage];
                 iconView.tintColor = [UIColor whiteColor];
                 iconView.contentMode = UIViewContentModeScaleAspectFit;
-                iconView.frame = CGRectMake(16, (pillHeight - 20) / 2.0, 20, 20);
+                iconView.frame = CGRectMake(leftPadding, (pillHeight - 20) / 2.0, 20, 20);
                 [rootVC.view addSubview:iconView];
-                contentLeft = 44.0;
+                contentLeft = leftPadding + 20 + iconGap;
             }
         }
         
-        // Text Label
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(contentLeft, 0, pillWidth - contentLeft - 16.0, pillHeight)];
-        label.text = title;
-        label.textColor = [UIColor whiteColor];
-        label.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold];
-        label.textAlignment = iconSymbol ? NSTextAlignmentLeft : NSTextAlignmentCenter;
-        [rootVC.view addSubview:label];
+        // Text alignment: Center if no icon, Left if has icon
+        NSTextAlignment alignment = hasIcon ? NSTextAlignmentLeft : NSTextAlignmentCenter;
+        
+        if (hasSubtitle) {
+            CGFloat textWidth = pillWidth - contentLeft - rightPadding;
+            
+            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(contentLeft, 8.0, textWidth, 18.0)];
+            titleLabel.text = title;
+            titleLabel.textColor = [UIColor whiteColor];
+            titleLabel.font = titleFont;
+            titleLabel.textAlignment = alignment;
+            [rootVC.view addSubview:titleLabel];
+            
+            UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(contentLeft, 26.0, textWidth, 16.0)];
+            subLabel.text = subtitle;
+            subLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.6];
+            subLabel.font = subtitleFont;
+            subLabel.textAlignment = alignment;
+            [rootVC.view addSubview:subLabel];
+        } else {
+            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(contentLeft, 0, pillWidth - contentLeft - rightPadding, pillHeight)];
+            titleLabel.text = title;
+            titleLabel.textColor = [UIColor whiteColor];
+            titleLabel.font = titleFont;
+            titleLabel.textAlignment = alignment;
+            [rootVC.view addSubview:titleLabel];
+        }
         
         g_rcHUDWindow.hidden = NO;
         
-        // Spring slide-down animation
         [UIView animateWithDuration:0.5
                               delay:0.0
              usingSpringWithDamping:0.75
@@ -707,7 +814,6 @@ static void rc_show_hud_toast(NSString *title, NSString *iconSymbol) {
                              g_rcHUDWindow.frame = CGRectMake(pillX, targetY, pillWidth, pillHeight);
                          }
                          completion:^(BOOL finished) {
-                             // Slide back up after 2.0s
                              [UIView animateWithDuration:0.4
                                                    delay:2.0
                                                  options:UIViewAnimationOptionCurveEaseInOut
@@ -751,7 +857,7 @@ static void toggle_audiomix(BOOL state) {
 
         SRLog(@"AudioMix Enabled toggled to: %@", state ? @"YES" : @"NO");
 
-        rc_show_hud_toast(state ? @"AudioMix: Enabled" : @"AudioMix: Disabled", @"music.note");
+        rc_show_hud_toast(@"AudioMix", state ? @"Enabled" : @"Disabled", @"music.note");
     } @catch (NSException *e) {
         SRLog(@"EXCEPTION in toggle_audiomix: %@", e);
     }
@@ -4804,36 +4910,34 @@ static NSString *handle_command(NSString *cmd) {
             return [NSString stringWithFormat:@"AudioMix %@\n", !current ? @"Enabled" : @"Disabled"];
         }
     } else if ([cleanCmd isEqualToString:@"toast"]) {
-        rc_show_hud_toast(@"Test Toast", @"bell");
+        rc_show_hud_toast(@"Test Toast", nil, nil);
         return @"Toast displayed\n";
     } else if ([cleanCmd hasPrefix:@"toast "]) {
-        NSString *args = [[cleanCmd substringFromIndex:6] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        NSString *message = nil;
+        NSString *argsStr = [[cleanCmd substringFromIndex:6] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSArray *arguments = rc_parse_quoted_arguments(argsStr);
+        
+        NSString *title = nil;
+        NSString *subtitle = nil;
         NSString *icon = nil;
         
-        if ([args hasPrefix:@"\""]) {
-            NSRange closeQuote = [args rangeOfString:@"\"" options:0 range:NSMakeRange(1, args.length - 1)];
-            if (closeQuote.location != NSNotFound) {
-                message = [args substringWithRange:NSMakeRange(1, closeQuote.location - 1)];
-                if (args.length > closeQuote.location + 1) {
-                    icon = [[args substringFromIndex:closeQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                    if (icon.length == 0) icon = nil;
-                }
-            }
-        }
-        
-        if (!message) {
-            NSRange spaceRange = [args rangeOfString:@" "];
-            if (spaceRange.location != NSNotFound) {
-                message = [args substringToIndex:spaceRange.location];
-                icon = [[args substringFromIndex:spaceRange.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (arguments.count >= 3) {
+            title = arguments[0];
+            subtitle = arguments[1];
+            icon = arguments[2];
+        } else if (arguments.count == 2) {
+            title = arguments[0];
+            // Check if second argument is a valid symbol image
+            if ([UIImage systemImageNamed:arguments[1]]) {
+                icon = arguments[1];
             } else {
-                message = args;
+                subtitle = arguments[1];
             }
+        } else if (arguments.count == 1) {
+            title = arguments[0];
         }
         
-        rc_show_hud_toast(message, icon ?: @"bell");
-        return [NSString stringWithFormat:@"Toast displayed: %@\n", message];
+        rc_show_hud_toast(title, subtitle, icon);
+        return [NSString stringWithFormat:@"Toast displayed: '%@' - '%@' (%@)\n", title ?: @"", subtitle ?: @"", icon ?: @"none"];
     } else if ([cleanCmd hasPrefix:@"dnd "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if ([subCmd isEqualToString:@"on"]) {

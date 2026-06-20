@@ -133,11 +133,14 @@
             @{ @"name": @"Low Power Mode Off", @"command": @"low power off", @"icon": @"battery.100" },
             @{ @"name": @"Low Power Mode Toggle", @"command": @"low power toggle", @"icon": @"battery.25" }
         ],
-        // Audio (ANC)
+        // Audio (ANC & AudioMix)
         @[
             @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
             @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
-            @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" }
+            @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
+            @{ @"name": @"AudioMix On", @"command": @"audiomix on", @"icon": @"music.note" },
+            @{ @"name": @"AudioMix Off", @"command": @"audiomix off", @"icon": @"music.note" },
+            @{ @"name": @"AudioMix Toggle", @"command": @"audiomix toggle", @"icon": @"music.note" }
         ],
         // Scripting & Logic
         @[

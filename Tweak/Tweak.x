@@ -626,6 +626,67 @@ static BOOL get_dnd_state() {
     return NO;
 }
 
+static void toggle_audiomix(BOOL state) {
+    @try {
+        CFStringRef appID = CFSTR("com.kingpuffdaddi.audiomixprefs");
+        CFPreferencesSetAppValue(CFSTR("isEnabled"), (__bridge CFNumberRef)@(state), appID);
+        CFPreferencesAppSynchronize(appID);
+
+        // Write directly to plist file paths as fallback/synchronization
+        NSString *prefix = @"";
+        if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb/usr/bin/nc"]) {
+            prefix = @"/var/jb";
+        }
+        NSArray *paths = @[
+            @"/var/mobile/Library/Preferences/com.kingpuffdaddi.audiomixprefs.plist",
+            [NSString stringWithFormat:@"%@/var/mobile/Library/Preferences/com.kingpuffdaddi.audiomixprefs.plist", prefix]
+        ];
+        for (NSString *path in paths) {
+            NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithContentsOfFile:path];
+            if (!dict) {
+                dict = [NSMutableDictionary dictionary];
+            }
+            dict[@"isEnabled"] = @(state);
+            [dict writeToFile:path atomically:YES];
+        }
+
+        // Post Darwin notification
+        notify_post("com.kingpuffdaddi.audiomixprefs/settingschanged");
+
+        SRLog(@"AudioMix Enabled toggled to: %@", state ? @"YES" : @"NO");
+    } @catch (NSException *e) {
+        SRLog(@"EXCEPTION in toggle_audiomix: %@", e);
+    }
+}
+
+static BOOL get_audiomix_state() {
+    @try {
+        Boolean valid;
+        Boolean val = CFPreferencesGetAppBooleanValue(CFSTR("isEnabled"), CFSTR("com.kingpuffdaddi.audiomixprefs"), &valid);
+        if (valid) return val;
+
+        // Fallback to reading file
+        NSString *prefix = @"";
+        if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb/usr/bin/nc"]) {
+            prefix = @"/var/jb";
+        }
+        NSArray *paths = @[
+            @"/var/mobile/Library/Preferences/com.kingpuffdaddi.audiomixprefs.plist",
+            [NSString stringWithFormat:@"%@/var/mobile/Library/Preferences/com.kingpuffdaddi.audiomixprefs.plist", prefix]
+        ];
+        for (NSString *path in paths) {
+            if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+                NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:path];
+                if (dict && dict[@"isEnabled"]) {
+                    return [dict[@"isEnabled"] boolValue];
+                }
+            }
+        }
+    } @catch (NSException *e) {
+        SRLog(@"EXCEPTION in get_audiomix_state: %@", e);
+    }
+    return YES; // Default to YES if not found/error
+}
 
 static void inject_hid_event(uint32_t page, uint32_t usage, uint64_t durationNs, IOOptionBits flags) {
     static dispatch_queue_t hidQueue;
@@ -4623,6 +4684,26 @@ static NSString *handle_command(NSString *cmd) {
             dispatch_async(dispatch_get_main_queue(), launchSpotify);
             return @"playing_spotify\n";
         }
+    } else if ([cleanCmd isEqualToString:@"audiomix"]) {
+        BOOL current = get_audiomix_state();
+        toggle_audiomix(!current);
+        return [NSString stringWithFormat:@"AudioMix %@\n", !current ? @"Enabled" : @"Disabled"];
+    } else if ([cleanCmd hasPrefix:@"audiomix "]) {
+        NSString *subCmd = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([subCmd isEqualToString:@"on"]) {
+            toggle_audiomix(YES);
+            return @"AudioMix Enabled\n";
+        } else if ([subCmd isEqualToString:@"off"]) {
+            toggle_audiomix(NO);
+            return @"AudioMix Disabled\n";
+        } else if ([subCmd isEqualToString:@"status"]) {
+            BOOL current = get_audiomix_state();
+            return current ? @"AudioMix ON\n" : @"AudioMix OFF\n";
+        } else if ([subCmd isEqualToString:@"toggle"]) {
+            BOOL current = get_audiomix_state();
+            toggle_audiomix(!current);
+            return [NSString stringWithFormat:@"AudioMix %@\n", !current ? @"Enabled" : @"Disabled"];
+        }
     } else if ([cleanCmd hasPrefix:@"dnd "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if ([subCmd isEqualToString:@"on"]) {
@@ -6119,6 +6200,7 @@ static void start_web_server() {
                                     @{@"command": @"wifi on/off", @"desc": @"Toggles: WiFi power"},
                                     @{@"command": @"airplane on/off", @"desc": @"Toggles: Airplane Mode power"},
                                     @{@"command": @"dnd on/off", @"desc": @"Toggles: Do Not Disturb Mode"},
+                                    @{@"command": @"audiomix on/off", @"desc": @"Toggles: AudioMix simultaneous playback"},
                                     @{@"command": @"low power on/off", @"desc": @"Toggles: Low Power Mode"},
                                     @{@"command": @"mute", @"desc": @"Toggles: System mute/silent mode"},
                                     @{@"command": @"rotate lock/unlock", @"desc": @"Toggles: Orientation lock state"},

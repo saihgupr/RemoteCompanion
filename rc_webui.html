@@ -911,6 +911,10 @@ let currentKey = null;
 let dialogCallback = null;
 let editMode = false;
 let cachedApps = [];
+try {
+  const saved = localStorage.getItem('rc_cached_apps');
+  if (saved) cachedApps = JSON.parse(saved);
+} catch (e) {}
 
 // ── Scroll-linked small title ─────────────────────────────────────────────────
 window.addEventListener('scroll', () => {
@@ -1097,9 +1101,9 @@ function nameForCmd(cmd) {
   if (lowCmd.startsWith('brightness '))   return `Set Brightness ${cmd.slice(11)}%`;
   if (lowCmd.startsWith('shortcut:'))     return `Shortcut: ${cmd.slice(9)}`;
   if (lowCmd.startsWith('uiopen ')) {
-    const bundleId = cmd.slice(7);
-    const app = cachedApps.find(a => a.bundleId === bundleId);
-    return `Open ${app ? app.name : bundleId}`;
+    const bundleId = cmd.slice(7).trim().toLowerCase();
+    const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
+    return `Open ${app ? app.name : cmd.slice(7).trim()}`;
   }
   // Touch gesture display names
   if (lowCmd.startsWith('tap '))   { const p=cmd.slice(4).trim().split(/\s+/); return `Tap (${p[0]||'?'}, ${p[1]||'?'})`; }
@@ -2069,6 +2073,79 @@ function changeToggleState(event, idx) {
   showSheet(toggleInfo.name, buttons);
 }
 
+function changeParamValue(event, idx) {
+  if (event) event.stopPropagation();
+  const actions = triggerData(currentKey).actions || [];
+  const action = actions[idx];
+  if (typeof action !== 'string') return;
+
+  const lower = action.toLowerCase();
+
+  const needsText = {
+    '__DELAY__':          { title:'Edit Delay',        msg:'Seconds:', type:'number', build: v => `delay ${v}` },
+    '__SET_VOLUME__':     { title:'Edit Volume',        msg:'Value (0-100):', type:'number', build: v => `set-vol ${Math.max(0,Math.min(100,+v||50))}` },
+    '__SET_BRIGHTNESS__': { title:'Edit Brightness',    msg:'Value (0-100):', type:'number', build: v => `brightness ${Math.max(0,Math.min(100,+v||50))}` },
+    '__SET_FLASHLIGHT__': { title:'Edit Flashlight %',      msg:'Value (0-100):', type:'number', build: v => `flashlight ${Math.max(0,Math.min(100,+v||50))}` },
+    '__BT_CONNECT__':     { title:'Edit BT Device', msg:'Device name:',   type:'text',   build: v => `bt connect ${v}` },
+    '__BT_DISCONNECT__':  { title:'Edit BT Disconnect', msg:'Device name:',   type:'text',   build: v => `bt disconnect ${v}` },
+    '__AIRPLAY_CONNECT__':{ title:'Edit AirPlay',  msg:'Device name:',   type:'text',   build: v => `airplay connect ${v}` },
+    '__SHORTCUT__':       { title:'Edit Shortcut',      msg:'Shortcut name:', type:'text',   build: v => `shortcut:${v}` },
+    '__OPEN_APP__':       { title:'Edit App',          msg:'Bundle ID:',     type:'text',   build: v => `uiopen ${v}` }
+  };
+
+  let typeKey = null;
+  let currentVal = '';
+
+  if (lower.startsWith('set-vol ')) {
+    typeKey = '__SET_VOLUME__';
+    currentVal = action.slice(8);
+  } else if (lower.startsWith('brightness ')) {
+    typeKey = '__SET_BRIGHTNESS__';
+    currentVal = action.slice(11);
+  } else if (lower.startsWith('flashlight ') || lower.startsWith('flash ')) {
+    const val = action.slice(lower.startsWith('flashlight ') ? 11 : 6);
+    if (!isNaN(val) && val.trim() !== '') {
+      typeKey = '__SET_FLASHLIGHT__';
+      currentVal = val;
+    }
+  } else if (lower.startsWith('delay ')) {
+    typeKey = '__DELAY__';
+    currentVal = action.slice(6);
+  } else if (lower.startsWith('shortcut:')) {
+    typeKey = '__SHORTCUT__';
+    currentVal = action.slice(9);
+  } else if (lower.startsWith('uiopen ')) {
+    typeKey = '__OPEN_APP__';
+    currentVal = action.slice(7);
+  } else if (lower.startsWith('airplay connect ')) {
+    typeKey = '__AIRPLAY_CONNECT__';
+    currentVal = action.slice(16);
+  } else if (lower.startsWith('bt connect ') || lower.startsWith('bluetooth connect ')) {
+    typeKey = '__BT_CONNECT__';
+    currentVal = action.slice(lower.startsWith('bt connect ') ? 11 : 18);
+  } else if (lower.startsWith('bt disconnect ') || lower.startsWith('bluetooth disconnect ')) {
+    typeKey = '__BT_DISCONNECT__';
+    currentVal = action.slice(lower.startsWith('bt disconnect ') ? 14 : 21);
+  }
+
+  if (typeKey && needsText[typeKey]) {
+    const d = needsText[typeKey];
+    let listId = null;
+    if (typeKey === '__OPEN_APP__') listId = 'app-datalist';
+    if (typeKey === '__BT_CONNECT__' || typeKey === '__BT_DISCONNECT__') listId = 'bt-datalist';
+    if (typeKey === '__AIRPLAY_CONNECT__') listId = 'airplay-datalist';
+    
+    if (listId) refreshDatalists();
+
+    showDialog(d.title, d.msg, currentVal, 'Save', val => {
+      if (!val) return;
+      actions[idx] = d.build(val);
+      saveConfig();
+      renderActionList();
+    }, d.type, listId);
+  }
+}
+
 function renderActionNameHtml(action, idx) {
   const toggleInfo = parseToggleCmd(action);
   if (toggleInfo) {
@@ -2100,9 +2177,9 @@ function renderActionNameHtml(action, idx) {
       paramText = action.slice(9);
     } else if (lower.startsWith('uiopen ')) {
       baseText = 'Open ';
-      const bundleId = action.slice(7);
-      const app = cachedApps.find(a => a.bundleId === bundleId);
-      paramText = app ? app.name : bundleId;
+      const bundleId = action.slice(7).trim().toLowerCase();
+      const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
+      paramText = app ? app.name : action.slice(7).trim();
     } else if (lower.startsWith('airplay connect ')) {
       baseText = 'AirPlay Connect ';
       paramText = action.slice(16);
@@ -2115,7 +2192,7 @@ function renderActionNameHtml(action, idx) {
     }
 
     if (baseText && paramText) {
-      return `${escHtml(baseText)}<span style="color:#0a84ff;cursor:pointer;font-weight:500;">${escHtml(paramText)}</span>`;
+      return `${escHtml(baseText)}<span style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="changeParamValue(event, ${idx})">${escHtml(paramText)}</span>`;
     }
   }
 
@@ -2459,8 +2536,9 @@ function schedDialogOk() {
 function generateNotifName(bundleId, textMatch) {
   let appName = 'Any App';
   if (bundleId) {
-    const app = cachedApps.find(a => a.bundleId === bundleId);
-    appName = app ? app.name : bundleId;
+    const bid = bundleId.trim().toLowerCase();
+    const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bid);
+    appName = app ? app.name : bundleId.trim();
   }
   
   if (bundleId) {
@@ -2551,6 +2629,10 @@ async function fetchDevices() {
 async function refreshDatalists() {
   console.log('UI: refreshing datalists...');
   const data = await refreshDatalistsInternal();
+  renderAll();
+  if (currentKey && document.getElementById('actions-panel').classList.contains('active')) {
+    renderActionList();
+  }
   return data;
 }
 
@@ -2561,6 +2643,9 @@ async function refreshDatalistsInternal() {
   const appList = document.getElementById('app-datalist');
   if (appList && data.apps) {
     cachedApps = data.apps;
+    try {
+      localStorage.setItem('rc_cached_apps', JSON.stringify(cachedApps));
+    } catch (e) {}
     appList.innerHTML = '';
     console.log(`UI: Populating app-datalist with ${data.apps.length} items`);
     data.apps.forEach(app => {

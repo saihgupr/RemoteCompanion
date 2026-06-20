@@ -146,7 +146,7 @@ static id g_actionClipboard = nil;
     UIMenu *shareMenu = [UIMenu menuWithTitle:@"" children:menuActions];
     UIBarButtonItem *moreButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis.circle"] menu:shareMenu];
     
-    NSMutableArray *rightItems = [NSMutableArray arrayWithArray:@[plusButton, moreButton]];
+    NSMutableArray *rightItems = [NSMutableArray arrayWithArray:@[moreButton, plusButton]];
     
     // Only show Settings Button if the trigger is configurable
     BOOL isConfigurable = [_triggerKey hasPrefix:@"sched_"] ||

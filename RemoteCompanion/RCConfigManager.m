@@ -29,8 +29,18 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     self = [super init];
     if (self) {
         [self loadConfig];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self 
+                                                 selector:@selector(handleAppDidBecomeActive:) 
+                                                     name:UIApplicationDidBecomeActiveNotification 
+                                                   object:nil];
     }
     return self;
+}
+
+- (void)handleAppDidBecomeActive:(NSNotification *)note {
+    [self loadConfig];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RCConfigChangedNotification object:nil];
 }
 
 - (void)loadConfig {

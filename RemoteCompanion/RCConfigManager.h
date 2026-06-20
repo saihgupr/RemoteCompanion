@@ -31,6 +31,7 @@
 - (NSArray<NSDictionary *> *)notificationTriggers;
 - (void)setNotificationTriggers:(NSArray<NSDictionary *> *)triggers;
 - (void)saveConfig;
+- (void)loadConfig;
 - (void)stopBackgroundNFC;
 
 // UI Color Tweaks

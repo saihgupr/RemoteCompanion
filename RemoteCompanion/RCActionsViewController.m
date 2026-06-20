@@ -163,7 +163,12 @@ static id g_actionClipboard = nil;
     // Listen for color tweak changes
     [[NSNotificationCenter defaultCenter] addObserver:self 
                                              selector:@selector(handleTweaksChanged:) 
-                                                 name:@"RCConfigTweaksChangedNotification" 
+                                                  name:@"RCConfigTweaksChangedNotification" 
+                                               object:nil];
+    // Listen for config changes
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(handleConfigChanged:) 
+                                                  name:RCConfigChangedNotification 
                                                object:nil];
     [self applyTweaks];
     
@@ -187,6 +192,13 @@ static id g_actionClipboard = nil;
 
 - (void)handleTweaksChanged:(NSNotification *)note {
     [self applyTweaks];
+}
+
+- (void)handleConfigChanged:(NSNotification *)note {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        _actions = [[[RCConfigManager sharedManager] actionsForTrigger:_triggerKey] mutableCopy];
+        [self.tableView reloadData];
+    });
 }
 
 - (void)applyTweaks {

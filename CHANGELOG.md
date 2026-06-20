@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 - **Status Bar Double Tap Trigger**: Added a new gesture trigger to bind actions to double-tapping the status bar.
 - **AudioMix Integration**: Added first-class control actions (`audiomix`, `audiomix on`, `audiomix off`, `audiomix toggle`, `audiomix status`) to control KingPuffdaddi's AudioMix tweak settings.
 - **Heads-Up Display (HUD) Toast**: Implemented a system-wide dropdown glassmorphism HUD toast notification that animates with spring physics to confirm toggling states.
-- **Consolidated Toggle Actions**: Simplified the Action Picker by consolidating triple entries (On/Off/Toggle) for toggleable actions (Low Power Mode, Airplane Mode, Do Not Disturb, Flashlight, Wi-Fi, Bluetooth, Rotation Lock, Silent/Ring Vibration, and AudioMix) into single entries in both the iOS Companion App and the Web UI. When added to the action sequence, the state is displayed as an interactive blue link that can be clicked/tapped to open a native/web slide-up sheet to change the state dynamically.
+- **Consolidated Toggle Actions**: Consolidated redundant toggle options (On/Off/Toggle) into single entries in the Action Picker for both the iOS app and Web UI, displaying states as interactive links that open slide-up sheets to edit them.
 
 
 ## [3.3.1] - 2026-06-19

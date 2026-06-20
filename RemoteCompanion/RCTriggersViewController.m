@@ -88,6 +88,11 @@
     self.tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 0.1)];
     self.tableView.tableHeaderView.clipsToBounds = YES;
 
+    // Pull-to-refresh
+    self.refreshControl = [[UIRefreshControl alloc] init];
+    self.refreshControl.tintColor = [UIColor systemGrayColor];
+    [self.refreshControl addTarget:self action:@selector(handleRefresh) forControlEvents:UIControlEventValueChanged];
+
     // Edit button will be shown/hidden based on favorites
 
     UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] 
@@ -185,6 +190,15 @@
 - (void)handleConfigChanged:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self reloadTableData];
+    });
+}
+
+- (void)handleRefresh {
+    [[RCConfigManager sharedManager] loadConfig];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RCConfigChangedNotification object:nil];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self.refreshControl endRefreshing];
     });
 }
 

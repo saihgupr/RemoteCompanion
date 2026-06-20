@@ -28,6 +28,64 @@ static id g_actionClipboard = nil;
     return [[RCConfigManager sharedManager] nameForCommand:cmd truncate:YES];
 }
 
+- (NSAttributedString *)attributedDisplayNameForCommand:(NSString *)cmd {
+    if (![cmd isKindOfClass:[NSString class]]) return nil;
+    NSString *lower = [cmd lowercaseString];
+    NSString *baseText = nil;
+    NSString *paramText = nil;
+    
+    UIColor *accentColor = [UIColor systemBlueColor];
+    
+    if ([lower hasPrefix:@"set-vol "]) {
+        baseText = @"Set Volume ";
+        paramText = [NSString stringWithFormat:@"%@%%", [cmd substringFromIndex:8]];
+    } else if ([lower hasPrefix:@"brightness "]) {
+        baseText = @"Set Brightness ";
+        paramText = [NSString stringWithFormat:@"%@%%", [cmd substringFromIndex:11]];
+    } else if ([lower hasPrefix:@"flashlight "] || [lower hasPrefix:@"flash "]) {
+        NSString *val = [cmd substringFromIndex:[lower hasPrefix:@"flashlight "] ? 11 : 6];
+        // Only if it's a number (flashlight intensity)
+        NSScanner *scanner = [NSScanner scannerWithString:val];
+        BOOL isNumeric = [scanner scanFloat:NULL] && [scanner isAtEnd];
+        if (isNumeric) {
+            baseText = @"Flashlight ";
+            paramText = [NSString stringWithFormat:@"%@%%", val];
+        }
+    } else if ([lower hasPrefix:@"delay "]) {
+        baseText = @"Wait ";
+        paramText = [NSString stringWithFormat:@"%@s", [cmd substringFromIndex:6]];
+    } else if ([lower hasPrefix:@"shortcut:"]) {
+        baseText = @"Shortcut: ";
+        paramText = [cmd substringFromIndex:9];
+    } else if ([lower hasPrefix:@"uiopen "]) {
+        baseText = @"Open: ";
+        paramText = [cmd substringFromIndex:7];
+    } else if ([lower hasPrefix:@"airplay connect "]) {
+        baseText = @"AirPlay Connect ";
+        paramText = [cmd substringFromIndex:16];
+    } else if ([lower hasPrefix:@"bt connect "] || [lower hasPrefix:@"bluetooth connect "]) {
+        baseText = @"Connect ";
+        paramText = [cmd substringFromIndex:[lower hasPrefix:@"bt connect "] ? 11 : 18];
+    } else if ([lower hasPrefix:@"bt disconnect "] || [lower hasPrefix:@"bluetooth disconnect "]) {
+        baseText = @"Disconnect ";
+        paramText = [cmd substringFromIndex:[lower hasPrefix:@"bt disconnect "] ? 14 : 21];
+    }
+    
+    if (baseText && paramText) {
+        NSString *fullText = [NSString stringWithFormat:@"%@%@", baseText, paramText];
+        NSMutableAttributedString *attrStr = [[NSMutableAttributedString alloc] initWithString:fullText];
+        NSRange baseRange = NSMakeRange(0, baseText.length);
+        NSRange paramRange = NSMakeRange(baseText.length, paramText.length);
+        
+        [attrStr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:17 weight:UIFontWeightMedium] range:NSMakeRange(0, fullText.length)];
+        [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor labelColor] range:baseRange];
+        [attrStr addAttribute:NSForegroundColorAttributeName value:accentColor range:paramRange];
+        return attrStr;
+    }
+    
+    return nil;
+}
+
 - (NSString *)iconForCommand:(id)cmd {
     return [[RCConfigManager sharedManager] iconForCommand:cmd];
 }
@@ -1371,13 +1429,7 @@ static id g_actionClipboard = nil;
         NSRange baseRange = NSMakeRange(0, baseName.length + 1); // includes the space
         NSRange suffixRange = [fullText rangeOfString:suffix options:NSBackwardsSearch];
         
-        UIColor *accentColor = [UIColor colorWithDynamicProvider:^UIColor * _Nonnull(UITraitCollection * _Nonnull traitCollection) {
-            if (traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
-                return [UIColor colorWithRed:242/255.0 green:195/255.0 blue:80/255.0 alpha:1.0];
-            } else {
-                return [UIColor colorWithRed:200/255.0 green:150/255.0 blue:40/255.0 alpha:1.0]; // amber in light mode
-            }
-        }];
+        UIColor *accentColor = [UIColor systemBlueColor];
         
         [attrStr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:17 weight:UIFontWeightMedium] range:NSMakeRange(0, fullText.length)];
         [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor labelColor] range:baseRange];
@@ -1388,46 +1440,53 @@ static id g_actionClipboard = nil;
         subtitle = nil;
     } else {
         cell.textLabel.attributedText = nil; // Clear any attributed text
-        if ([action hasPrefix:@"exec "]) {
-            cell.textLabel.text = [action substringFromIndex:5];
-            subtitle = @"Terminal Command";
-        } else if ([action hasPrefix:@"root "]) {
-            cell.textLabel.text = [action substringFromIndex:5];
-            subtitle = @"Root Command";
-        } else if ([action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
-            cell.textLabel.text = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
-            subtitle = @"Lua Script";
-        } else if ([action hasPrefix:@"delay "]) {
-            cell.textLabel.text = [NSString stringWithFormat:@"Wait %@s", [action substringFromIndex:6]];
-            subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
-        } else if ([action hasPrefix:@"shortcut:"]) {
-            cell.textLabel.text = cleanName;
-            subtitle = @"Siri Shortcut";
-        } else if ([action hasPrefix:@"uiopen "]) {
-            cell.textLabel.text = cleanName;
-            subtitle = @"Application";
-        } else if ([action hasPrefix:@"airplay connect "]) {
-            cell.textLabel.text = cleanName;
-            subtitle = @"AirPlay Device";
-        } else if ([action hasPrefix:@"bt connect "] || [action hasPrefix:@"bluetooth connect "]) {
-            cell.textLabel.text = cleanName;
-            subtitle = @"Bluetooth Device";
-        } else if ([action hasPrefix:@"bt disconnect "] || [action hasPrefix:@"bluetooth disconnect "]) {
-            cell.textLabel.text = cleanName;
-            subtitle = nil;
-        } else if ([action hasPrefix:@"airplay disconnect"]) {
-            cell.textLabel.text = cleanName;
-            subtitle = nil;
-        } else if ([action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
-            cell.textLabel.text = cleanName;
+        
+        NSAttributedString *paramAttrStr = [self attributedDisplayNameForCommand:action];
+        if (paramAttrStr) {
+            cell.textLabel.attributedText = paramAttrStr;
             subtitle = nil;
         } else {
-            cell.textLabel.text = cleanName;
-            subtitle = nil;
+            if ([action hasPrefix:@"exec "]) {
+                cell.textLabel.text = [action substringFromIndex:5];
+                subtitle = @"Terminal Command";
+            } else if ([action hasPrefix:@"root "]) {
+                cell.textLabel.text = [action substringFromIndex:5];
+                subtitle = @"Root Command";
+            } else if ([action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
+                cell.textLabel.text = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
+                subtitle = @"Lua Script";
+            } else if ([action hasPrefix:@"delay "]) {
+                cell.textLabel.text = [NSString stringWithFormat:@"Wait %@s", [action substringFromIndex:6]];
+                subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
+            } else if ([action hasPrefix:@"shortcut:"]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"Siri Shortcut";
+            } else if ([action hasPrefix:@"uiopen "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"Application";
+            } else if ([action hasPrefix:@"airplay connect "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"AirPlay Device";
+            } else if ([action hasPrefix:@"bt connect "] || [action hasPrefix:@"bluetooth connect "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"Bluetooth Device";
+            } else if ([action hasPrefix:@"bt disconnect "] || [action hasPrefix:@"bluetooth disconnect "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = nil;
+            } else if ([action hasPrefix:@"airplay disconnect"]) {
+                cell.textLabel.text = cleanName;
+                subtitle = nil;
+            } else if ([action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
+                cell.textLabel.text = cleanName;
+                subtitle = nil;
+            } else {
+                cell.textLabel.text = cleanName;
+                subtitle = nil;
+            }
         }
     }
 
-    if (!toggleInfo) {
+    if (cell.textLabel.attributedText == nil) {
         cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
         cell.textLabel.textColor = [UIColor labelColor];
     }

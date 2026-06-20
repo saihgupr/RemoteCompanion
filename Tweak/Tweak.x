@@ -739,21 +739,13 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
         rootVC.view.backgroundColor = [UIColor clearColor];
         g_rcHUDWindow.rootViewController = rootVC;
         
-        // Blur background (matching native dark translucent ringer HUD pill)
+        // Blur background (matching native dark translucent ringer HUD pill - no border)
         UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
         UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
         blurView.frame = CGRectMake(0, 0, pillWidth, pillHeight);
         blurView.layer.cornerRadius = pillHeight / 2.0;
         blurView.layer.masksToBounds = YES;
-        blurView.layer.borderWidth = 0.5;
-        blurView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.15].CGColor;
         [rootVC.view addSubview:blurView];
-        
-        // Shadow
-        rootVC.view.layer.shadowColor = [UIColor blackColor].CGColor;
-        rootVC.view.layer.shadowOffset = CGSizeMake(0, 4);
-        rootVC.view.layer.shadowOpacity = 0.3;
-        rootVC.view.layer.shadowRadius = 6.0;
         
         CGFloat contentLeft = leftPadding;
         if (hasIcon) {
@@ -795,7 +787,10 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
             subLabel.textAlignment = alignment;
             [rootVC.view addSubview:subLabel];
         } else {
-            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(contentLeft, 0, pillWidth - contentLeft - rightPadding, pillHeight)];
+            // For single-line (no subtitle), use full pill width so centering is accurate
+            CGFloat labelX = hasIcon ? contentLeft : 0;
+            CGFloat labelW = hasIcon ? (pillWidth - contentLeft - rightPadding) : pillWidth;
+            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(labelX, 0, labelW, pillHeight)];
             titleLabel.text = title;
             titleLabel.textColor = [UIColor whiteColor];
             titleLabel.font = titleFont;

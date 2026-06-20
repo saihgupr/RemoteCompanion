@@ -626,6 +626,102 @@ static BOOL get_dnd_state() {
     return NO;
 }
 
+static UIWindow *g_rcHUDWindow = nil;
+
+static void rc_show_hud_toast(NSString *title, NSString *iconSymbol) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (g_rcHUDWindow) {
+            g_rcHUDWindow.hidden = YES;
+            g_rcHUDWindow = nil;
+        }
+        
+        CGRect screenBounds = [UIScreen mainScreen].bounds;
+        CGFloat screenWidth = screenBounds.size.width;
+        
+        CGFloat pillWidth = 220.0;
+        CGFloat pillHeight = 44.0;
+        CGFloat pillX = (screenWidth - pillWidth) / 2.0;
+        CGFloat startY = -pillHeight - 20.0;
+        CGFloat targetY = 55.0; // Sits nicely below status bar/notch
+        
+        g_rcHUDWindow = [[UIWindow alloc] initWithFrame:CGRectMake(pillX, startY, pillWidth, pillHeight)];
+        g_rcHUDWindow.windowLevel = UIWindowLevelAlert + 3000.0;
+        g_rcHUDWindow.backgroundColor = [UIColor clearColor];
+        g_rcHUDWindow.userInteractionEnabled = NO;
+        
+        // Root VC
+        UIViewController *rootVC = [[UIViewController alloc] init];
+        rootVC.view.frame = CGRectMake(0, 0, pillWidth, pillHeight);
+        rootVC.view.backgroundColor = [UIColor clearColor];
+        g_rcHUDWindow.rootViewController = rootVC;
+        
+        // Blur background
+        UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
+        UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+        blurView.frame = CGRectMake(0, 0, pillWidth, pillHeight);
+        blurView.layer.cornerRadius = pillHeight / 2.0;
+        blurView.layer.masksToBounds = YES;
+        blurView.layer.borderWidth = 0.5;
+        blurView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.15].CGColor;
+        [rootVC.view addSubview:blurView];
+        
+        // Shadow (on the root view layer)
+        rootVC.view.layer.shadowColor = [UIColor blackColor].CGColor;
+        rootVC.view.layer.shadowOffset = CGSizeMake(0, 4);
+        rootVC.view.layer.shadowOpacity = 0.3;
+        rootVC.view.layer.shadowRadius = 6.0;
+        
+        // Content container inside VC view
+        CGFloat contentLeft = 16.0;
+        
+        // Optional SF Symbol Icon
+        if (iconSymbol) {
+            UIImage *iconImage = [UIImage systemImageNamed:iconSymbol];
+            if (iconImage) {
+                UIImageView *iconView = [[UIImageView alloc] initWithImage:iconImage];
+                iconView.tintColor = [UIColor whiteColor];
+                iconView.contentMode = UIViewContentModeScaleAspectFit;
+                iconView.frame = CGRectMake(16, (pillHeight - 20) / 2.0, 20, 20);
+                [rootVC.view addSubview:iconView];
+                contentLeft = 44.0;
+            }
+        }
+        
+        // Text Label
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(contentLeft, 0, pillWidth - contentLeft - 16.0, pillHeight)];
+        label.text = title;
+        label.textColor = [UIColor whiteColor];
+        label.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold];
+        label.textAlignment = iconSymbol ? NSTextAlignmentLeft : NSTextAlignmentCenter;
+        [rootVC.view addSubview:label];
+        
+        g_rcHUDWindow.hidden = NO;
+        
+        // Spring slide-down animation
+        [UIView animateWithDuration:0.5
+                              delay:0.0
+             usingSpringWithDamping:0.75
+              initialSpringVelocity:1.0
+                            options:UIViewAnimationOptionCurveEaseInOut
+                         animations:^{
+                             g_rcHUDWindow.frame = CGRectMake(pillX, targetY, pillWidth, pillHeight);
+                         }
+                         completion:^(BOOL finished) {
+                             // Slide back up after 2.0s
+                             [UIView animateWithDuration:0.4
+                                                   delay:2.0
+                                                 options:UIViewAnimationOptionCurveEaseInOut
+                                              animations:^{
+                                                  g_rcHUDWindow.frame = CGRectMake(pillX, startY, pillWidth, pillHeight);
+                                              }
+                                              completion:^(BOOL finished2) {
+                                                  g_rcHUDWindow.hidden = YES;
+                                                  g_rcHUDWindow = nil;
+                                              }];
+                         }];
+    });
+}
+
 static void toggle_audiomix(BOOL state) {
     @try {
         CFStringRef appID = CFSTR("com.kingpuffdaddi.audiomixprefs");
@@ -654,6 +750,8 @@ static void toggle_audiomix(BOOL state) {
         notify_post("com.kingpuffdaddi.audiomixprefs/settingschanged");
 
         SRLog(@"AudioMix Enabled toggled to: %@", state ? @"YES" : @"NO");
+
+        rc_show_hud_toast(state ? @"AudioMix: Enabled" : @"AudioMix: Disabled", @"music.note");
     } @catch (NSException *e) {
         SRLog(@"EXCEPTION in toggle_audiomix: %@", e);
     }
@@ -4705,6 +4803,37 @@ static NSString *handle_command(NSString *cmd) {
             toggle_audiomix(!current);
             return [NSString stringWithFormat:@"AudioMix %@\n", !current ? @"Enabled" : @"Disabled"];
         }
+    } else if ([cleanCmd isEqualToString:@"toast"]) {
+        rc_show_hud_toast(@"Test Toast", @"bell");
+        return @"Toast displayed\n";
+    } else if ([cleanCmd hasPrefix:@"toast "]) {
+        NSString *args = [[cleanCmd substringFromIndex:6] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *message = nil;
+        NSString *icon = nil;
+        
+        if ([args hasPrefix:@"\""]) {
+            NSRange closeQuote = [args rangeOfString:@"\"" options:0 range:NSMakeRange(1, args.length - 1)];
+            if (closeQuote.location != NSNotFound) {
+                message = [args substringWithRange:NSMakeRange(1, closeQuote.location - 1)];
+                if (args.length > closeQuote.location + 1) {
+                    icon = [[args substringFromIndex:closeQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    if (icon.length == 0) icon = nil;
+                }
+            }
+        }
+        
+        if (!message) {
+            NSRange spaceRange = [args rangeOfString:@" "];
+            if (spaceRange.location != NSNotFound) {
+                message = [args substringToIndex:spaceRange.location];
+                icon = [[args substringFromIndex:spaceRange.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            } else {
+                message = args;
+            }
+        }
+        
+        rc_show_hud_toast(message, icon ?: @"bell");
+        return [NSString stringWithFormat:@"Toast displayed: %@\n", message];
     } else if ([cleanCmd hasPrefix:@"dnd "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if ([subCmd isEqualToString:@"on"]) {

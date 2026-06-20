@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.0] - 2026-06-20
+
+### Added
+- **Status Bar Double Tap Trigger**: Added a new gesture trigger to bind actions to double-tapping the status bar.
+- **AudioMix Integration**: Added first-class control actions (`audiomix`, `audiomix on`, `audiomix off`, `audiomix toggle`, `audiomix status`) to control KingPuffdaddi's AudioMix tweak settings.
+- **Heads-Up Display (HUD) Toast**: Implemented a system-wide dropdown glassmorphism HUD toast notification that animates with spring physics to confirm AudioMix toggling states.
+
 ## [3.3.1] - 2026-06-19
 
 ### Fixed

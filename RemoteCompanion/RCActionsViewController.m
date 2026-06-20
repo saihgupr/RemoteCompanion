@@ -121,13 +121,34 @@ static id g_actionClipboard = nil;
     
     self.title = [[RCConfigManager sharedManager] displayNameForTrigger:_triggerKey];
     
-    // Setup Navigation Items
-    UIBarButtonItem *addButton = [[UIBarButtonItem alloc] 
-        initWithBarButtonSystemItem:UIBarButtonSystemItemAdd 
-        target:self 
-        action:@selector(addAction)];
-        
-    self.navigationItem.rightBarButtonItem = addButton;
+    // Setup Navigation Items with UIMenu (Add, Import, Export)
+    NSMutableArray *menuActions = [NSMutableArray array];
+    
+    [menuActions addObject:[UIAction actionWithTitle:@"Add Action" 
+                                               image:[UIImage systemImageNamed:@"plus"] 
+                                          identifier:nil 
+                                             handler:^(__kindof UIAction * _Nonnull action) {
+        [self addAction];
+    }]];
+    
+    [menuActions addObject:[UIAction actionWithTitle:@"Import Actions" 
+                                               image:[UIImage systemImageNamed:@"square.and.arrow.down"] 
+                                          identifier:nil 
+                                             handler:^(__kindof UIAction * _Nonnull action) {
+        [self importActions];
+    }]];
+    
+    [menuActions addObject:[UIAction actionWithTitle:@"Export Actions" 
+                                               image:[UIImage systemImageNamed:@"square.and.arrow.up"] 
+                                          identifier:nil 
+                                             handler:^(__kindof UIAction * _Nonnull action) {
+        [self exportActions];
+    }]];
+    
+    UIMenu *actionMenu = [UIMenu menuWithTitle:@"" children:menuActions];
+    UIBarButtonItem *menuButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"plus"] menu:actionMenu];
+    
+    self.navigationItem.rightBarButtonItem = menuButton;
 
     // Add Settings Button for configurable triggers
     UIBarButtonItem *settingsButton = [[UIBarButtonItem alloc] 
@@ -136,7 +157,7 @@ static id g_actionClipboard = nil;
         target:self 
         action:@selector(editTriggerSettings)];
     
-    self.navigationItem.rightBarButtonItems = @[addButton, settingsButton];
+    self.navigationItem.rightBarButtonItems = @[menuButton, settingsButton];
 
     // Add tap gesture to title if it's an NFC trigger
     if ([_triggerKey hasPrefix:@"nfc_"]) {
@@ -293,6 +314,114 @@ static id g_actionClipboard = nil;
                 ((UILabel *)self.navigationItem.titleView).text = newName;
                 [self.navigationItem.titleView sizeToFit];
             }
+        }
+    }]];
+    
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)showHUDToast:(NSString *)title subtitle:(NSString *)subtitle icon:(NSString *)iconName {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                   message:subtitle
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:alert animated:YES completion:nil];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [alert dismissViewControllerAnimated:YES completion:nil];
+    });
+}
+
+- (void)exportActions {
+    if (_actions.count == 0) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No Actions"
+                                                                       message:@"There are no actions in this sequence to export."
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    
+    NSError *error = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:_actions options:NSJSONWritingPrettyPrinted error:&error];
+    if (error || !jsonData) {
+        NSLog(@"Failed to serialize actions for export: %@", error);
+        return;
+    }
+    
+    NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+    [UIPasteboard generalPasteboard].string = jsonString;
+    
+    [self showHUDToast:@"Sequence Copied" subtitle:@"Ready to share or paste to AI" icon:@"square.and.arrow.up"];
+}
+
+- (void)importActions {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Actions"
+                                                                   message:@"Paste JSON code or newline-separated command lines below:"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    
+    [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
+        textField.placeholder = @"Paste action code here…";
+        textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        
+        NSString *clip = [[UIPasteboard generalPasteboard].string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (clip.length > 0) {
+            textField.text = clip;
+        }
+    }];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Import" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        UITextField *textField = alert.textFields.firstObject;
+        NSString *text = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (text.length == 0) return;
+        
+        NSArray *newCommands = nil;
+        
+        if ([text hasPrefix:@"["] && [text hasSuffix:@"]"]) {
+            NSError *jsonErr = nil;
+            id parsedObj = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&jsonErr];
+            if (!jsonErr && [parsedObj isKindOfClass:[NSArray class]]) {
+                newCommands = parsedObj;
+            }
+        }
+        
+        if (!newCommands) {
+            NSMutableArray *lines = [NSMutableArray array];
+            NSArray *split = [text componentsSeparatedByString:@"\n"];
+            for (NSString *rawLine in split) {
+                NSString *line = [rawLine stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (line.length > 0) {
+                    [lines addObject:line];
+                }
+            }
+            if (lines.count > 0) {
+                newCommands = lines;
+            }
+        }
+        
+        if (newCommands.count > 0) {
+            NSMutableArray *validCmds = [NSMutableArray array];
+            for (id cmd in newCommands) {
+                if ([cmd isKindOfClass:[NSString class]]) {
+                    NSString *cleanCmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    if (cleanCmd.length > 0) {
+                        [validCmds addObject:cleanCmd];
+                    }
+                }
+            }
+            
+            if (validCmds.count > 0) {
+                [_actions addObjectsFromArray:validCmds];
+                [self saveActions];
+                [self.tableView reloadData];
+                
+                [self showHUDToast:@"Import Successful" 
+                          subtitle:[NSString stringWithFormat:@"Added %lu action(s) to sequence.", (unsigned long)validCmds.count] 
+                              icon:@"square.and.arrow.down"];
+            } else {
+                [self showHUDToast:@"Import Failed" subtitle:@"No valid action strings found." icon:@"exclamationmark.triangle"];
+            }
+        } else {
+            [self showHUDToast:@"Import Failed" subtitle:@"Could not parse commands." icon:@"exclamationmark.triangle"];
         }
     }]];
     

@@ -15,3 +15,17 @@ Shortcuts.sqlite*
 .git-backup-*/
 deploy_log.txt
 deploy_output.log
+
+# Crash logs & device diagnostics
+*.ips
+
+# Debug/temp output files
+debug_logs.txt
+debug_output.txt
+oslog.txt
+
+# Stray test/scratch files
+test_script.js
+.test.js
+*_test.sh
+rc_test.sh

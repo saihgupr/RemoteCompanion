@@ -328,13 +328,26 @@ static id g_actionClipboard = nil;
 }
 
 - (void)showHUDToast:(NSString *)title subtitle:(NSString *)subtitle icon:(NSString *)iconName {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
-                                                                   message:subtitle
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [self presentViewController:alert animated:YES completion:nil];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [alert dismissViewControllerAnimated:YES completion:nil];
-    });
+    NSString *safeTitle = [title stringByReplacingOccurrencesOfString:@"\"" withString:@"'"];
+    NSString *safeSubtitle = [subtitle stringByReplacingOccurrencesOfString:@"\"" withString:@"'"];
+    NSString *safeIcon = [iconName stringByReplacingOccurrencesOfString:@"\"" withString:@"'"];
+
+    NSString *cmd = [NSString stringWithFormat:@"toast \"%@\" \"%@\" \"%@\"", 
+                     safeTitle ?: @"", 
+                     safeSubtitle ?: @"", 
+                     safeIcon ?: @""];
+                     
+    [[RCServerClient sharedClient] executeCommand:cmd completion:^(NSString * _Nullable output, NSError * _Nullable error) {
+        if (error) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                           message:subtitle
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [self presentViewController:alert animated:YES completion:nil];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [alert dismissViewControllerAnimated:YES completion:nil];
+            });
+        }
+    }];
 }
 
 - (void)exportActions {
@@ -357,7 +370,7 @@ static id g_actionClipboard = nil;
     NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
     [UIPasteboard generalPasteboard].string = jsonString;
     
-    [self showHUDToast:@"Code Copied!" subtitle:@"Copied to clipboard" icon:@"doc.on.doc"];
+    [self showHUDToast:@"Copied to Clipboard" subtitle:nil icon:@"doc.on.doc"];
 }
 
 - (void)importActions {

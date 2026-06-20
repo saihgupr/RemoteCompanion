@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
   - Added option to **Append** vs **Replace** when importing sequences on both the iOS app and the Web UI.
   - Fixed a bug to support importing full dictionary block structures (like `if` / `else_if`) rather than discarding them.
   - Enlarged the import text container in the Web UI to twice its original height and simplified clipboard confirmation messages.
+  - Integrated the dropdown glassmorphism HUD toast for iOS companion app copy/paste actions to reduce notification clutter.
 - **Improved UI Navigation & Settings**:
   - Fixed a bug where selecting a Front App condition dismissed the entire view stack, returning the user to the main menu.
   - Hid the non-functional settings edit icon for non-configurable triggers in the action view navigation bar.

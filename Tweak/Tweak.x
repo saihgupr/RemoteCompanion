@@ -7428,6 +7428,7 @@ static BOOL g_bottomBarHapticFired = NO;
 // Status Bar Extended State
 static BOOL g_statusBarSwipeHapticFired = NO;
 static BOOL g_statusBarSwipeTriggered = NO;
+static NSTimeInterval g_lastStatusBarDoubleTapTime = 0;
 
 %hook UIApplication
 
@@ -7504,10 +7505,17 @@ static BOOL g_statusBarSwipeTriggered = NO;
                                    [g_triggerConfig[@"triggers"][@"trigger_statusbar_double_tap"][@"enabled"] boolValue];
                     
                     if (enabled) {
-                        g_statusBarHoldTriggered = YES;
-                        trigger_haptic();
-                        RCExecuteTrigger(@"trigger_statusbar_double_tap");
-                        SRLog(@"[RCStatus] Status Bar Double Tap FIRED!");
+                        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+                        if (now - g_lastStatusBarDoubleTapTime > 0.4) {
+                            g_lastStatusBarDoubleTapTime = now;
+                            g_statusBarHoldTriggered = YES;
+                            trigger_haptic();
+                            RCExecuteTrigger(@"trigger_statusbar_double_tap");
+                            SRLog(@"[RCStatus] Status Bar Double Tap FIRED!");
+                        } else {
+                            g_statusBarHoldTriggered = YES;
+                            SRLog(@"[RCStatus] Status Bar Double Tap ignored (cooldown: %.3fs)", now - g_lastStatusBarDoubleTapTime);
+                        }
                     }
                 } else {
                     // Determine region for status bar hold (Left, Center, Right)

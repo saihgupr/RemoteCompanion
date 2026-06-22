@@ -29,6 +29,7 @@ static NSString *g_currentAppBundleId = nil;
 static NSString *g_previousAppBundleId = nil;
 static SBProximitySensorManager *g_proximitySensorManager = nil;
 static BOOL g_forceProximityDetection = NO;
+static int g_latestHIDProximityState = -1;
 
 // WorkflowKit interfaces
 @interface WFWorkflowDescriptor : NSObject
@@ -1556,7 +1557,9 @@ static BOOL rc_evaluate_if_condition(NSDictionary *ifAction) {
     if ([conditionKey isEqualToString:@"proximity"] || [conditionKey isEqualToString:@"pocket"] || [conditionKey isEqualToString:@"device_in_pocket"]) {
         NSString *statusOutput = handle_command(@"proximity");
         NSString *upperOutput = rc_trimmed_uppercase_string(statusOutput);
-        BOOL isNear = ([upperOutput containsString:@"OBJECTINPROXIMITY=1"] || [upperOutput containsString:@"PROXIMITYSTATE=1"]);
+        BOOL isNear = ([upperOutput containsString:@"OBJECTINPROXIMITY=1"] || 
+                       [upperOutput containsString:@"PROXIMITYSTATE=1"] || 
+                       [upperOutput containsString:@"NEAR"]);
         
         BOOL expectedBool = [expectedValue isEqualToString:@"YES"] || 
                             [expectedValue isEqualToString:@"TRUE"] || 
@@ -3955,6 +3958,7 @@ static NSString *handle_command(NSString *cmd) {
         
         dispatch_async(dispatch_get_main_queue(), ^{
             if ([sub isEqualToString:@"on"] || [sub isEqualToString:@"enable"]) {
+                g_forceProximityDetection = YES;
                 if (manager) {
                     if ([manager respondsToSelector:@selector(_enableProx)]) {
                         [manager _enableProx];
@@ -3966,6 +3970,7 @@ static NSString *handle_command(NSString *cmd) {
                 response = @"Proximity sensor enabled permanently (for testing)\n";
                 dispatch_semaphore_signal(sema);
             } else if ([sub isEqualToString:@"off"] || [sub isEqualToString:@"disable"]) {
+                g_forceProximityDetection = NO;
                 if (manager) {
                     if ([manager respondsToSelector:@selector(_disableProx)]) {
                         [manager _disableProx];
@@ -4045,21 +4050,30 @@ static NSString *handle_command(NSString *cmd) {
             } else {
                 // Just query status
                 BOOL isNearPrivate = NO;
-                BOOL isDetectionEnabled = NO;
                 if (manager) {
                     if ([manager respondsToSelector:@selector(isObjectInProximity)]) {
                         isNearPrivate = [manager isObjectInProximity];
                     }
-                    if ([manager respondsToSelector:@selector(isProximityDetectionEnabled)]) {
-                        isDetectionEnabled = [manager isProximityDetectionEnabled];
-                    }
                 }
                 
                 BOOL isNearPublic = [UIDevice currentDevice].proximityState;
-                BOOL isPublicEnabled = [UIDevice currentDevice].proximityMonitoringEnabled;
+                BOOL isNear = isNearPrivate || isNearPublic;
                 
-                response = [NSString stringWithFormat:@"SBProximitySensorManager: objectInProximity=%d, detectionEnabled=%d\nUIDevice: proximityState=%d, monitoringEnabled=%d\n",
-                            isNearPrivate, isDetectionEnabled, isNearPublic, isPublicEnabled];
+                if (g_latestHIDProximityState != -1) {
+                    isNear = (g_latestHIDProximityState == 1);
+                }
+                
+                if ([sub isEqualToString:@"status"] || sub == nil || sub.length == 0) {
+                    response = isNear ? @"near\n" : @"far\n";
+                } else {
+                    BOOL isDetectionEnabled = NO;
+                    if (manager && [manager respondsToSelector:@selector(isProximityDetectionEnabled)]) {
+                        isDetectionEnabled = [manager isProximityDetectionEnabled];
+                    }
+                    BOOL isPublicEnabled = [UIDevice currentDevice].proximityMonitoringEnabled;
+                    response = [NSString stringWithFormat:@"SBProximitySensorManager: objectInProximity=%d, detectionEnabled=%d\nUIDevice: proximityState=%d, monitoringEnabled=%d\n",
+                                isNearPrivate, isDetectionEnabled, isNearPublic, isPublicEnabled];
+                }
                 dispatch_semaphore_signal(sema);
             }
         });
@@ -4801,6 +4815,20 @@ static NSString *handle_command(NSString *cmd) {
             }
         });
         return @"Lock command sent\n";
+    } else if ([cleanCmd isEqualToString:@"lock status"] || [cleanCmd isEqualToString:@"is-locked"]) {
+        __block NSString *status = nil;
+        void (^lockStatusBlock)(void) = ^{
+            Class SBLockScreenManagerClass = objc_getClass("SBLockScreenManager");
+            SBLockScreenManager *manager = SBLockScreenManagerClass ? [SBLockScreenManagerClass sharedInstance] : nil;
+            if (manager && [manager respondsToSelector:@selector(isUILocked)]) {
+                status = [manager isUILocked] ? @"locked\n" : @"unlocked\n";
+            } else {
+                status = @"unlocked\n";
+            }
+        };
+        if ([NSThread isMainThread]) lockStatusBlock();
+        else dispatch_sync(dispatch_get_main_queue(), lockStatusBlock);
+        return status;
     } else if ([cleanCmd isEqualToString:@"unlock"] || [cleanCmd hasPrefix:@"unlock "]) {
         // Unlock phone: Only if currently locked!
         
@@ -7341,7 +7369,10 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
     int type = IOHIDEventGetType(event);
     
     if (type == 14) { // kIOHIDEventTypeProximity
-        SRLog(@"[HID Proximity] Event type 14 detected! event=%p", event);
+        int detection = IOHIDEventGetIntegerValue(event, (14 << 16) | 0);
+        int level = IOHIDEventGetIntegerValue(event, (14 << 16) | 1);
+        SRLog(@"[HID Proximity] Event type 14 detected! detection=%d, level=%d", detection, level);
+        g_latestHIDProximityState = (detection != 0) ? 1 : 0;
     }
     
     if (type == 29) { // Biometric Event (Finger on sensor)

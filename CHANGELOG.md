@@ -2,21 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.5.0] - 2026-06-22
+## [3.4.0] - 2026-06-22
 
 ### Added
 - **Proximity Sensor & Pocket Detection**:
-  - Implemented the `proximity` CLI command (`rc proximity`, `rc proximity on`, `rc proximity off`, `rc proximity debug`).
-  - Added a first-class **Proximity Sensor** condition to the iOS companion app's visual rule builder, supporting evaluations for `Near (Covered / Pocket)` and `Far (Uncovered)`.
+  - Implemented the `proximity` CLI command (`rc proximity`, `rc proximity status`, `rc proximity on`, `rc proximity off`, `rc proximity debug`).
+  - Added a first-class **Proximity Sensor** condition to the iOS companion app's visual rule builder, supporting evaluations for `Near` and `Far`.
   - Added support for `proximity`, `pocket`, and `device_in_pocket` condition keys in action sequence IF/ELSE blocks.
 - **Forced Proximity State Override**:
   - Automatically activates the proximity sensor during the power button down hold sequence.
   - Implemented a forced state override (`g_forceProximityDetection`) to prevent SpringBoard's backlight policy or lockscreen lifecycle from turning off the sensor while the button is held, ensuring 100% consistent detection.
   - Automatically deactivates the sensor on button release to ensure zero standby battery drain.
-
-## [3.4.0] - 2026-06-20
-
-### Added
+- **Lock State Queries**:
+  - Implemented the `rc is-locked` and `rc lock status` CLI commands (previously documented but missing in the SpringBoard tweak daemon), returning `locked` or `unlocked`.
 - **Appearance Action**: Added `appearance dark/light/toggle` commands to control the device's Light/Dark mode via CLI, Web UI, and iOS App.
 - **Status Bar Double Tap Trigger**: Added a new gesture trigger to bind actions to double-tapping the status bar.
 - **AudioMix Integration**: Added first-class control actions (`audiomix`, `audiomix on`, `audiomix off`, `audiomix toggle`, `audiomix status`) to control KingPuffdaddi's AudioMix tweak settings.

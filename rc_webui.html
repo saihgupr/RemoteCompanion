@@ -1149,6 +1149,7 @@ const CMD_NAMES = {
   'play':'Play','pause':'Pause','playpause':'Play/Pause','next':'Next Track','prev':'Previous Track',
   'volume up':'Volume Up','volume down':'Volume Down',
   'flashlight':'Flashlight Toggle','flashlight on':'Flashlight On','flashlight off':'Flashlight Off','flashlight toggle':'Flashlight Toggle',
+  'appearance dark':'Appearance Dark','appearance light':'Appearance Light','appearance toggle':'Appearance Toggle',
   'rotate lock':'Rotate Lock','rotate unlock':'Rotate Unlock','rotate toggle':'Rotate Toggle',
   'wifi on':'WiFi On','wifi off':'WiFi Off','wifi toggle':'WiFi Toggle',
   'bluetooth on':'Bluetooth On','bluetooth off':'Bluetooth Off','bluetooth toggle':'Bluetooth Toggle',
@@ -1229,6 +1230,7 @@ function iconForCmd(cmd) {
     'next':'forward_fill','prev':'backward_fill',
     'volume up':'speaker_3_fill','volume down':'speaker_1_fill',
     'flashlight':'bolt_fill','flashlight on':'bolt_fill','flashlight off':'bolt_slash_fill','flashlight toggle':'bolt_fill',
+    'appearance dark':'moon_fill','appearance light':'sun_max_fill','appearance toggle':'moon_fill',
     'wifi on':'wifi','wifi off':'wifi_slash','wifi toggle':'wifi',
     'bluetooth on':'bolt_horizontal_fill','bluetooth off':'bolt_horizontal','bluetooth toggle':'bolt_horizontal_fill',
     'airplane on':'airplane','airplane off':'airplane','airplane toggle':'airplane',
@@ -1276,6 +1278,7 @@ const ACTION_SECTIONS = [
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
   ]},
   { title:'Device Controls', actions:[
+    { name:'Appearance',        cmd:'appearance toggle', icon:'moon_fill', is_toggle:true },
     { name:'Flashlight',        cmd:'flashlight toggle', icon:'bolt_fill', is_toggle:true },
     { name:'Flashlight Intensity…', cmd:'__SET_FLASHLIGHT__', icon:'bolt_fill', needs_input:true },
     { name:'Rotation Lock',     cmd:'rotate toggle',     icon:'lock_rotation', is_toggle:true },
@@ -2082,6 +2085,14 @@ function parseToggleCmd(cmd) {
       prefixes: ['low power ', 'lpm ', 'low power mode '],
       suffixes: ['on', 'off', 'toggle'],
       displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'appearance',
+      name: 'Appearance',
+      icon: 'moon_fill',
+      prefixes: ['appearance '],
+      suffixes: ['dark', 'light', 'toggle'],
+      displaySuffixes: ['Dark', 'Light', 'Toggle']
     },
     {
       key: 'dnd',

@@ -79,6 +79,7 @@
         ],
         // Device Controls
         @[
+            @{ @"name": @"Appearance", @"command": @"appearance toggle", @"icon": @"moon.fill" },
             @{ @"name": @"Flashlight", @"command": @"flashlight toggle", @"icon": @"flashlight.on.fill" },
             @{ @"name": @"Rotation Lock", @"command": @"rotate toggle", @"icon": @"lock.rotation" }
         ],

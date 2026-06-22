@@ -692,6 +692,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"flashlight on": @"Flashlight On",
         @"flashlight off": @"Flashlight Off",
         @"flashlight toggle": @"Flashlight Toggle",
+        @"appearance dark": @"Appearance Dark",
+        @"appearance light": @"Appearance Light",
+        @"appearance toggle": @"Appearance Toggle",
         @"rotate lock": @"Rotate Lock",
         @"rotate unlock": @"Rotate Unlock",
         @"rotate toggle": @"Rotate Toggle",
@@ -908,6 +911,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"flashlight on": @"flashlight.on.fill",
         @"flashlight off": @"flashlight.off.fill",
         @"flashlight toggle": @"flashlight.on.fill",
+        @"appearance dark": @"moon.fill",
+        @"appearance light": @"sun.max.fill",
+        @"appearance toggle": @"moon.fill",
         @"rotate lock": @"lock.rotation",
         @"rotate unlock": @"lock.rotation.open",
         @"rotate toggle": @"lock.rotation",
@@ -1045,6 +1051,14 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             @"prefixes": @[@"flashlight ", @"flash "],
             @"suffixes": @[@"on", @"off", @"toggle"],
             @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"appearance",
+            @"name": @"Appearance",
+            @"icon": @"moon.fill",
+            @"prefixes": @[@"appearance "],
+            @"suffixes": @[@"dark", @"light", @"toggle"],
+            @"displaySuffixes": @[@"Dark", @"Light", @"Toggle"]
         },
         @{
             @"key": @"audiomix",

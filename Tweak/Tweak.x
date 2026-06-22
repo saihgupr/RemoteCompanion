@@ -452,6 +452,11 @@ extern void BKSTerminateApplicationForReasonAndReportWithDescription(NSString *b
 - (void)handleScreenshotGestureFired:(id)arg1;
 @end
 
+@interface UISUserInterfaceStyleMode : NSObject
+- (void)setModeValue:(NSInteger)value;
+- (NSInteger)modeValue;
+@end
+
 @interface SBRingerControl : NSObject
 + (instancetype)sharedInstance;
 - (BOOL)isRingerMuted;
@@ -5324,6 +5329,32 @@ static NSString *handle_command(NSString *cmd) {
             }
         }
         return @"Error: Device not found or BluetoothManager failed\n";
+    } else if ([cleanCmd hasPrefix:@"appearance "]) {
+        NSString *arg = [[cleanCmd substringFromIndex:11] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        void *uikitHandle = dlopen("/System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore", RTLD_NOW);
+        if (uikitHandle) {
+            Class StyleModeClass = objc_getClass("UISUserInterfaceStyleMode");
+            if (StyleModeClass) {
+                id styleMode = [[StyleModeClass alloc] init];
+                if ([arg isEqualToString:@"dark"]) {
+                    [styleMode setModeValue:2];
+                    return @"Appearance set to Dark\n";
+                } else if ([arg isEqualToString:@"light"]) {
+                    [styleMode setModeValue:1];
+                    return @"Appearance set to Light\n";
+                } else if ([arg isEqualToString:@"toggle"]) {
+                    NSInteger current = [styleMode modeValue];
+                    NSInteger next = (current == 2) ? 1 : 2;
+                    [styleMode setModeValue:next];
+                    return [NSString stringWithFormat:@"Appearance toggled to %@\n", next == 2 ? @"Dark" : @"Light"];
+                } else if ([arg isEqualToString:@"status"]) {
+                    NSInteger current = [styleMode modeValue];
+                    return [NSString stringWithFormat:@"Appearance: %@\n", current == 2 ? @"Dark" : @"Light"];
+                }
+            }
+        }
+        return @"Error: UISUserInterfaceStyleMode not found\n";
     } else if ([cleanCmd isEqualToString:@"wifi-on"] || [cleanCmd isEqualToString:@"wi-on"] || [cleanCmd isEqualToString:@"wifi on"]) {
         SBWiFiManager *manager = [objc_getClass("SBWiFiManager") sharedInstance];
         if (manager) {

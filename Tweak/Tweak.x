@@ -28,6 +28,7 @@ static BOOL get_system_vibration(BOOL silentMode);
 static NSString *g_currentAppBundleId = nil;
 static NSString *g_previousAppBundleId = nil;
 static SBProximitySensorManager *g_proximitySensorManager = nil;
+static BOOL g_forceProximityDetection = NO;
 
 // WorkflowKit interfaces
 @interface WFWorkflowDescriptor : NSObject
@@ -7710,8 +7711,12 @@ static void setup_background_hid_listener() {
     %orig;
 }
 - (void)_setProximityDetectionEnabled:(BOOL)arg1 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setProximityDetectionEnabled: %d", arg1);
-    %orig;
+    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setProximityDetectionEnabled: %d (forced=%d)", arg1, g_forceProximityDetection);
+    if (g_forceProximityDetection) {
+        %orig(YES);
+    } else {
+        %orig;
+    }
 }
 - (void)client:(id)arg1 wantsProximityDetectionEnabled:(BOOL)arg2 {
     SRLog(@"[RemoteCompanion] SBProximitySensorManager client: %@ wantsProximityDetectionEnabled: %d", arg1, arg2);
@@ -7740,6 +7745,7 @@ static void setup_background_hid_listener() {
 
     if (enabled) {
         // Automatically enable proximity sensor monitoring during power button press
+        g_forceProximityDetection = YES;
         id manager = g_proximitySensorManager;
         if (!manager) {
             Class cls = objc_getClass("SBProximitySensorManager");
@@ -7796,6 +7802,7 @@ static void setup_background_hid_listener() {
     SRLog(@"Power Button UP (Actions)");
 
     // Automatically disable proximity sensor monitoring when power button is released
+    g_forceProximityDetection = NO;
     id manager = g_proximitySensorManager;
     if (!manager) {
         Class cls = objc_getClass("SBProximitySensorManager");

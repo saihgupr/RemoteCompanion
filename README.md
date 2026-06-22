@@ -3,12 +3,10 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.3.0**
-> - **Device Lock/Unlock Triggers**: Fire custom action sequences automatically when locking or unlocking the screen.
-> - **Media Playback Triggers**: Observers for media events (Media Playing, Media Paused, and Media Track Changed).
-> - **Previous App Command**: Added `rc previous app` (or `rc last app`) to instantly return to the last active application.
-> - **Web UI & Companion Integration**: Complete support for media and lock status events with custom icons, pickers, and live testing.
-> - **RootHide Support**: Native compatibility for RootHide-based jailbreaks.
+> **What’s New in v3.5.0**
+> - **Proximity Sensor & Pocket Detection**: Bind action sequences based on whether the device is covered or in a pocket (using the new `proximity` condition evaluation).
+> - **Auto-Proximity Power Toggle**: Automatically spins up the sensor during power button presses and turns it off on release to prevent standby battery drain.
+> - **Proximity CLI Commands**: Added `rc proximity`, `rc proximity on`, `rc proximity off`, and `rc proximity debug` to control and inspect sensor hardware.
 
 
 <p align="center">
@@ -74,6 +72,7 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc switcher` - Opens/toggles the App Switcher.
 - `rc previous app` / `rc last app` - Returns to the previously active application.
 - `rc vibration [silent-toggle|ring-toggle]` - System "Vibrate on Silent/Ring" settings.
+- `rc proximity [on|off|debug]` - Enable, disable, or debug proximity sensor hardware.
 
 ### Apps & Shortcuts
 - `rc open <alias|bundleID>` (e.g., `youtube`, `spotify`, `settings`, `messages`, `home`, `photos`, `camera`, `clock`, `maps`, `calendar`, `weather`, `notes`, `reminders`, `appstore`, `mail`, `music`, `phone`, `stocks`, `calculator`, `tv`, `wallet`, `facetime`, `files`).
@@ -151,12 +150,14 @@ Get instant feedback from your device state.
 - `rc airplane status` - Returns Airplane Mode state.
 - `rc wifi status` / `rc bt status` - Returns connectivity states.
 - `rc flashlight status` - Returns torch state.
+- `rc proximity` - Returns current proximity sensor and pocket state.
 
 <details>
 <summary><b>Conditional Actions</b></summary>
 
 Combine status queries with actions for smart automation:
 
+- **Pocket/Proximity-Awareness**: `If Proximity Sensor is Near (Covered / Pocket)` -> `Skip Action` (perfect for preventing accidental pocket flashlight activation).
 - **Orientation-Awareness**: `If Orientation is Landscape` -> `Flashlight Toggle`.
 - **Bluetooth/Wi-Fi State**: `If Wi-Fi is OFF` -> `Wi-Fi ON`.
 

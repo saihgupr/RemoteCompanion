@@ -831,8 +831,8 @@ static id g_actionClipboard = nil;
             @"key": @"proximity",
             @"title": @"Proximity Sensor",
             @"values": @[
-                @{ @"value": @"NEAR", @"title": @"Near (Covered / Pocket)" },
-                @{ @"value": @"FAR", @"title": @"Far (Uncovered)" }
+                @{ @"value": @"NEAR", @"title": @"Near" },
+                @{ @"value": @"FAR", @"title": @"Far" }
             ]
         }
     ];

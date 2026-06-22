@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.0] - 2026-06-22
+
+### Added
+- **Proximity Sensor & Pocket Detection**:
+  - Implemented the `proximity` CLI command (`rc proximity`, `rc proximity on`, `rc proximity off`, `rc proximity debug`).
+  - Added a first-class **Proximity Sensor** condition to the iOS companion app's visual rule builder, supporting evaluations for `Near (Covered / Pocket)` and `Far (Uncovered)`.
+  - Added support for `proximity`, `pocket`, and `device_in_pocket` condition keys in action sequence IF/ELSE blocks.
+- **Forced Proximity State Override**:
+  - Automatically activates the proximity sensor during the power button down hold sequence.
+  - Implemented a forced state override (`g_forceProximityDetection`) to prevent SpringBoard's backlight policy or lockscreen lifecycle from turning off the sensor while the button is held, ensuring 100% consistent detection.
+  - Automatically deactivates the sensor on button release to ensure zero standby battery drain.
+
 ## [3.4.0] - 2026-06-20
 
 ### Added

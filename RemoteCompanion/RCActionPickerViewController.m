@@ -69,7 +69,7 @@
         @[
             @{ @"name": @"Play", @"command": @"play", @"icon": @"play.fill" },
             @{ @"name": @"Pause", @"command": @"pause", @"icon": @"pause.fill" },
-            @{ @"name": @"Play/Pause Toggle", @"command": @"playpause", @"icon": @"playpause.fill" },
+            @{ @"name": @"Play/Pause", @"command": @"playpause", @"icon": @"playpause.fill" },
             @{ @"name": @"Next Track", @"command": @"next", @"icon": @"forward.fill" },
             @{ @"name": @"Previous Track", @"command": @"prev", @"icon": @"backward.fill" },
             @{ @"name": @"Volume Up", @"command": @"volume up", @"icon": @"speaker.wave.3.fill" },

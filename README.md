@@ -3,7 +3,7 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.5.0**
+> **What’s New in v3.4.0**
 > - **Proximity Sensor & Pocket Detection**: Bind action sequences based on whether the device is covered or in a pocket (using the new `proximity` condition evaluation).
 > - **Auto-Proximity Power Toggle**: Automatically spins up the sensor during power button presses and turns it off on release to prevent standby battery drain.
 > - **Proximity CLI Commands**: Added `rc proximity`, `rc proximity on`, `rc proximity off`, and `rc proximity debug` to control and inspect sensor hardware.
@@ -160,6 +160,9 @@ Combine status queries with actions for smart automation:
 - **Pocket/Proximity-Awareness**: `If Proximity Sensor is Near (Covered / Pocket)` -> `Skip Action` (perfect for preventing accidental pocket flashlight activation).
 - **Orientation-Awareness**: `If Orientation is Landscape` -> `Flashlight Toggle`.
 - **Bluetooth/Wi-Fi State**: `If Wi-Fi is OFF` -> `Wi-Fi ON`.
+
+> [!NOTE]
+> **Proximity Sensor Cooldown**: To conserve battery, the proximity sensor is only powered on dynamically during button holds and is shut off immediately on release. Due to iOS kernel-level hardware power-gating, rapid consecutive clicks (within ~5 seconds) may temporarily bypass proximity evaluation until the sensor's hardware cooldown window resets.
 
 </details>
 

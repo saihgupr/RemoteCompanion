@@ -19,12 +19,15 @@
 #import "native_curl.h"
 #import <CoreFoundation/CoreFoundation.h>
 
+@class SBProximitySensorManager;
+
 static void trigger_haptic();
 static void toggle_system_vibration(BOOL silentMode, BOOL enable);
 static BOOL get_system_vibration(BOOL silentMode);
 
 static NSString *g_currentAppBundleId = nil;
 static NSString *g_previousAppBundleId = nil;
+static SBProximitySensorManager *g_proximitySensorManager = nil;
 
 // WorkflowKit interfaces
 @interface WFWorkflowDescriptor : NSObject
@@ -437,6 +440,16 @@ extern void BKSTerminateApplicationForReasonAndReportWithDescription(NSString *b
 - (void)lock;
 - (void)unlock;
 - (BOOL)isUserLocked;
+@end
+
+@interface SBProximitySensorManager : NSObject
++ (instancetype)sharedInstance;
+- (BOOL)isObjectInProximity;
+- (BOOL)isProximityDetectionEnabled;
+- (void)setProximityDetectionEnabled:(BOOL)enabled;
+- (void)_enableProx;
+- (void)_disableProx;
+- (void)_setProximityDetectionEnabled:(BOOL)enabled;
 @end
 
 @interface SBScreenshotManager : NSObject
@@ -3851,6 +3864,43 @@ static NSArray* RCFetchAirPlayDeviceNames() {
     return deviceNames ?: @[];
 }
 
+static NSString *formatIvarValue(id obj, Ivar ivar) {
+    ptrdiff_t offset = ivar_getOffset(ivar);
+    const char *type = ivar_getTypeEncoding(ivar);
+    void *ptr = (void *)((uintptr_t)obj + offset);
+    
+    if (type == NULL) return @"nil";
+    
+    if (type[0] == '@') {
+        // Object
+        __unsafe_unretained id val = *(__unsafe_unretained id *)ptr;
+        return val ? [val description] : @"nil";
+    } else if (strcmp(type, "B") == 0 || strcmp(type, "c") == 0) {
+        // BOOL or char
+        BOOL val = *(BOOL *)ptr;
+        return val ? @"YES" : @"NO";
+    } else if (strcmp(type, "i") == 0) {
+        int val = *(int *)ptr;
+        return [NSString stringWithFormat:@"%d", val];
+    } else if (strcmp(type, "I") == 0) {
+        unsigned int val = *(unsigned int *)ptr;
+        return [NSString stringWithFormat:@"%u", val];
+    } else if (strcmp(type, "q") == 0) {
+        long long val = *(long long *)ptr;
+        return [NSString stringWithFormat:@"%lld", val];
+    } else if (strcmp(type, "Q") == 0) {
+        unsigned long long val = *(unsigned long long *)ptr;
+        return [NSString stringWithFormat:@"%llu", val];
+    } else if (strcmp(type, "f") == 0) {
+        float val = *(float *)ptr;
+        return [NSString stringWithFormat:@"%f", val];
+    } else if (strcmp(type, "d") == 0) {
+        double val = *(double *)ptr;
+        return [NSString stringWithFormat:@"%f", val];
+    }
+    return [NSString stringWithFormat:@"<type %s at offset %td>", type, offset];
+}
+
 static NSString *handle_command(NSString *cmd) {
     if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
         SRLog(@"ERROR: handle_command received nil or invalid command string");
@@ -3872,6 +3922,136 @@ static NSString *handle_command(NSString *cmd) {
     if ([cleanCmd isEqualToString:@"log"]) {
         SRLog(@"Log request");
         return nil;
+    } else if ([cleanCmd isEqualToString:@"proximity"] || [cleanCmd hasPrefix:@"proximity "]) {
+        NSString *sub = nil;
+        if ([cleanCmd hasPrefix:@"proximity "]) {
+            sub = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        }
+        
+        id manager = g_proximitySensorManager;
+        if (!manager) {
+            Class cls = objc_getClass("SBProximitySensorManager");
+            if (cls && [cls respondsToSelector:@selector(sharedInstance)]) {
+                manager = [cls performSelector:@selector(sharedInstance)];
+            }
+        }
+        
+        __block NSString *response = nil;
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if ([sub isEqualToString:@"on"] || [sub isEqualToString:@"enable"]) {
+                if (manager) {
+                    if ([manager respondsToSelector:@selector(_enableProx)]) {
+                        [manager _enableProx];
+                    } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
+                        [manager _setProximityDetectionEnabled:YES];
+                    }
+                }
+                [UIDevice currentDevice].proximityMonitoringEnabled = YES;
+                response = @"Proximity sensor enabled permanently (for testing)\n";
+                dispatch_semaphore_signal(sema);
+            } else if ([sub isEqualToString:@"off"] || [sub isEqualToString:@"disable"]) {
+                if (manager) {
+                    if ([manager respondsToSelector:@selector(_disableProx)]) {
+                        [manager _disableProx];
+                    } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
+                        [manager _setProximityDetectionEnabled:NO];
+                    }
+                }
+                [UIDevice currentDevice].proximityMonitoringEnabled = NO;
+                response = @"Proximity sensor disabled\n";
+                dispatch_semaphore_signal(sema);
+            } else if ([sub isEqualToString:@"debug"] || [sub isEqualToString:@"inspect"]) {
+                NSMutableString *debugInfo = [NSMutableString string];
+                [debugInfo appendFormat:@"--- Proximity Debug Info ---\n"];
+                [debugInfo appendFormat:@"g_proximitySensorManager: %@\n", g_proximitySensorManager];
+                
+                // 1. Find all classes with "Proximity" in their name
+                [debugInfo appendString:@"\nRelated Classes:\n"];
+                int numClasses = objc_getClassList(NULL, 0);
+                if (numClasses > 0) {
+                    Class *classes = (Class *)malloc(sizeof(Class) * numClasses);
+                    numClasses = objc_getClassList(classes, numClasses);
+                    for (int i = 0; i < numClasses; i++) {
+                        NSString *className = NSStringFromClass(classes[i]);
+                        if ([className rangeOfString:@"Proximity" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+                            [debugInfo appendFormat:@"  %@\n", className];
+                        }
+                    }
+                    free(classes);
+                }
+                
+                id targetObj = manager;
+                if (targetObj) {
+                    Class cls = [targetObj class];
+                    [debugInfo appendFormat:@"\nClass: %@\n", NSStringFromClass(cls)];
+                    
+                    // 2. Instance Variables
+                    [debugInfo appendString:@"\nIvars:\n"];
+                    unsigned int ivarCount = 0;
+                    Ivar *ivars = class_copyIvarList(cls, &ivarCount);
+                    for (unsigned int i = 0; i < ivarCount; i++) {
+                        [debugInfo appendFormat:@"  %s (%s) = %@\n", ivar_getName(ivars[i]), ivar_getTypeEncoding(ivars[i]), formatIvarValue(targetObj, ivars[i])];
+                    }
+                    if (ivars) free(ivars);
+                    
+                    // 3. Properties
+                    [debugInfo appendString:@"\nProperties:\n"];
+                    unsigned int propCount = 0;
+                    objc_property_t *properties = class_copyPropertyList(cls, &propCount);
+                    for (unsigned int i = 0; i < propCount; i++) {
+                        const char *name = property_getName(properties[i]);
+                        NSString *nameStr = [NSString stringWithUTF8String:name];
+                        id val = nil;
+                        @try {
+                            val = [targetObj valueForKey:nameStr];
+                        } @catch (NSException *e) {
+                            val = [NSString stringWithFormat:@"<KVC Error: %@>", e.reason];
+                        }
+                        [debugInfo appendFormat:@"  %s = %@\n", name, val];
+                    }
+                    if (properties) free(properties);
+                    
+                    // 4. Methods
+                    [debugInfo appendString:@"\nMethods:\n"];
+                    unsigned int methodCount = 0;
+                    Method *methods = class_copyMethodList(cls, &methodCount);
+                    for (unsigned int i = 0; i < methodCount; i++) {
+                        SEL selector = method_getName(methods[i]);
+                        NSString *methodName = NSStringFromSelector(selector);
+                        [debugInfo appendFormat:@"  %@\n", methodName];
+                    }
+                    if (methods) free(methods);
+                } else {
+                    [debugInfo appendString:@"\nNo manager found to inspect.\n"];
+                }
+                response = debugInfo;
+                dispatch_semaphore_signal(sema);
+            } else {
+                // Just query status
+                BOOL isNearPrivate = NO;
+                BOOL isDetectionEnabled = NO;
+                if (manager) {
+                    if ([manager respondsToSelector:@selector(isObjectInProximity)]) {
+                        isNearPrivate = [manager isObjectInProximity];
+                    }
+                    if ([manager respondsToSelector:@selector(isProximityDetectionEnabled)]) {
+                        isDetectionEnabled = [manager isProximityDetectionEnabled];
+                    }
+                }
+                
+                BOOL isNearPublic = [UIDevice currentDevice].proximityState;
+                BOOL isPublicEnabled = [UIDevice currentDevice].proximityMonitoringEnabled;
+                
+                response = [NSString stringWithFormat:@"SBProximitySensorManager: objectInProximity=%d, detectionEnabled=%d\nUIDevice: proximityState=%d, monitoringEnabled=%d\n",
+                            isNearPrivate, isDetectionEnabled, isNearPublic, isPublicEnabled];
+                dispatch_semaphore_signal(sema);
+            }
+        });
+        
+        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC));
+        return response ?: @"Error: Timeout querying proximity sensor\n";
     }
 
     // Media commands - these work reliably via MediaRemote
@@ -7146,6 +7326,10 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
     if (RC_IsForegroundAppExcluded()) return;
     int type = IOHIDEventGetType(event);
     
+    if (type == 14) { // kIOHIDEventTypeProximity
+        SRLog(@"[HID Proximity] Event type 14 detected! event=%p", event);
+    }
+    
     if (type == 29) { // Biometric Event (Finger on sensor)
         // Toggle Logic for "Hold" (Fire by itself after 1.0s)
         // Assumption: Sensor sends event on DOWN ... (Silence) ... and UP.
@@ -7493,6 +7677,37 @@ static void setup_background_hid_listener() {
     return result;
 }
 
+%end
+
+%hook SBProximitySensorManager
+- (id)init {
+    id orig = %orig;
+    g_proximitySensorManager = orig;
+    SRLog(@"[RemoteCompanion] Hooked SBProximitySensorManager init: %@", g_proximitySensorManager);
+    return orig;
+}
+- (id)initWithHIDInterface:(id)arg1 hardwareDefaults:(id)arg2 interfaceOrientationProvider:(id)arg3 {
+    id orig = %orig;
+    g_proximitySensorManager = orig;
+    SRLog(@"[RemoteCompanion] Hooked SBProximitySensorManager custom init: %@", g_proximitySensorManager);
+    return orig;
+}
+- (void)_setObjectInProximity:(BOOL)arg1 {
+    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setObjectInProximity: %d", arg1);
+    %orig;
+}
+- (void)_setProximityDetectionEnabled:(BOOL)arg1 {
+    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setProximityDetectionEnabled: %d", arg1);
+    %orig;
+}
+- (void)client:(id)arg1 wantsProximityDetectionEnabled:(BOOL)arg2 {
+    SRLog(@"[RemoteCompanion] SBProximitySensorManager client: %@ wantsProximityDetectionEnabled: %d", arg1, arg2);
+    %orig;
+}
+- (void)_updateProxState {
+    SRLog(@"[RemoteCompanion] SBProximitySensorManager _updateProxState");
+    %orig;
+}
 %end
 
 %hook SBLockHardwareButtonActions

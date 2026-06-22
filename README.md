@@ -72,7 +72,6 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc switcher` - Opens/toggles the App Switcher.
 - `rc previous app` / `rc last app` - Returns to the previously active application.
 - `rc vibration [silent-toggle|ring-toggle]` - System "Vibrate on Silent/Ring" settings.
-- `rc proximity [on|off|debug]` - Enable, disable, or debug proximity sensor hardware.
 
 ### Apps & Shortcuts
 - `rc open <alias|bundleID>` (e.g., `youtube`, `spotify`, `settings`, `messages`, `home`, `photos`, `camera`, `clock`, `maps`, `calendar`, `weather`, `notes`, `reminders`, `appstore`, `mail`, `music`, `phone`, `stocks`, `calculator`, `tv`, `wallet`, `facetime`, `files`).
@@ -150,7 +149,7 @@ Get instant feedback from your device state.
 - `rc airplane status` - Returns Airplane Mode state.
 - `rc wifi status` / `rc bt status` - Returns connectivity states.
 - `rc flashlight status` - Returns torch state.
-- `rc proximity` - Returns current proximity sensor and pocket state.
+- `rc proximity` - Returns `near` or `far`. *(Note: iOS powers off the sensor when the screen is asleep. To test manually while the screen is awake, run `rc proximity on` to force it active, then `rc proximity off` to disable it.)*
 
 <details>
 <summary><b>Conditional Actions</b></summary>

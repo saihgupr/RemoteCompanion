@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **Proximity Sensor & Pocket Detection**:
-  - Implemented the `proximity` CLI command (`rc proximity`, `rc proximity status`, `rc proximity on`, `rc proximity off`, `rc proximity debug`).
+  - Implemented the `proximity` CLI command (`rc proximity`, `rc proximity on`, `rc proximity off`, `rc proximity debug`).
   - Added a first-class **Proximity Sensor** condition to the iOS companion app's visual rule builder, supporting evaluations for `Near` and `Far`.
   - Added support for `proximity`, `pocket`, and `device_in_pocket` condition keys in action sequence IF/ELSE blocks.
 - **Forced Proximity State Override**:

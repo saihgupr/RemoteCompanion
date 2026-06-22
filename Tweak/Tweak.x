@@ -4063,6 +4063,8 @@ static NSString *handle_command(NSString *cmd) {
                     isNear = (g_latestHIDProximityState == 1);
                 }
                 
+                // Both `rc proximity` (sub == nil/empty) and `rc proximity status` run the exact same logic.
+                // We keep 'status' support purely as an undocumented legacy/fallback alias to avoid breaking scripts.
                 if ([sub isEqualToString:@"status"] || sub == nil || sub.length == 0) {
                     response = isNear ? @"near\n" : @"far\n";
                 } else {

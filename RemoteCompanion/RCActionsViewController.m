@@ -826,6 +826,14 @@ static id g_actionClipboard = nil;
         @{
             @"key": @"front_app",
             @"title": @"Front Application"
+        },
+        @{
+            @"key": @"proximity",
+            @"title": @"Proximity Sensor",
+            @"values": @[
+                @{ @"value": @"NEAR", @"title": @"Near (Covered / Pocket)" },
+                @{ @"value": @"FAR", @"title": @"Far (Uncovered)" }
+            ]
         }
     ];
 }

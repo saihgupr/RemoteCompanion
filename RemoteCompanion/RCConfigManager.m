@@ -290,11 +290,11 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     }
     
     // Also clean up from notificationTriggers metadata if it's a notification trigger
-    if ([triggerKey hasPrefix:@"notif_"]) {
+    if ([triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"]) {
         NSMutableArray *notifTriggers = [[self notificationTriggers] mutableCopy];
         for (NSInteger i = notifTriggers.count - 1; i >= 0; i--) {
             NSDictionary *notif = notifTriggers[i];
-            if ([notif[@"key"] isEqualToString:triggerKey]) {
+            if ([notif[@"triggerKey"] isEqualToString:triggerKey]) {
                 [notifTriggers removeObjectAtIndex:i];
             }
         }
@@ -388,7 +388,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return customName ?: [NSString stringWithFormat:@"NFC Tag %@", [triggerKey substringFromIndex:4]];
     }
 
-    if ([triggerKey hasPrefix:@"wifi_"] || [triggerKey hasPrefix:@"bt_"] || [triggerKey hasPrefix:@"app_launch_"] || [triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"sched_"]) {
+    if ([triggerKey hasPrefix:@"wifi_"] || [triggerKey hasPrefix:@"bt_"] || [triggerKey hasPrefix:@"app_launch_"] || [triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"] || [triggerKey hasPrefix:@"sched_"]) {
         return _config[@"triggers"][triggerKey][@"name"] ?: triggerKey;
     }
     
@@ -401,9 +401,12 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         triggers = [NSMutableDictionary dictionary];
         _config[@"triggers"] = triggers;
     }
-    NSMutableDictionary *trigger = triggers[triggerKey];
+    id trigger = triggers[triggerKey];
     if (!trigger) {
         trigger = [@{ @"enabled": @NO, @"actions": @[] } mutableCopy];
+        triggers[triggerKey] = trigger;
+    } else if (![trigger isKindOfClass:[NSMutableDictionary class]]) {
+        trigger = [trigger mutableCopy];
         triggers[triggerKey] = trigger;
     }
     return trigger;

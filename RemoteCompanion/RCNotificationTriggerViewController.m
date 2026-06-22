@@ -225,8 +225,13 @@
     
     if (self.triggerKey) {
         // Update existing trigger data
-        NSMutableDictionary *mutableData = [[config triggerDataForKey:triggerKey] mutableCopy];
+        NSDictionary *existingData = [config triggerDataForKey:triggerKey];
+        NSMutableDictionary *mutableData = existingData ? [existingData mutableCopy] : [NSMutableDictionary dictionary];
         mutableData[@"name"] = name;
+        if (!existingData) {
+            mutableData[@"enabled"] = @YES;
+            mutableData[@"actions"] = @[];
+        }
         [config updateTrigger:triggerKey withData:mutableData];
         
         [self.navigationController popViewControllerAnimated:YES];

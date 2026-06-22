@@ -1123,7 +1123,7 @@ function iconForKey(key) {
   if (key.startsWith('bt_disconnect_')) return { icon:'bolt_horizontal', cls:'icon-orange' };
   if (key.startsWith('bt_'))         return { icon:'bolt_horizontal_fill',          cls:'icon-indigo' };
   if (key.startsWith('app_launch_')) return { icon:'app_badge_fill',                cls:'icon-pink' };
-  if (key.startsWith('notif_'))      return { icon:'bell_circle_fill',              cls:'icon-red' };
+  if (key.startsWith('notif_') || key.startsWith('notify_'))      return { icon:'bell_circle_fill',              cls:'icon-red' };
   if (key.startsWith('sched_'))      return { icon:'clock_fill',                    cls:'icon-orange' };
   return { icon:'hand_tap', cls:'icon-gray' };
 }
@@ -1140,7 +1140,10 @@ function nameForKey(key) {
   if (key.startsWith('bt_disconnect_')) return `BT Disconnect: ${key.slice(14)}`;
   if (key.startsWith('bt_'))         return `BT: ${key.slice(3)}`;
   if (key.startsWith('app_launch_')) return `Launch: ${key.slice(11)}`;
-  if (key.startsWith('notif_'))      return `Notif: ${key.slice(6)}`;
+  if (key.startsWith('notif_') || key.startsWith('notify_')) {
+    if (key.startsWith('notify_')) return `Notif: ${key.slice(7)}`;
+    return `Notif: ${key.slice(6)}`;
+  }
   if (key.startsWith('sched_'))      return `Sched: ${key.slice(6)}`;
   return key;
 }
@@ -1692,7 +1695,7 @@ function deleteTrigger(key) {
       delete config.triggers[key];
       config.favoriteTriggers = (config.favoriteTriggers||[]).filter(k => k !== key);
       // Also remove from notificationTriggers array if applicable
-      if (key.startsWith('notif_') && config.notificationTriggers) {
+      if ((key.startsWith('notif_') || key.startsWith('notify_')) && config.notificationTriggers) {
         config.notificationTriggers = config.notificationTriggers.filter(t => t.triggerKey !== key);
       }
       saveConfig(); renderAll();
@@ -1788,7 +1791,7 @@ function openActionsPanel(key) {
   // Show/Hide edit settings button based on trigger type
   const editBtn = document.getElementById('edit-trigger-nav-btn');
   const isSched = key.startsWith('sched_');
-  const isNotif = key.startsWith('notif_');
+  const isNotif = key.startsWith('notif_') || key.startsWith('notify_');
   const isWiFi = key.startsWith('wifi_');
   const isBT = key.startsWith('bt_');
   const isApp = key.startsWith('app_launch_');
@@ -1806,7 +1809,7 @@ function openActionsPanel(key) {
 function onEditTriggerSettings() {
   if (!currentKey) return;
   const isSched = currentKey.startsWith('sched_');
-  const isNotif = currentKey.startsWith('notif_');
+  const isNotif = currentKey.startsWith('notif_') || currentKey.startsWith('notify_');
   const isWiFi = currentKey.startsWith('wifi_');
   const isBT = currentKey.startsWith('bt_');
   

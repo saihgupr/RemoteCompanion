@@ -130,17 +130,18 @@ static id g_actionClipboard = nil;
     
     // More options menu (Import, Export)
     NSMutableArray *menuActions = [NSMutableArray array];
+    __weak typeof(self) weakSelf = self;
     [menuActions addObject:[UIAction actionWithTitle:@"Import Actions" 
                                                image:[UIImage systemImageNamed:@"square.and.arrow.down"] 
                                           identifier:nil 
                                              handler:^(__kindof UIAction * _Nonnull action) {
-        [self importActions];
+        [weakSelf importActions];
     }]];
     [menuActions addObject:[UIAction actionWithTitle:@"Export Actions" 
                                                image:[UIImage systemImageNamed:@"square.and.arrow.up"] 
                                           identifier:nil 
                                              handler:^(__kindof UIAction * _Nonnull action) {
-        [self exportActions];
+        [weakSelf exportActions];
     }]];
     
     UIMenu *shareMenu = [UIMenu menuWithTitle:@"" children:menuActions];
@@ -148,9 +149,9 @@ static id g_actionClipboard = nil;
     
     NSMutableArray *rightItems = [NSMutableArray arrayWithArray:@[moreButton, plusButton]];
     
-    // Only show Settings Button if the trigger is configurable
     BOOL isConfigurable = [_triggerKey hasPrefix:@"sched_"] ||
                           [_triggerKey hasPrefix:@"notif_"] ||
+                          [_triggerKey hasPrefix:@"notify_"] ||
                           [_triggerKey hasPrefix:@"wifi_"] ||
                           [_triggerKey hasPrefix:@"bt_"] ||
                           [_triggerKey hasPrefix:@"app_launch_"];
@@ -251,7 +252,7 @@ static id g_actionClipboard = nil;
     
     if ([_triggerKey hasPrefix:@"sched_"]) {
         vc = [[RCScheduledTriggerViewController alloc] initWithTriggerKey:_triggerKey];
-    } else if ([_triggerKey hasPrefix:@"notif_"]) {
+    } else if ([_triggerKey hasPrefix:@"notif_"] || [_triggerKey hasPrefix:@"notify_"]) {
         vc = [[RCNotificationTriggerViewController alloc] initWithTriggerKey:_triggerKey];
     } else if ([_triggerKey hasPrefix:@"wifi_"]) {
         vc = [[RCWiFiTriggerViewController alloc] initWithTriggerKey:_triggerKey];

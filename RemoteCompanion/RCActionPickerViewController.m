@@ -99,6 +99,7 @@
             @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
             @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
             @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
+            @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },
             @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
             @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
             @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
@@ -250,6 +251,7 @@
         [cmd isEqualToString:@"__AIRPLAY_CONNECT__"] || 
         [cmd isEqualToString:@"__SHORTCUT_PICKER__"] || 
         [cmd isEqualToString:@"__OPEN_APP__"] || 
+        [cmd isEqualToString:@"__KILL_APP__"] || 
         [cmd isEqualToString:@"__LUA_SCRIPT__"] || 
         [cmd isEqualToString:@"__IF_CONDITION__"] ||
         [cmd isEqualToString:@"__DELAY__"] ||

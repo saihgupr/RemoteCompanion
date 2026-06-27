@@ -1300,6 +1300,7 @@ const ACTION_SECTIONS = [
     { name:'Screenshot',        cmd:'screenshot',    icon:'camera_fill' },
     { name:'Run Shortcut…',     cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'Open App…',         cmd:'__OPEN_APP__',  icon:'square_grid_2x2_fill', needs_input:true },
+    { name:'Kill App…',         cmd:'__KILL_APP__',  icon:'xmark_square_fill', needs_input:true },
     { name:'Lock Device',       cmd:'lock',          icon:'lock_fill' },
     { name:'Unlock Device',     cmd:'unlock',        icon:'lock_open_fill' },
     { name:'Do Not Disturb',    cmd:'dnd toggle',    icon:'moon_fill', is_toggle:true },
@@ -2256,7 +2257,8 @@ function changeParamValue(event, idx) {
     '__BT_DISCONNECT__':  { title:'Edit BT Disconnect', msg:'Device name:',   type:'text',   build: v => `bt disconnect ${v}` },
     '__AIRPLAY_CONNECT__':{ title:'Edit AirPlay',  msg:'Device name:',   type:'text',   build: v => `airplay connect ${v}` },
     '__SHORTCUT__':       { title:'Edit Shortcut',      msg:'Shortcut name:', type:'text',   build: v => `shortcut:${v}` },
-    '__OPEN_APP__':       { title:'Edit App',          msg:'Bundle ID:',     type:'text',   build: v => `uiopen ${v}` }
+    '__OPEN_APP__':       { title:'Edit App',          msg:'Bundle ID:',     type:'text',   build: v => `uiopen ${v}` },
+    '__KILL_APP__':       { title:'Edit Kill App',     msg:'Bundle ID:',     type:'text',   build: v => `kill ${v}` }
   };
 
   let typeKey = null;
@@ -2283,6 +2285,9 @@ function changeParamValue(event, idx) {
   } else if (lower.startsWith('uiopen ')) {
     typeKey = '__OPEN_APP__';
     currentVal = action.slice(7);
+  } else if (lower.startsWith('kill ')) {
+    typeKey = '__KILL_APP__';
+    currentVal = action.slice(5);
   } else if (lower.startsWith('airplay connect ')) {
     typeKey = '__AIRPLAY_CONNECT__';
     currentVal = action.slice(16);
@@ -2297,7 +2302,7 @@ function changeParamValue(event, idx) {
   if (typeKey && needsText[typeKey]) {
     const d = needsText[typeKey];
     let listId = null;
-    if (typeKey === '__OPEN_APP__') listId = 'app-datalist';
+    if (typeKey === '__OPEN_APP__' || typeKey === '__KILL_APP__') listId = 'app-datalist';
     if (typeKey === '__BT_CONNECT__' || typeKey === '__BT_DISCONNECT__') listId = 'bt-datalist';
     if (typeKey === '__AIRPLAY_CONNECT__') listId = 'airplay-datalist';
     
@@ -2467,6 +2472,7 @@ async function selectAction(action) {
     '__AIRPLAY_CONNECT__':{ title:'Connect AirPlay',  msg:'Device name:',   def:'',  type:'text',   build: v => `airplay connect ${v}` },
     '__SHORTCUT__':       { title:'Run Shortcut',      msg:'Shortcut name:', def:'',  type:'text',   build: v => `shortcut:${v}` },
     '__OPEN_APP__':       { title:'Open App',          msg:'Bundle ID:',     def:'',  type:'text',   build: v => `uiopen ${v}` },
+    '__KILL_APP__':       { title:'Kill App',          msg:'Bundle ID:',     def:'',  type:'text',   build: v => `kill ${v}` },
     '__LUA_SCRIPT__':     { title:'Lua Script',        msg:'Lua code:',      def:'',  type:'text',   build: v => `Lua ${v}` },
     '__CUSTOM__':         { title:'Terminal Command',  msg:'Command:',       def:'',  type:'text',   build: v => `exec ${v}` },
     '__TAP__':            { title:'Tap at Coordinates', msg:'x y  (pixels, e.g. 195 422):', def:'195 422', type:'text', build: v => `tap ${v.trim()}` },
@@ -2477,7 +2483,7 @@ async function selectAction(action) {
   if (needsText[cmd]) {
     const d = needsText[cmd];
     let listId = null;
-    if (cmd === '__OPEN_APP__') listId = 'app-datalist';
+    if (cmd === '__OPEN_APP__' || cmd === '__KILL_APP__') listId = 'app-datalist';
     if (cmd === '__BT_CONNECT__' || cmd === '__BT_DISCONNECT__') listId = 'bt-datalist';
     if (cmd === '__AIRPLAY_CONNECT__') listId = 'airplay-datalist';
     

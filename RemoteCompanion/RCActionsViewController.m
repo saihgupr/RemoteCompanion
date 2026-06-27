@@ -588,6 +588,19 @@ static id g_actionClipboard = nil;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentViewController:nav animated:YES completion:nil];
             });
+        } else if ([action isEqualToString:@"__KILL_APP__"]) {
+            RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
+            appPicker.onAppSelected = ^(NSString *name, NSString *bundleId) {
+                // Save as "kill <bundleId>"
+                [self.actions addObject:[NSString stringWithFormat:@"kill %@", bundleId]];
+                [self saveActions];
+                [self.tableView reloadData];
+            };
+            
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:appPicker];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentViewController:nav animated:YES completion:nil];
+            });
         } else if ([action isEqualToString:@"__IF_CONDITION__"]) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentIfConditionPickerForIndex:NSNotFound];

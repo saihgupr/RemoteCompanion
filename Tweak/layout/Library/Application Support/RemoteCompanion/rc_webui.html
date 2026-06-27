@@ -605,6 +605,41 @@
     .dialog-btns button:not(:last-child) { border-right: 0.5px solid rgba(255,255,255,0.15); }
     .dialog-btns button:last-child { font-weight: 600; }
     #dialog-record { color: #ff9500; font-weight: 400; }
+    .dialog-box.wide {
+      width: 320px;
+    }
+    .dialog-autocomplete {
+      max-height: 180px;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.25);
+      border-top: 0.5px solid rgba(255, 255, 255, 0.15);
+      display: none;
+    }
+    .autocomplete-item {
+      padding: 10px 16px;
+      border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      transition: background-color 0.1s;
+      text-align: left;
+    }
+    .autocomplete-item:last-child {
+      border-bottom: none;
+    }
+    .autocomplete-item:active {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+    .autocomplete-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: #fff;
+    }
+    .autocomplete-subtitle {
+      font-size: 11px;
+      color: #8e8e93;
+    }
 
     /* ── Context Menu (Right-click) ── */
     .context-menu {
@@ -782,8 +817,6 @@
       <!-- Rendered by renderActionList() -->
     </div>
 
-    <div style="padding:8px 32px 0;color:#636366;font-size:12px">
-      Swipe left on an action to delete it
     </div>
   </div>
 </div>
@@ -885,6 +918,7 @@
     <div class="dialog-title" id="dialog-title"></div>
     <div class="dialog-msg" id="dialog-msg"></div>
     <input class="dialog-input" id="dialog-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <div class="dialog-autocomplete" id="dialog-autocomplete"></div>
     <div class="dialog-btns">
       <button onclick="closeDialog()">Cancel</button>
       <button id="dialog-record" style="display:none;" onclick="dialogRecord()">Record</button>
@@ -1208,6 +1242,11 @@ function nameForCmd(cmd) {
     const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
     return `Open ${app ? app.name : cmd.slice(7).trim()}`;
   }
+  if (lowCmd.startsWith('kill ')) {
+    const bundleId = cmd.slice(5).trim().toLowerCase();
+    const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
+    return `Kill ${app ? app.name : cmd.slice(5).trim()}`;
+  }
   // Touch gesture display names
   if (lowCmd.startsWith('tap '))   { const p=cmd.slice(4).trim().split(/\s+/); return `Tap (${p[0]||'?'}, ${p[1]||'?'})`; }
   if (lowCmd.startsWith('hold '))  { const p=cmd.slice(5).trim().split(/\s+/); return `Hold (${p[0]||'?'}, ${p[1]||'?'})${p[2]?` ${p[2]}ms`:''}`; }
@@ -1258,6 +1297,7 @@ function iconForCmd(cmd) {
   if (lowCmd.startsWith('brightness '))   return { icon:'sun_max_fill',    cls:'icon-yellow' };
   if (lowCmd.startsWith('shortcut:'))     return { icon:'command',         cls:'icon-indigo' };
   if (lowCmd.startsWith('uiopen '))       return { icon:'app_badge_fill',  cls:'icon-pink' };
+  if (lowCmd.startsWith('kill '))         return { icon:'xmark_circle_fill', cls:'icon-red' };
   if (lowCmd.startsWith('exec ') || lowCmd.startsWith('root ')) return { icon:'command', cls:'icon-dark' };
   if (lowCmd.startsWith('trigger_bottombar')) return { icon:'square_stack_3d_up_fill', cls:'icon-gray' };
   // Touch gestures
@@ -1300,7 +1340,7 @@ const ACTION_SECTIONS = [
     { name:'Screenshot',        cmd:'screenshot',    icon:'camera_fill' },
     { name:'Run Shortcut…',     cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'Open App…',         cmd:'__OPEN_APP__',  icon:'square_grid_2x2_fill', needs_input:true },
-    { name:'Kill App…',         cmd:'__KILL_APP__',  icon:'xmark_square_fill', needs_input:true },
+    { name:'Kill App…',         cmd:'__KILL_APP__',  icon:'xmark_circle_fill', needs_input:true },
     { name:'Lock Device',       cmd:'lock',          icon:'lock_fill' },
     { name:'Unlock Device',     cmd:'unlock',        icon:'lock_open_fill' },
     { name:'Do Not Disturb',    cmd:'dnd toggle',    icon:'moon_fill', is_toggle:true },
@@ -2257,8 +2297,8 @@ function changeParamValue(event, idx) {
     '__BT_DISCONNECT__':  { title:'Edit BT Disconnect', msg:'Device name:',   type:'text',   build: v => `bt disconnect ${v}` },
     '__AIRPLAY_CONNECT__':{ title:'Edit AirPlay',  msg:'Device name:',   type:'text',   build: v => `airplay connect ${v}` },
     '__SHORTCUT__':       { title:'Edit Shortcut',      msg:'Shortcut name:', type:'text',   build: v => `shortcut:${v}` },
-    '__OPEN_APP__':       { title:'Edit App',          msg:'Bundle ID:',     type:'text',   build: v => `uiopen ${v}` },
-    '__KILL_APP__':       { title:'Edit Kill App',     msg:'Bundle ID:',     type:'text',   build: v => `kill ${v}` }
+    '__OPEN_APP__':       { title:'Edit App',          msg:'Search App:',     type:'text',   build: v => `uiopen ${v}` },
+    '__KILL_APP__':       { title:'Edit Kill App',     msg:'Search App:',     type:'text',   build: v => `kill ${v}` }
   };
 
   let typeKey = null;
@@ -2471,8 +2511,8 @@ async function selectAction(action) {
     '__BT_DISCONNECT__':  { title:'Disconnect BT',     msg:'Device name:',   def:'',  type:'text',   build: v => `bt disconnect ${v}` },
     '__AIRPLAY_CONNECT__':{ title:'Connect AirPlay',  msg:'Device name:',   def:'',  type:'text',   build: v => `airplay connect ${v}` },
     '__SHORTCUT__':       { title:'Run Shortcut',      msg:'Shortcut name:', def:'',  type:'text',   build: v => `shortcut:${v}` },
-    '__OPEN_APP__':       { title:'Open App',          msg:'Bundle ID:',     def:'',  type:'text',   build: v => `uiopen ${v}` },
-    '__KILL_APP__':       { title:'Kill App',          msg:'Bundle ID:',     def:'',  type:'text',   build: v => `kill ${v}` },
+    '__OPEN_APP__':       { title:'Open App',          msg:'Search App:',    def:'',  type:'text',   build: v => `uiopen ${v}` },
+    '__KILL_APP__':       { title:'Kill App',          msg:'Search App:',    def:'',  type:'text',   build: v => `kill ${v}` },
     '__LUA_SCRIPT__':     { title:'Lua Script',        msg:'Lua code:',      def:'',  type:'text',   build: v => `Lua ${v}` },
     '__CUSTOM__':         { title:'Terminal Command',  msg:'Command:',       def:'',  type:'text',   build: v => `exec ${v}` },
     '__TAP__':            { title:'Tap at Coordinates', msg:'x y  (pixels, e.g. 195 422):', def:'195 422', type:'text', build: v => `tap ${v.trim()}` },
@@ -3164,8 +3204,64 @@ function showDialog(title, msg, defaultVal, okLabel, callback, inputType='text',
     input.pattern = '';
   }
 
-  if (listId) input.setAttribute('list', listId);
-  else input.removeAttribute('list');
+  const autocompleteContainer = document.getElementById('dialog-autocomplete');
+  const dialogBox = document.querySelector('.dialog-box');
+
+  if (listId === 'app-datalist') {
+    // Disable native datalist autocomplete and use custom iOS-style selection
+    input.removeAttribute('list');
+    dialogBox.classList.add('wide');
+    autocompleteContainer.style.display = 'block';
+
+    const updateMatches = () => {
+      const query = input.value.trim().toLowerCase();
+      const matches = (cachedApps || []).filter(app =>
+        (app.name || '').toLowerCase().includes(query) ||
+        (app.bundleId || '').toLowerCase().includes(query)
+      );
+
+      autocompleteContainer.innerHTML = '';
+      matches.slice(0, 50).forEach(app => {
+        const item = document.createElement('div');
+        item.className = 'autocomplete-item';
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'autocomplete-name';
+        nameDiv.textContent = app.name;
+
+        const subDiv = document.createElement('div');
+        subDiv.className = 'autocomplete-subtitle';
+        subDiv.textContent = app.bundleId;
+
+        item.appendChild(nameDiv);
+        item.appendChild(subDiv);
+
+        item.addEventListener('click', () => {
+          input.value = app.bundleId;
+          dialogOk();
+        });
+
+        autocompleteContainer.appendChild(item);
+      });
+    };
+
+    input.addEventListener('input', updateMatches);
+    updateMatches();
+
+    input._autocompleteCleanup = () => {
+      input.removeEventListener('input', updateMatches);
+      dialogBox.classList.remove('wide');
+      autocompleteContainer.style.display = 'none';
+      autocompleteContainer.innerHTML = '';
+    };
+  } else {
+    if (input._autocompleteCleanup) {
+      input._autocompleteCleanup();
+      input._autocompleteCleanup = null;
+    }
+    if (listId) input.setAttribute('list', listId);
+    else input.removeAttribute('list');
+  }
 
   document.getElementById('dialog-ok').textContent = okLabel || 'OK';
   dialogCallback = callback;
@@ -3179,6 +3275,11 @@ function showDialog(title, msg, defaultVal, okLabel, callback, inputType='text',
 function closeDialog() {
   document.getElementById('dialog-backdrop').classList.remove('visible');
   dialogCallback = null;
+  const input = document.getElementById('dialog-input');
+  if (input._autocompleteCleanup) {
+    input._autocompleteCleanup();
+    input._autocompleteCleanup = null;
+  }
   if (dialogRecordInterval) {
     clearInterval(dialogRecordInterval);
     dialogRecordInterval = null;

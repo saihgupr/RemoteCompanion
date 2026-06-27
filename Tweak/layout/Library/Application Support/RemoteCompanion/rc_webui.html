@@ -2401,6 +2401,11 @@ function renderActionNameHtml(action, idx) {
       const bundleId = action.slice(7).trim().toLowerCase();
       const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
       paramText = app ? app.name : action.slice(7).trim();
+    } else if (lower.startsWith('kill ')) {
+      baseText = 'Kill ';
+      const bundleId = action.slice(5).trim().toLowerCase();
+      const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
+      paramText = app ? app.name : action.slice(5).trim();
     } else if (lower.startsWith('airplay connect ')) {
       baseText = 'AirPlay Connect ';
       paramText = action.slice(16);

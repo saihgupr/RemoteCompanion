@@ -75,6 +75,24 @@ static id g_actionClipboard = nil;
 #pragma clang diagnostic pop
         }
         paramText = appName;
+    } else if ([lower hasPrefix:@"kill "]) {
+        baseText = @"Kill ";
+        NSString *bundleId = [cmd substringFromIndex:5];
+        NSString *appName = bundleId;
+        Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+        if (proxyClass) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            id proxy = [proxyClass performSelector:@selector(applicationProxyForIdentifier:) withObject:bundleId];
+            if (proxy) {
+                NSString *name = [proxy performSelector:@selector(localizedName)];
+                if (name.length > 0) {
+                    appName = name;
+                }
+            }
+#pragma clang diagnostic pop
+        }
+        paramText = appName;
     } else if ([lower hasPrefix:@"airplay connect "]) {
         baseText = @"AirPlay Connect ";
         paramText = [cmd substringFromIndex:16];
@@ -1401,6 +1419,17 @@ static id g_actionClipboard = nil;
         
         UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:appPicker];
         [self presentViewController:nav animated:YES completion:nil];
+    } else if ([currentAction hasPrefix:@"kill "]) {
+        // Edit Kill App
+        RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
+        appPicker.onAppSelected = ^(NSString *name, NSString *bundleId) {
+            self.actions[indexPath.row] = [NSString stringWithFormat:@"kill %@", bundleId];
+            [self saveActions];
+            [self.tableView reloadData];
+        };
+        
+        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:appPicker];
+        [self presentViewController:nav animated:YES completion:nil];
     } else if ([currentAction hasPrefix:@"airplay connect "] || [currentAction hasPrefix:@"airplay-connect "]) {
         [self editAirPlayConnectAtIndex:indexPath.row];
     } else if ([currentAction hasPrefix:@"bt connect "] || [currentAction hasPrefix:@"bluetooth connect "] || [currentAction hasPrefix:@"bt-connect "]) {
@@ -1772,6 +1801,9 @@ static id g_actionClipboard = nil;
             } else if ([action hasPrefix:@"uiopen "]) {
                 cell.textLabel.text = cleanName;
                 subtitle = @"Application";
+            } else if ([action hasPrefix:@"kill "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"Kill Application";
             } else if ([action hasPrefix:@"airplay connect "]) {
                 cell.textLabel.text = cleanName;
                 subtitle = @"AirPlay Device";

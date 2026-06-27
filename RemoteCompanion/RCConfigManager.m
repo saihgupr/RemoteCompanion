@@ -838,6 +838,24 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             } else {
                 result = [NSString stringWithFormat:@"Open %@", bundleId];
             }
+        } else if ([cmd hasPrefix:@"kill "]) {
+            NSString *bundleId = [cmd substringFromIndex:5];
+            Class LSProxy = NSClassFromString(@"LSApplicationProxy");
+            if (LSProxy) {
+                id app = [LSProxy performSelector:@selector(applicationProxyForIdentifier:) withObject:bundleId];
+                if (app) {
+                    NSString *appName = [app performSelector:@selector(localizedName)];
+                    if (appName) {
+                        result = [NSString stringWithFormat:@"Kill %@", appName];
+                    } else {
+                       result = [NSString stringWithFormat:@"Kill %@", bundleId];
+                    }
+                } else {
+                    result = [NSString stringWithFormat:@"Kill %@", bundleId];
+                }
+            } else {
+                result = [NSString stringWithFormat:@"Kill %@", bundleId];
+            }
         } else {
             result = cmd;
         }
@@ -897,6 +915,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmd hasPrefix:@"spotify "]) return @"music.note";
     if ([cmd isEqualToString:@"home"]) return @"house.fill";
     if ([cmd hasPrefix:@"uiopen "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:7]];
+    if ([cmd hasPrefix:@"kill "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:5]];
     // Touch gesture prefix icons
     if ([cmd hasPrefix:@"tap "]) return @"hand.tap.fill";
     if ([cmd hasPrefix:@"hold "]) return @"hand.point.up.left.fill";

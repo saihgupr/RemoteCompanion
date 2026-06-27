@@ -3226,7 +3226,7 @@ function showDialog(title, msg, defaultVal, okLabel, callback, inputType='text',
       );
 
       autocompleteContainer.innerHTML = '';
-      matches.slice(0, 50).forEach(app => {
+      matches.forEach(app => {
         const item = document.createElement('div');
         item.className = 'autocomplete-item';
 

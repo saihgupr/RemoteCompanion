@@ -32,6 +32,13 @@ All notable changes to this project will be documented in this file.
 - **Improved UI Navigation & Settings**:
   - Fixed a bug where selecting a Front App condition dismissed the entire view stack, returning the user to the main menu.
   - Hid the non-functional settings edit icon for non-configurable triggers in the action view navigation bar.
+- **Kill App Action & Picker Autocomplete Enhancements**:
+  - Implemented a first-class **Kill App** action in the action sequence builders for both the native iOS App and the Web UI.
+  - Resolved bundle ID names to friendly application names (e.g. "Kill YouTube") in action displays.
+  - Linked applications to their real springboard icons (using `USER_APP:<bundleId>`) for both open and kill app list items.
+  - Re-implemented the Web UI app selection picker with a custom, high-fidelity iOS-style autocomplete search overlay (replacing the native browser `<datalist>`) for both Open App and Kill App configurations.
+  - Fixed a selection dismissal bug in the native app picker that caused duplicate action insertions.
+  - Removed outdated helper text ("Swipe left on an action to delete it") from the Web UI.
 
 
 ## [3.3.1] - 2026-06-19

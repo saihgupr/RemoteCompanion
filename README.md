@@ -7,6 +7,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Proximity Sensor & Pocket Detection**: Bind action sequences based on whether the device is covered or in a pocket (using the new `proximity` condition evaluation).
 > - **Auto-Proximity Power Toggle**: Automatically spins up the sensor during power button presses and turns it off on release to prevent standby battery drain.
 > - **Proximity CLI Commands**: Added `rc proximity`, `rc proximity on`, `rc proximity off`, and `rc proximity debug` to control and inspect sensor hardware.
+> - **Kill App Action**: Exposed the force-closing capability natively in the iOS App and Web UI action sequence builder.
 
 
 <p align="center">

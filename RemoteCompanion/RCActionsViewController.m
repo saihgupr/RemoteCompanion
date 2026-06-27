@@ -10,6 +10,10 @@
 #import "RCWiFiTriggerViewController.h"
 #import "RCBluetoothTriggerViewController.h"
 #import "RCNFCTriggerViewController.h"
+#import <notify.h>
+
+#define kSimulateNotificationPrefix "com.pizzaman.rc.simulate."
+
 
 @interface UIImage (Private)
 + (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleIdentifier format:(int)format scale:(CGFloat)scale;
@@ -183,6 +187,13 @@ static id g_actionClipboard = nil;
         [rightItems addObject:settingsButton];
     }
     
+    UIBarButtonItem *playButton = [[UIBarButtonItem alloc] 
+        initWithImage:[UIImage systemImageNamed:@"play"] 
+        style:UIBarButtonItemStylePlain 
+        target:self 
+        action:@selector(runSequence)];
+    [rightItems addObject:playButton];
+    
     self.navigationItem.rightBarButtonItems = rightItems;
 
     // Add tap gesture to title if it's an NFC trigger
@@ -263,6 +274,18 @@ static id g_actionClipboard = nil;
             [self applyTweaks];
         }
     }
+}
+
+- (void)runSequence {
+    UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [haptic impactOccurred];
+    
+    NSString *notificationName = [NSString stringWithFormat:@"%s%@", kSimulateNotificationPrefix, _triggerKey];
+    
+    // Slight delay to ensure haptic plays before the app is potentially obscured
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        notify_post([notificationName UTF8String]);
+    });
 }
 
 - (void)editTriggerSettings {

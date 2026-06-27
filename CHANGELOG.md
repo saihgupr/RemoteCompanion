@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.1] - 2026-06-27
+
+### Added
+- **Action Sequence Play Button**: Added a play icon in the iOS companion app's action sequence view to instantly run/simulate the current sequence. The play icon is positioned to the left of the edit settings button.
+
 ## [3.4.0] - 2026-06-22
 
 ### Added

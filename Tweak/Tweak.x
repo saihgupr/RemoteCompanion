@@ -6379,12 +6379,20 @@ static void start_web_server() {
             return;
         }
         
+        int port = 8080;
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = INADDR_ANY;
-        address.sin_port = htons(8080);
         
-        if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-            SRLog(@"[WebUI] bind failed");
+        while (port < 8100) {
+            address.sin_port = htons(port);
+            if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) >= 0) {
+                break;
+            }
+            port++;
+        }
+        
+        if (port >= 8100) {
+            SRLog(@"[WebUI] bind failed (ports 8080-8099 all taken)");
             close(server_fd);
             return;
         }
@@ -6395,7 +6403,7 @@ static void start_web_server() {
             return;
         }
 
-        SRLog(@"[WebUI] Server listening on port 8080");
+        SRLog(@"[WebUI] Server listening on port %d", port);
 
         while (1) {
             if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {

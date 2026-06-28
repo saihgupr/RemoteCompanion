@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.1] - 2026-06-28
+
+### Added
+- **Dynamic Web UI Port Selection**: The Web UI server now scans ports sequentially starting from `8080` (up to `8099`) and binds to the first available port. This prevents binding failures and conflicts when other web servers (such as AutoTouch) are already listening on port `8080`.
+
 ## [3.4.0] - 2026-06-22
 
 ### Added

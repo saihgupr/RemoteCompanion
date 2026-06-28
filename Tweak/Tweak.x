@@ -8510,10 +8510,11 @@ static void update_edge_gestures() {
             }
             
             static NSString *lastApp = nil;
-            if (bundleId && ![bundleId isEqualToString:lastApp]) {
-                lastApp = bundleId;
-                SRLog(@"[AppLaunch] App became Active: %@", bundleId);
-                NSString *triggerKey = [NSString stringWithFormat:@"app_launch_%@", bundleId];
+            NSString *effectiveBundleId = bundleId ?: @"com.apple.springboard";
+            if (![effectiveBundleId isEqualToString:lastApp]) {
+                lastApp = effectiveBundleId;
+                SRLog(@"[AppLaunch] App became Active: %@", effectiveBundleId);
+                NSString *triggerKey = [NSString stringWithFormat:@"app_launch_%@", effectiveBundleId];
                 RCExecuteTrigger(triggerKey);
             }
         }

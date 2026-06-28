@@ -2,14 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.4.1] - 2026-06-27
-
-### Added
-- **Action Sequence Play Button**: Added a play icon in the iOS companion app's action sequence view to instantly run/simulate the current sequence. The play icon is positioned to the left of the edit settings button.
-
 ## [3.4.0] - 2026-06-22
 
 ### Added
+- **Action Sequence Play Button**: Added a play icon in the iOS companion app's action sequence view to instantly run/simulate the current sequence. The play icon is positioned to the left of the edit settings button.
 - **Proximity Sensor & Pocket Detection**:
   - Implemented the `proximity` CLI command (`rc proximity`, `rc proximity on`, `rc proximity off`, `rc proximity debug`).
   - Added a first-class **Proximity Sensor** condition to the iOS companion app's visual rule builder, supporting evaluations for `Near` and `Far`.

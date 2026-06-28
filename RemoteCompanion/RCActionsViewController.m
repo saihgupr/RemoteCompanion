@@ -106,6 +106,26 @@ static id g_actionClipboard = nil;
     } else if ([lower hasPrefix:@"bt disconnect "] || [lower hasPrefix:@"bluetooth disconnect "]) {
         baseText = @"Disconnect ";
         paramText = [cmd substringFromIndex:[lower hasPrefix:@"bt disconnect "] ? 14 : 21];
+    } else if ([lower hasPrefix:@"toast "]) {
+        baseText = @"Toast ";
+        NSString *argString = [cmd substringFromIndex:6];
+        NSString *firstArg = nil;
+        if ([argString hasPrefix:@"\""]) {
+            NSRange nextQuote = [argString rangeOfString:@"\"" options:0 range:NSMakeRange(1, argString.length - 1)];
+            if (nextQuote.location != NSNotFound) {
+                firstArg = [argString substringWithRange:NSMakeRange(1, nextQuote.location - 1)];
+            } else {
+                firstArg = [argString substringFromIndex:1];
+            }
+        } else {
+            NSRange firstSpace = [argString rangeOfString:@" "];
+            if (firstSpace.location != NSNotFound) {
+                firstArg = [argString substringToIndex:firstSpace.location];
+            } else {
+                firstArg = argString;
+            }
+        }
+        paramText = firstArg;
     }
     
     if (baseText && paramText) {
@@ -663,6 +683,50 @@ static id g_actionClipboard = nil;
             
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentViewController:nav animated:YES completion:nil];
+            });
+        } else if ([action isEqualToString:@"__TOAST__"]) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"HUD Toast" 
+                message:@"Enter toast title, subtitle and SFSymbol name" 
+                preferredStyle:UIAlertControllerStyleAlert];
+                
+            [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+                textField.placeholder = @"Title (required)";
+            }];
+            [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+                textField.placeholder = @"Subtitle (optional)";
+            }];
+            [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+                textField.placeholder = @"SFSymbol name (optional, e.g. info.circle)";
+            }];
+            
+            [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull alertAction) {
+                NSString *title = alert.textFields[0].text;
+                NSString *subtitle = alert.textFields[1].text;
+                NSString *icon = alert.textFields[2].text;
+                
+                if (title.length > 0) {
+                    NSString *escTitle = [title stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+                    NSString *escSub = [subtitle stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+                    NSString *escIcon = [icon stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+                    
+                    NSString *cmd;
+                    if (escIcon.length > 0) {
+                        cmd = [NSString stringWithFormat:@"toast \"%@\" \"%@\" \"%@\"", escTitle, escSub ?: @"", escIcon];
+                    } else if (escSub.length > 0) {
+                        cmd = [NSString stringWithFormat:@"toast \"%@\" \"%@\"", escTitle, escSub];
+                    } else {
+                        cmd = [NSString stringWithFormat:@"toast \"%@\"", escTitle];
+                    }
+                    
+                    [self.actions addObject:cmd];
+                    [self saveActions];
+                    [self.tableView reloadData];
+                }
+            }]];
+            
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentViewController:alert animated:YES completion:nil];
             });
         } else {
             [self.actions addObject:action];

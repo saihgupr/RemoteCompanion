@@ -901,6 +901,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return @"questionmark";
     }
     NSString *cmd = (NSString *)cmdId;
+    if ([cmd hasPrefix:@"toast"]) return @"text.bubble.fill";
     if ([cmd hasPrefix:@"root "] || [cmd hasPrefix:@"exec-root "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"delay "]) return @"timer";

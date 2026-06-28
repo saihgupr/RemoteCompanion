@@ -132,7 +132,8 @@
             @{ @"name": @"Custom Lua Script", @"command": @"__LUA_SCRIPT__", @"icon": @"scroll.fill" },
             @{ @"name": @"If Condition...", @"command": @"__IF_CONDITION__", @"icon": @"arrow.triangle.branch" },
             @{ @"name": @"Delay", @"command": @"__DELAY__", @"icon": @"timer" },
-            @{ @"name": @"Terminal Command", @"command": @"__CUSTOM__", @"icon": @"terminal.fill" }
+            @{ @"name": @"Terminal Command", @"command": @"__CUSTOM__", @"icon": @"terminal.fill" },
+            @{ @"name": @"HUD Toast...", @"command": @"__TOAST__", @"icon": @"text.bubble.fill" }
         ]
     ];
     
@@ -253,6 +254,7 @@
         [cmd isEqualToString:@"__OPEN_APP__"] || 
         [cmd isEqualToString:@"__KILL_APP__"] || 
         [cmd isEqualToString:@"__LUA_SCRIPT__"] || 
+        [cmd isEqualToString:@"__TOAST__"] || 
         [cmd isEqualToString:@"__IF_CONDITION__"] ||
         [cmd isEqualToString:@"__DELAY__"] ||
         [cmd isEqualToString:@"__CUSTOM__"] ||

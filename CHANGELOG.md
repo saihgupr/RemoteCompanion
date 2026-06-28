@@ -2,14 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.4.1] - 2026-06-28
-
-### Added
-- **Dynamic Web UI Port Selection**: The Web UI server now scans ports sequentially starting from `8080` (up to `8099`) and binds to the first available port. This prevents binding failures and conflicts when other web servers (such as AutoTouch) are already listening on port `8080`.
-
 ## [3.4.0] - 2026-06-22
 
 ### Added
+- **Dynamic Web UI Port Selection**: The Web UI server now scans ports sequentially starting from `8080` (up to `8099`) and binds to the first available port. This prevents binding failures and conflicts when other web servers (such as AutoTouch) are already listening on port `8080`.
+- **HUD Toast Action Picker Option**: Exposed the HUD Toast action (`toast`) under the "Scripting & Logic" section in both the native iOS Companion App and Web UI action pickers. The companion app now offers a native 3-field input controller (Title, Subtitle, SF Symbol name), and both list views render the action with the text bubble icon and highlight parameters dynamically.
 - **Action Sequence Play Button**: Added a play icon in the iOS companion app's action sequence view to instantly run/simulate the current sequence. The play icon is positioned to the left of the edit settings button.
 - **Proximity Sensor & Pocket Detection**:
   - Implemented the `proximity` CLI command (`rc proximity`, `rc proximity on`, `rc proximity off`, `rc proximity debug`).

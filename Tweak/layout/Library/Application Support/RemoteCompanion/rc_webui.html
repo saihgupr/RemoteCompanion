@@ -864,12 +864,7 @@
           <input type="checkbox" class="ios-toggle" id="setting-webui" onchange="config.webUIEnabled=this.checked;saveConfig()">
         </div>
       </div>
-      <div class="settings-row">
-        <span class="settings-label">Fixed iPad Volume Buttons</span>
-        <div class="settings-btn">
-          <input type="checkbox" class="ios-toggle" id="setting-fixedvolume" onchange="config.fixedVolumeButtons=this.checked;saveConfig()">
-        </div>
-      </div>
+
     </div>
 
     <div class="action-list-header">Backup</div>
@@ -1289,6 +1284,7 @@ function iconForCmd(cmd) {
   const toggleInfo = parseToggleCmd(cmd);
   if (toggleInfo) return { icon:toggleInfo.icon, cls:'icon-dark' };
   if (lowCmd.startsWith('flashlight ')) return { icon:'bolt_fill',       cls:'icon-orange' };
+  if (lowCmd.startsWith('toast'))         return { icon:'text_bubble',     cls:'icon-orange' };
   if (lowCmd.startsWith('lua:'))          return { icon:'command',         cls:'icon-purple' };
   if (lowCmd.startsWith('delay '))        return { icon:'timer',           cls:'icon-orange' };
   if (lowCmd.startsWith('bt connect '))   return { icon:'link',            cls:'icon-indigo' };
@@ -1361,6 +1357,7 @@ const ACTION_SECTIONS = [
     { name:'Delay…',            cmd:'__DELAY__',     icon:'timer', needs_input:true },
     { name:'Terminal Command…', cmd:'__CUSTOM__',    icon:'command', needs_input:true },
     { name:'Lua Script…',       cmd:'__LUA_SCRIPT__',icon:'command', needs_input:true },
+    { name:'HUD Toast…',        cmd:'__TOAST__',     icon:'text_bubble', needs_input:true },
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
   ]},
 ];
@@ -2519,6 +2516,7 @@ async function selectAction(action) {
     '__OPEN_APP__':       { title:'Open App',          msg:'Search App:',    def:'',  type:'text',   build: v => `uiopen ${v}` },
     '__KILL_APP__':       { title:'Kill App',          msg:'Search App:',    def:'',  type:'text',   build: v => `kill ${v}` },
     '__LUA_SCRIPT__':     { title:'Lua Script',        msg:'Lua code:',      def:'',  type:'text',   build: v => `Lua ${v}` },
+    '__TOAST__':          { title:'HUD Toast Notification', msg:'Format: "Title" ["Subtitle"] ["SF Symbol"] (e.g., "Hello" "World" "info.circle")', def:'"Hello" "World" "info.circle"', type:'text', build: v => `toast ${v.trim()}` },
     '__CUSTOM__':         { title:'Terminal Command',  msg:'Command:',       def:'',  type:'text',   build: v => `exec ${v}` },
     '__TAP__':            { title:'Tap at Coordinates', msg:'x y  (pixels, e.g. 195 422):', def:'195 422', type:'text', build: v => `tap ${v.trim()}` },
     '__HOLD__':           { title:'Hold at Coordinates', msg:'x y [ms]  (e.g. 195 422 800):', def:'195 422 800', type:'text', build: v => `hold ${v.trim()}` },
@@ -3117,7 +3115,6 @@ function openSettings() {
   document.getElementById('setting-master').checked = !!config.masterEnabled;
   document.getElementById('setting-nfc').checked    = !!config.nfcEnabled;
   document.getElementById('setting-webui').checked  = !!config.webUIEnabled;
-  document.getElementById('setting-fixedvolume').checked = !!config.fixedVolumeButtons;
   document.getElementById('settings-panel').classList.add('active');
   document.getElementById('footer-settings-fixed').style.display = 'block';
 }

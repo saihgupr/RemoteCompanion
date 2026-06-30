@@ -1123,6 +1123,15 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             @"prefixes": @[@"vibration ring-"],
             @"suffixes": @[@"on", @"off", @"toggle"],
             @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"mute",
+            @"name": @"Mute",
+            @"icon": @"speaker.slash.fill",
+            @"prefixes": @[@"mute "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"],
+            @"exactMatches": @{ @"mute": @"toggle" }
         }
     ];
     

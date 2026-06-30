@@ -6448,7 +6448,7 @@ static void start_web_server() {
                                         html = @"<html><body><h1>RemoteCompanion WebUI</h1><p>rc_webui.html not found. Please reinstall the tweak.</p></body></html>";
                                     }
                                     NSData *htmlData = [html dataUsingEncoding:NSUTF8StringEncoding];
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: text/html\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)htmlData.length, html];
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: text/html\r\nCache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nExpires: 0\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)htmlData.length, html];
                                 }
                             } else if ([path isEqualToString:@"/favicon.ico"] || [path isEqualToString:@"/apple-touch-icon.png"] || [path hasPrefix:@"/favicon-"] || [path hasPrefix:@"/android-chrome-"] || [path isEqualToString:@"/site.webmanifest"]) {
                                 NSString *filename = [path lastPathComponent];

@@ -1198,7 +1198,7 @@ const CMD_NAMES = {
   'anc on':'Noise Cancellation On','anc off':'Noise Cancellation Off','anc transparency':'Transparency Mode',
   'airplay disconnect':'Disconnect AirPlay',
   'vibration silent-toggle':'Silent Vibrate Toggle','vibration ring-toggle':'Ring Vibrate Toggle',
-  'mute toggle':'Mute Toggle',
+  'mute':'Mute Toggle','mute on':'Mute On','mute off':'Mute Off','mute toggle':'Mute Toggle',
   'haptic':'Haptic Feedback',
   'trigger_bottombar_swipe_left':'Bottom Bar Swipe Left',
   'trigger_bottombar_swipe_right':'Bottom Bar Swipe Right',
@@ -1278,6 +1278,7 @@ function iconForCmd(cmd) {
     'open control center':'gear',
     'low power on':'battery_25','low power off':'battery_100',
     'screenshot':'camera_fill','haptic':'hand_raised_fill',
+    'mute':'speaker_slash_fill','mute on':'speaker_slash_fill','mute off':'speaker_3_fill','mute toggle':'speaker_slash_fill',
   };
   const lowCmd = cmd.toLowerCase();
   if (map[lowCmd]) return { icon:map[lowCmd], cls:'icon-dark' };
@@ -1315,6 +1316,7 @@ const ACTION_SECTIONS = [
     { name:'Volume Down',       cmd:'volume down',  icon:'speaker_1_fill' },
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
+    { name:'Mute',              cmd:'mute toggle',  icon:'speaker_slash_fill', is_toggle:true },
   ]},
   { title:'Device Controls', actions:[
     { name:'Appearance',        cmd:'appearance toggle', icon:'moon_fill', is_toggle:true },
@@ -2199,6 +2201,15 @@ function parseToggleCmd(cmd) {
       prefixes: ['vibration ring-'],
       suffixes: ['on', 'off', 'toggle'],
       displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'mute',
+      name: 'Mute',
+      icon: 'speaker_slash_fill',
+      prefixes: ['mute '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle'],
+      exactMatches: { 'mute': 'toggle' }
     }
   ];
 

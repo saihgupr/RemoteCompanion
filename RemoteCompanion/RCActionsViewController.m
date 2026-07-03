@@ -685,7 +685,7 @@ static id g_actionClipboard = nil;
                 [self presentViewController:nav animated:YES completion:nil];
             });
         } else if ([action isEqualToString:@"__TOAST__"]) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"HUD Toast" 
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Toast" 
                 message:@"Enter toast title, subtitle and SFSymbol name" 
                 preferredStyle:UIAlertControllerStyleAlert];
                 

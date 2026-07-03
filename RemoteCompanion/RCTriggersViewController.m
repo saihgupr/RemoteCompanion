@@ -359,10 +359,13 @@
             
             [[RCConfigManager sharedManager] updateTrigger:triggerKey withData:triggerData];
             
-            // Redirect to actions view
+            // Redirect to actions view, replacing app picker in stack
             dispatch_async(dispatch_get_main_queue(), ^{
                 RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:triggerKey];
-                [self.navigationController pushViewController:actionsVC animated:YES];
+                NSMutableArray *vcs = [self.navigationController.viewControllers mutableCopy];
+                [vcs removeLastObject]; // Remove the app picker
+                [vcs addObject:actionsVC];
+                [self.navigationController setViewControllers:vcs animated:YES];
             });
         };
         [self.navigationController pushViewController:vc animated:YES];

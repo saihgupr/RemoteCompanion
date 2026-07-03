@@ -134,7 +134,7 @@
             @{ @"name": @"If Condition...", @"command": @"__IF_CONDITION__", @"icon": @"arrow.triangle.branch" },
             @{ @"name": @"Delay", @"command": @"__DELAY__", @"icon": @"timer" },
             @{ @"name": @"Terminal Command", @"command": @"__CUSTOM__", @"icon": @"terminal.fill" },
-            @{ @"name": @"HUD Toast...", @"command": @"__TOAST__", @"icon": @"text.bubble.fill" }
+            @{ @"name": @"Toast...", @"command": @"__TOAST__", @"icon": @"text.bubble.fill" }
         ]
     ];
     

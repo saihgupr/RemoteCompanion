@@ -5159,6 +5159,11 @@ static NSString *handle_command(NSString *cmd) {
         
         rc_show_hud_toast(title, subtitle, icon);
         return [NSString stringWithFormat:@"Toast displayed: '%@' - '%@' (%@)\n", title ?: @"", subtitle ?: @"", icon ?: @"none"];
+    } else if ([cleanCmd isEqualToString:@"queuealbum"]) {
+        // Signal AudioReceiver app to queue the album of the currently playing song
+        notify_post("com.saihgupr.audioreceiver.queuealbum");
+        rc_show_hud_toast(@"Album Queued", @"Queuing album of current song", @"music.note.list");
+        return @"Queue album command sent to AudioReceiver\n";
     } else if ([cleanCmd hasPrefix:@"dnd "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if ([subCmd isEqualToString:@"on"]) {

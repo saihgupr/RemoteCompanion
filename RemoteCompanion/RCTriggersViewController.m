@@ -189,7 +189,11 @@
 }
 - (void)handleConfigChanged:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self reloadTableData];
+        // Only reload if we're the visible VC; if we're buried in the stack
+        // during an animated transition, skip — viewWillAppear will reload on return.
+        if (self.isViewLoaded && self.view.window && self.navigationController.topViewController == self) {
+            [self reloadTableData];
+        }
     });
 }
 
@@ -347,6 +351,7 @@
 
     [alert addAction:[UIAlertAction actionWithTitle:@"App Launch" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
         RCAppPickerViewController *vc = [[RCAppPickerViewController alloc] init];
+        vc.suppressAutoPop = YES; // We handle navigation ourselves
         vc.onAppSelected = ^(NSString *appName, NSString *bundleId) {
             NSString *triggerKey = [NSString stringWithFormat:@"app_launch_%@", bundleId];
             NSString *friendlyName = [NSString stringWithFormat:@"Launch %@", appName];
@@ -359,14 +364,12 @@
             
             [[RCConfigManager sharedManager] updateTrigger:triggerKey withData:triggerData];
             
-            // Redirect to actions view, replacing app picker in stack
-            dispatch_async(dispatch_get_main_queue(), ^{
-                RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:triggerKey];
-                NSMutableArray *vcs = [self.navigationController.viewControllers mutableCopy];
-                [vcs removeLastObject]; // Remove the app picker
-                [vcs addObject:actionsVC];
-                [self.navigationController setViewControllers:vcs animated:YES];
-            });
+            // Push actionsVC, then let the app picker pop (leaving [TriggersVC, ActionsVC])
+            RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:triggerKey];
+            NSMutableArray *vcs = [self.navigationController.viewControllers mutableCopy];
+            [vcs removeLastObject]; // Remove the app picker
+            [vcs addObject:actionsVC];
+            [self.navigationController setViewControllers:vcs animated:YES];
         };
         [self.navigationController pushViewController:vc animated:YES];
     }]];

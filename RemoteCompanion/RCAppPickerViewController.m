@@ -112,6 +112,10 @@
         self.onAppSelected(name, bundleId);
     }
     
+    if (self.suppressAutoPop) {
+        return; // Caller handles navigation
+    }
+    
     if (self.searchController.isActive) {
         [self.searchController dismissViewControllerAnimated:NO completion:^{
             if (self.navigationController && self.navigationController.viewControllers.count > 1) {
@@ -128,6 +132,7 @@
         }
     }
 }
+
 
 #pragma mark - Search
 

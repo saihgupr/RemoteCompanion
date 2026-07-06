@@ -774,7 +774,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"vibration ring-toggle": @"Ring Vibrate Toggle",
         @"vibration ring-status": @"Ring Vibrate Status",
         @"queuealbum": @"Queue Current Album",
-        @"queueartist": @"Queue Artist (Shuffle)"
+        @"queueartist": @"Queue Artist"
     };
     
     NSString *result = names[cmd];

@@ -679,6 +679,7 @@ static NSArray<NSString *> *rc_parse_quoted_arguments(NSString *argString) {
 static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *iconSymbol) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (g_rcHUDWindow) {
+            [g_rcHUDWindow.layer removeAllAnimations];
             g_rcHUDWindow.hidden = YES;
             g_rcHUDWindow = nil;
         }
@@ -749,15 +750,16 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
         // targetY places it right in status bar overlay position (matching native iOS ringer HUD)
         CGFloat targetY = (statusBarHeight > 24.0) ? 15.0 : 12.0;
         
-        g_rcHUDWindow = [[UIWindow alloc] initWithFrame:CGRectMake(pillX, startY, pillWidth, pillHeight)];
-        g_rcHUDWindow.windowLevel = UIWindowLevelAlert + 3000.0;
-        g_rcHUDWindow.backgroundColor = [UIColor clearColor];
-        g_rcHUDWindow.userInteractionEnabled = NO;
+        UIWindow *hudWindow = [[UIWindow alloc] initWithFrame:CGRectMake(pillX, startY, pillWidth, pillHeight)];
+        g_rcHUDWindow = hudWindow;
+        hudWindow.windowLevel = UIWindowLevelAlert + 3000.0;
+        hudWindow.backgroundColor = [UIColor clearColor];
+        hudWindow.userInteractionEnabled = NO;
         
         UIViewController *rootVC = [[UIViewController alloc] init];
         rootVC.view.frame = CGRectMake(0, 0, pillWidth, pillHeight);
         rootVC.view.backgroundColor = [UIColor clearColor];
-        g_rcHUDWindow.rootViewController = rootVC;
+        hudWindow.rootViewController = rootVC;
         
         BOOL isDarkMode = YES;
         if (@available(iOS 12.0, *)) {
@@ -823,7 +825,7 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
             [rootVC.view addSubview:titleLabel];
         }
         
-        g_rcHUDWindow.hidden = NO;
+        hudWindow.hidden = NO;
         
         [UIView animateWithDuration:0.5
                               delay:0.0
@@ -831,18 +833,24 @@ static void rc_show_hud_toast(NSString *title, NSString *subtitle, NSString *ico
               initialSpringVelocity:1.0
                             options:UIViewAnimationOptionCurveEaseInOut
                          animations:^{
-                             g_rcHUDWindow.frame = CGRectMake(pillX, targetY, pillWidth, pillHeight);
+                             hudWindow.frame = CGRectMake(pillX, targetY, pillWidth, pillHeight);
                          }
                          completion:^(BOOL finished) {
+                             if (g_rcHUDWindow != hudWindow) {
+                                 hudWindow.hidden = YES;
+                                 return;
+                             }
                              [UIView animateWithDuration:0.4
                                                    delay:2.0
                                                  options:UIViewAnimationOptionCurveEaseInOut
                                               animations:^{
-                                                  g_rcHUDWindow.frame = CGRectMake(pillX, startY, pillWidth, pillHeight);
+                                                  hudWindow.frame = CGRectMake(pillX, startY, pillWidth, pillHeight);
                                               }
                                               completion:^(BOOL finished2) {
-                                                  g_rcHUDWindow.hidden = YES;
-                                                  g_rcHUDWindow = nil;
+                                                  hudWindow.hidden = YES;
+                                                  if (g_rcHUDWindow == hudWindow) {
+                                                      g_rcHUDWindow = nil;
+                                                  }
                                               }];
                          }];
     });
@@ -5167,7 +5175,7 @@ static NSString *handle_command(NSString *cmd) {
     } else if ([cleanCmd isEqualToString:@"queueartist"]) {
         // Signal AudioReceiver app to queue the artist of the currently playing song
         notify_post("com.saihgupr.audioreceiver.queueartist");
-        rc_show_hud_toast(@"Artist Queued", @"Queuing artist of current song (shuffled)", @"music.mic");
+        rc_show_hud_toast(@"Artist Queued", @"Queuing artist of current song", @"music.mic");
         return @"Queue artist command sent to AudioReceiver\n";
     } else if ([cleanCmd hasPrefix:@"dnd "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];

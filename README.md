@@ -7,7 +7,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Proximity Sensor & Pocket Detection**: Bind actions based on device coverage/pocket states, auto-enabling during power button holds for zero standby battery drain.
 > - **Dynamic Web UI Port Selection**: Scans sequentially (8080-8099) to bind the first available port, preventing conflicts with other background web servers.
 > - **Action Sequence Play Button & Else If Blocks**: Test/simulate sequences instantly with a play button in the iOS app, and build nested, sequential `else_if` logic blocks.
-> - **Glassmorphism HUD Toasts**: Dropdown spring-physics toasts to confirm toggled states system-wide, featuring robust handling to resolve rapid-fire click conflicts.
+> - **Native-Style HUD Toasts**: Dropdown spring-physics toasts to confirm toggled states system-wide, featuring robust handling to resolve rapid-fire click conflicts.
 > - **Kill App & AudioMix Actions**: Force-close apps natively with a high-fidelity iOS-style autocomplete UI, and toggle/query KingPuffdaddi's AudioMix tweak state.
 
 

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.4.0] - 2026-07-07
+## [3.4.0] - 2026-06-22
 
 ### Added
 - **Dynamic Web UI Port Selection**: The Web UI server now scans ports sequentially starting from `8080` (up to `8099`) and binds to the first available port. This prevents binding failures and conflicts when other web servers (such as AutoTouch) are already listening on port `8080`.
@@ -20,7 +20,7 @@ All notable changes to this project will be documented in this file.
   - Implemented the `rc is-locked` and `rc lock status` CLI commands (previously documented but missing in the SpringBoard tweak daemon), returning `locked` or `unlocked`.
 - **Appearance Action**: Added `appearance dark/light/toggle` commands to control the device's Light/Dark mode via CLI, Web UI, and iOS App.
 - **Status Bar Double Tap Trigger**: Added a new gesture trigger to bind actions to double-tapping the status bar.
-- **AudioMix Integration**: Added first-class control actions (`audiomix`, `audiomix on`, `audiomix off`, `audiomix toggle`, `audiomix status`) to toggle and check the status of KingPuffdaddi's AudioMix tweak.
+- **AudioMix Integration**: Added first-class control actions (`audiomix`, `audiomix on`, `audiomix off`, `audiomix toggle`, `audiomix status`) to control KingPuffdaddi's AudioMix tweak settings.
 - **Heads-Up Display (HUD) Toast**: Implemented a system-wide dropdown glassmorphism HUD toast notification that animates with spring physics to confirm toggling states.
 - **Consolidated Toggle Actions**: Consolidated redundant toggle options (On/Off/Toggle) into single entries in the Action Picker for both the iOS app and Web UI, displaying states as interactive links that open slide-up sheets to edit them.
 - **Native iOS Alert Styling in Web UI**: Redesigned the Web UI edit action dialog to mirror the native iOS `UIAlertController` style, featuring a translucent dark-mode card, centered text input field, and hairline-separated blue buttons.
@@ -42,9 +42,6 @@ All notable changes to this project will be documented in this file.
   - Re-implemented the Web UI app selection picker with a custom, high-fidelity iOS-style autocomplete search overlay (replacing the native browser `<datalist>`) for both Open App and Kill App configurations.
   - Fixed a selection dismissal bug in the native app picker that caused duplicate action insertions.
   - Removed outdated helper text ("Swipe left on an action to delete it") from the Web UI.
-
-### Fixed
-- **HUD Toast Conflict Fix**: Resolved a visual/logic conflict where triggering multiple toast notifications in rapid succession caused early dismissals due to incorrect block-captured window pointers.
 
 
 ## [3.3.1] - 2026-06-19

@@ -652,42 +652,56 @@ typedef int (*CTServerConnectionGetCellularDataIsEnabledType)(CTServerConnection
 typedef int (*CTServerConnectionSetCellularDataIsEnabledType)(CTServerConnectionRef, uint8_t);
 
 static BOOL get_cellular_state() {
-    BOOL isEnabled = NO;
-    void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
-    if (ctHandle) {
-        CTServerConnectionCreateType CTServerConnectionCreate = (CTServerConnectionCreateType)dlsym(ctHandle, "_CTServerConnectionCreate");
-        CTServerConnectionGetCellularDataIsEnabledType CTServerConnectionGetCellularDataIsEnabled = (CTServerConnectionGetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionGetCellularDataIsEnabled");
-        if (CTServerConnectionCreate && CTServerConnectionGetCellularDataIsEnabled) {
-            int temp = 0;
-            CTServerConnectionRef conn = CTServerConnectionCreate(kCFAllocatorDefault, NULL, &temp);
-            if (conn) {
-                uint8_t enabled = 0;
-                CTServerConnectionGetCellularDataIsEnabled(conn, &enabled);
-                isEnabled = (enabled != 0);
-                CFRelease(conn);
+    __block BOOL isEnabled = NO;
+    dispatch_block_t block = ^{
+        void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
+        if (ctHandle) {
+            CTServerConnectionCreateType CTServerConnectionCreate = (CTServerConnectionCreateType)dlsym(ctHandle, "_CTServerConnectionCreate");
+            CTServerConnectionGetCellularDataIsEnabledType CTServerConnectionGetCellularDataIsEnabled = (CTServerConnectionGetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionGetCellularDataIsEnabled");
+            if (CTServerConnectionCreate && CTServerConnectionGetCellularDataIsEnabled) {
+                int temp = 0;
+                CTServerConnectionRef conn = CTServerConnectionCreate(kCFAllocatorDefault, NULL, &temp);
+                if (conn) {
+                    uint8_t enabled = 0;
+                    CTServerConnectionGetCellularDataIsEnabled(conn, &enabled);
+                    isEnabled = (enabled != 0);
+                    CFRelease(conn);
+                }
             }
+            dlclose(ctHandle);
         }
-        dlclose(ctHandle);
+    };
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), block);
     }
     return isEnabled;
 }
 
 static BOOL set_cellular_state(BOOL state) {
-    BOOL success = NO;
-    void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
-    if (ctHandle) {
-        CTServerConnectionCreateType CTServerConnectionCreate = (CTServerConnectionCreateType)dlsym(ctHandle, "_CTServerConnectionCreate");
-        CTServerConnectionSetCellularDataIsEnabledType CTServerConnectionSetCellularDataIsEnabled = (CTServerConnectionSetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionSetCellularDataIsEnabled");
-        if (CTServerConnectionCreate && CTServerConnectionSetCellularDataIsEnabled) {
-            int temp = 0;
-            CTServerConnectionRef conn = CTServerConnectionCreate(kCFAllocatorDefault, NULL, &temp);
-            if (conn) {
-                CTServerConnectionSetCellularDataIsEnabled(conn, state ? 1 : 0);
-                success = YES;
-                CFRelease(conn);
+    __block BOOL success = NO;
+    dispatch_block_t block = ^{
+        void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
+        if (ctHandle) {
+            CTServerConnectionCreateType CTServerConnectionCreate = (CTServerConnectionCreateType)dlsym(ctHandle, "_CTServerConnectionCreate");
+            CTServerConnectionSetCellularDataIsEnabledType CTServerConnectionSetCellularDataIsEnabled = (CTServerConnectionSetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionSetCellularDataIsEnabled");
+            if (CTServerConnectionCreate && CTServerConnectionSetCellularDataIsEnabled) {
+                int temp = 0;
+                CTServerConnectionRef conn = CTServerConnectionCreate(kCFAllocatorDefault, NULL, &temp);
+                if (conn) {
+                    CTServerConnectionSetCellularDataIsEnabled(conn, state ? 1 : 0);
+                    success = YES;
+                    CFRelease(conn);
+                }
             }
+            dlclose(ctHandle);
         }
-        dlclose(ctHandle);
+    };
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), block);
     }
     return success;
 }

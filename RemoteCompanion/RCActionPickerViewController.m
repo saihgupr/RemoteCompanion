@@ -89,6 +89,7 @@
         // Connectivity
         @[
             @{ @"name": @"Wi-Fi", @"command": @"wifi toggle", @"icon": @"wifi" },
+            @{ @"name": @"Cellular Data", @"command": @"cellular toggle", @"icon": @"antenna.radiowaves.left.and.right" },
             @{ @"name": @"Bluetooth", @"command": @"bluetooth toggle", @"icon": @"bolt.horizontal.fill" },
             @{ @"name": @"Airplane Mode", @"command": @"airplane toggle", @"icon": @"airplane" },
             @{ @"name": @"Connect Bluetooth...", @"command": @"__BT_CONNECT__", @"icon": @"link" },

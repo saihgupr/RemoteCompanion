@@ -131,6 +131,7 @@ Use the `rc blacklist` command to manage the list:
 ### Text & Notifications
 - `rc type "Text"` - Type text (supports symbols).
 - `rc paste "Text"` - Paste into clipboard.
+- `rc toast "Title" ["Subtitle"] ["SF Symbol"]` - Display a HUD toast notification. Note: use single quotes if passing special characters like `!` to prevent shell history expansion (e.g., `rc toast "Hello" 'World!'`).
 - `rc key <hex>` - Specific keyboard keys (e.g., `0x04` for 'A', `0x28` for Enter).
 - `rc log` - View the RemoteCompanion server logs.
 

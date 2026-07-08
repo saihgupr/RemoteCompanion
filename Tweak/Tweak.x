@@ -646,6 +646,52 @@ static BOOL get_dnd_state() {
     return NO;
 }
 
+typedef struct __CTServerConnection *CTServerConnectionRef;
+typedef CTServerConnectionRef (*CTServerConnectionCreateType)(CFAllocatorRef, void *, int *);
+typedef int (*CTServerConnectionGetCellularDataIsEnabledType)(CTServerConnectionRef, uint8_t *);
+typedef int (*CTServerConnectionSetCellularDataIsEnabledType)(CTServerConnectionRef, uint8_t);
+
+static BOOL get_cellular_state() {
+    BOOL isEnabled = NO;
+    void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
+    if (ctHandle) {
+        CTServerConnectionCreateType CTServerConnectionCreate = (CTServerConnectionCreateType)dlsym(ctHandle, "_CTServerConnectionCreate");
+        CTServerConnectionGetCellularDataIsEnabledType CTServerConnectionGetCellularDataIsEnabled = (CTServerConnectionGetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionGetCellularDataIsEnabled");
+        if (CTServerConnectionCreate && CTServerConnectionGetCellularDataIsEnabled) {
+            int temp = 0;
+            CTServerConnectionRef conn = CTServerConnectionCreate(kCFAllocatorDefault, NULL, &temp);
+            if (conn) {
+                uint8_t enabled = 0;
+                CTServerConnectionGetCellularDataIsEnabled(conn, &enabled);
+                isEnabled = (enabled != 0);
+                CFRelease(conn);
+            }
+        }
+        dlclose(ctHandle);
+    }
+    return isEnabled;
+}
+
+static BOOL set_cellular_state(BOOL state) {
+    BOOL success = NO;
+    void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
+    if (ctHandle) {
+        CTServerConnectionCreateType CTServerConnectionCreate = (CTServerConnectionCreateType)dlsym(ctHandle, "_CTServerConnectionCreate");
+        CTServerConnectionSetCellularDataIsEnabledType CTServerConnectionSetCellularDataIsEnabled = (CTServerConnectionSetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionSetCellularDataIsEnabled");
+        if (CTServerConnectionCreate && CTServerConnectionSetCellularDataIsEnabled) {
+            int temp = 0;
+            CTServerConnectionRef conn = CTServerConnectionCreate(kCFAllocatorDefault, NULL, &temp);
+            if (conn) {
+                CTServerConnectionSetCellularDataIsEnabled(conn, state ? 1 : 0);
+                success = YES;
+                CFRelease(conn);
+            }
+        }
+        dlclose(ctHandle);
+    }
+    return success;
+}
+
 static UIWindow *g_rcHUDWindow = nil;
 
 static NSArray<NSString *> *rc_parse_quoted_arguments(NSString *argString) {
@@ -1486,6 +1532,7 @@ static NSString *rc_status_command_for_condition_key(NSString *conditionKey) {
         @"lock": @"lock status",
         @"player": @"player status",
         @"wifi": @"wifi status",
+        @"cellular": @"cell status",
         @"bluetooth": @"bluetooth status",
         @"airplane": @"airplane status",
         @"silent_vibration": @"vibration silent-status",
@@ -5620,6 +5667,28 @@ static NSString *handle_command(NSString *cmd) {
             return @"WiFi Disabled\n";
         }
         return @"Error: SBWiFiManager not found\n";
+    } else if ([cleanCmd isEqualToString:@"cellular-on"] || [cleanCmd isEqualToString:@"cell-on"] || [cleanCmd isEqualToString:@"cellular on"] || [cleanCmd isEqualToString:@"cell on"]) {
+        if (set_cellular_state(YES)) {
+            SRLog(@"Cellular data enabled");
+            return @"Cellular Data Enabled\n";
+        }
+        return @"Error: CoreTelephony call failed\n";
+    } else if ([cleanCmd isEqualToString:@"cellular status"] || [cleanCmd isEqualToString:@"cell status"]) {
+        BOOL isEnabled = get_cellular_state();
+        return [NSString stringWithFormat:@"Cellular Data %@\n", isEnabled ? @"ON" : @"OFF"];
+    } else if ([cleanCmd isEqualToString:@"cellular-off"] || [cleanCmd isEqualToString:@"cell-off"] || [cleanCmd isEqualToString:@"cellular off"] || [cleanCmd isEqualToString:@"cell off"]) {
+        if (set_cellular_state(NO)) {
+            SRLog(@"Cellular data disabled");
+            return @"Cellular Data Disabled\n";
+        }
+        return @"Error: CoreTelephony call failed\n";
+    } else if ([cleanCmd isEqualToString:@"cellular-toggle"] || [cleanCmd isEqualToString:@"cell-toggle"] || [cleanCmd isEqualToString:@"cellular toggle"] || [cleanCmd isEqualToString:@"cell toggle"] || [cleanCmd isEqualToString:@"cellular"] || [cleanCmd isEqualToString:@"cell"]) {
+        BOOL current = get_cellular_state();
+        if (set_cellular_state(!current)) {
+            SRLog(@"Cellular data toggled: %d -> %d", current, !current);
+            return [NSString stringWithFormat:@"Cellular Data Toggled: %@\n", !current ? @"ON" : @"OFF"];
+        }
+        return @"Error: CoreTelephony call failed\n";
     } else if ([cleanCmd isEqualToString:@"airplane on"]) {
         SRLog(@"Executing airplane ON...");
         dlopen("/System/Library/PrivateFrameworks/AppSupport.framework/AppSupport", RTLD_NOW);
@@ -6700,11 +6769,9 @@ static void start_web_server() {
                                     @{@"command": @"volume <0-100>", @"desc": @"Media: Set volume to specific percentage"},
 
                                     // Hardware Toggles
-                                    @{@"command": @"flashlight toggle", @"desc": @"Toggles: Toggle flashlight state"},
-                                    @{@"command": @"flashlight <1-100>", @"desc": @"Toggles: Set flashlight brightness intensity"},
-                                    @{@"command": @"brightness <0-100>", @"desc": @"Toggles: Set screen brightness percentage"},
                                     @{@"command": @"bt on/off", @"desc": @"Toggles: Bluetooth power"},
                                     @{@"command": @"wifi on/off", @"desc": @"Toggles: WiFi power"},
+                                    @{@"command": @"cellular on/off", @"desc": @"Toggles: Cellular Data power"},
                                     @{@"command": @"airplane on/off", @"desc": @"Toggles: Airplane Mode power"},
                                     @{@"command": @"dnd on/off", @"desc": @"Toggles: Do Not Disturb Mode"},
                                     @{@"command": @"audiomix on/off", @"desc": @"Toggles: AudioMix simultaneous playback"},

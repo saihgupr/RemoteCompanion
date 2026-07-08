@@ -37,6 +37,7 @@ if [ -z "$1" ]; then
     echo "  respring          - Restart SpringBoard"
     echo "  bt on/off         - Turn Bluetooth On/Off"
     echo "  wifi on/off       - Turn WiFi On/Off"
+    echo "  cellular on/off/toggle - Turn Cellular Data On/Off/Toggle"
     echo "  airplane on/off   - Turn Airplane Mode On/Off"
     echo "  brightness <0-100> - Set screen brightness"
     echo "  haptic            - Trigger haptic tap"

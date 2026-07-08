@@ -306,6 +306,12 @@ extern Boolean MRMediaRemoteSendCommandToApp(MRMediaRemoteCommand command, NSDic
 - (id)currentNetworkName;
 @end
 
+@interface SBTelephonyManager : NSObject
++ (id)sharedTelephonyManager;
+- (id)_serverConnection;
+@end
+
+
 // MediaRemote APIs - these are stable and work on iOS 15.8
 typedef enum {
     kMRPlay = 0,
@@ -652,56 +658,54 @@ typedef int (*CTServerConnectionGetCellularDataIsEnabledType)(CTServerConnection
 typedef int (*CTServerConnectionSetCellularDataIsEnabledType)(CTServerConnectionRef, uint8_t);
 
 static BOOL get_cellular_state() {
-    __block BOOL isEnabled = NO;
-    dispatch_block_t block = ^{
-        void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
-        if (ctHandle) {
-            CTServerConnectionCreateType CTServerConnectionCreate = (CTServerConnectionCreateType)dlsym(ctHandle, "_CTServerConnectionCreate");
-            CTServerConnectionGetCellularDataIsEnabledType CTServerConnectionGetCellularDataIsEnabled = (CTServerConnectionGetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionGetCellularDataIsEnabled");
-            if (CTServerConnectionCreate && CTServerConnectionGetCellularDataIsEnabled) {
-                int temp = 0;
-                CTServerConnectionRef conn = CTServerConnectionCreate(kCFAllocatorDefault, NULL, &temp);
-                if (conn) {
-                    uint8_t enabled = 0;
-                    CTServerConnectionGetCellularDataIsEnabled(conn, &enabled);
-                    isEnabled = (enabled != 0);
-                    CFRelease(conn);
+    BOOL isEnabled = NO;
+    id telephonyManager = [(id)objc_getClass("SBTelephonyManager") sharedTelephonyManager];
+    if (telephonyManager) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        SEL connSel = @selector(_serverConnection);
+        if ([telephonyManager respondsToSelector:connSel]) {
+            CTServerConnectionRef conn = (__bridge CTServerConnectionRef)[telephonyManager performSelector:connSel];
+            if (conn) {
+                void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
+                if (ctHandle) {
+                    CTServerConnectionGetCellularDataIsEnabledType getFunc = (CTServerConnectionGetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionGetCellularDataIsEnabled");
+                    if (getFunc) {
+                        uint8_t enabled = 0;
+                        getFunc(conn, &enabled);
+                        isEnabled = (enabled != 0);
+                    }
+                    dlclose(ctHandle);
                 }
             }
-            dlclose(ctHandle);
         }
-    };
-    if ([NSThread isMainThread]) {
-        block();
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), block);
+        #pragma clang diagnostic pop
     }
     return isEnabled;
 }
 
 static BOOL set_cellular_state(BOOL state) {
-    __block BOOL success = NO;
-    dispatch_block_t block = ^{
-        void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
-        if (ctHandle) {
-            CTServerConnectionCreateType CTServerConnectionCreate = (CTServerConnectionCreateType)dlsym(ctHandle, "_CTServerConnectionCreate");
-            CTServerConnectionSetCellularDataIsEnabledType CTServerConnectionSetCellularDataIsEnabled = (CTServerConnectionSetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionSetCellularDataIsEnabled");
-            if (CTServerConnectionCreate && CTServerConnectionSetCellularDataIsEnabled) {
-                int temp = 0;
-                CTServerConnectionRef conn = CTServerConnectionCreate(kCFAllocatorDefault, NULL, &temp);
-                if (conn) {
-                    CTServerConnectionSetCellularDataIsEnabled(conn, state ? 1 : 0);
-                    success = YES;
-                    CFRelease(conn);
+    BOOL success = NO;
+    id telephonyManager = [(id)objc_getClass("SBTelephonyManager") sharedTelephonyManager];
+    if (telephonyManager) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        SEL connSel = @selector(_serverConnection);
+        if ([telephonyManager respondsToSelector:connSel]) {
+            CTServerConnectionRef conn = (__bridge CTServerConnectionRef)[telephonyManager performSelector:connSel];
+            if (conn) {
+                void *ctHandle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
+                if (ctHandle) {
+                    CTServerConnectionSetCellularDataIsEnabledType setFunc = (CTServerConnectionSetCellularDataIsEnabledType)dlsym(ctHandle, "_CTServerConnectionSetCellularDataIsEnabled");
+                    if (setFunc) {
+                        setFunc(conn, state ? 1 : 0);
+                        success = YES;
+                    }
+                    dlclose(ctHandle);
                 }
             }
-            dlclose(ctHandle);
         }
-    };
-    if ([NSThread isMainThread]) {
-        block();
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), block);
+        #pragma clang diagnostic pop
     }
     return success;
 }

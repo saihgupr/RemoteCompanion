@@ -314,6 +314,39 @@
       letter-spacing: -0.02em;
       padding: 18px 20px 0; margin: 0;
     }
+    .panel-large-title-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 18px 20px 0;
+    }
+    .panel-large-title-row .panel-large-title {
+      padding: 0;
+      margin: 0;
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .panel-large-title-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 2px;
+    }
+    .panel-large-title-actions .panel-action {
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      color: #fff;
+    }
     .panel-content { padding-bottom: 80px; }
 
     /* ── Settings panel action lists ── */
@@ -427,6 +460,9 @@
       padding: 14px; text-align: center; cursor: pointer;
     }
     .add-action-btn:active { opacity: 0.7; }
+    .action-btn-row {
+      display: flex; gap: 10px; margin: 12px 16px 0;
+    }
 
     /* ── Search bar ── */
     .search-wrap {
@@ -505,35 +541,105 @@
 
     /* ── Dialog ── */
     .dialog-backdrop {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      position: fixed; inset: 0; background: rgba(0,0,0,0);
       z-index: 900; display: none;
       align-items: center; justify-content: center;
+      backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0);
+      transition: background 0.22s ease, backdrop-filter 0.22s ease;
     }
-    .dialog-backdrop.visible { display: flex; }
+    .dialog-backdrop.visible {
+      display: flex;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    }
     .dialog-box {
-      background: #1c1c1e; border-radius: 14px;
-      width: calc(100% - 48px); max-width: 560px;
+      background: rgba(30,30,30,0.88);
+      backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px);
+      border-radius: 14px;
+      width: 270px;
       overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+      transform: scale(0.9); opacity: 0;
+      transition: transform 0.26s cubic-bezier(0.18, 0.89, 0.32, 1.15), opacity 0.22s ease;
     }
-    .dialog-title { font-size: 17px; font-weight: 600; color: #fff; text-align: center; padding: 20px 20px 4px; }
-    .dialog-msg { font-size: 13px; color: #8e8e93; text-align: center; padding: 0 20px 12px; }
+    .dialog-backdrop.visible .dialog-box {
+      transform: scale(1); opacity: 1;
+    }
+    .dialog-title {
+      font-size: 17px; font-weight: 600; color: #fff;
+      text-align: center; padding: 20px 16px 4px;
+      line-height: 1.25;
+    }
+    .dialog-msg {
+      font-size: 13px; color: #8e8e93;
+      text-align: center; padding: 0 16px 14px;
+      line-height: 1.35;
+    }
     .dialog-input {
-      width: calc(100% - 24px); margin: 0 12px 12px;
-      background: #2c2c2e; border: none; color: #fff;
-      font-size: 17px; font-family: inherit;
-      border-radius: 10px; padding: 10px 12px; outline: none;
-      display: block;
+      width: calc(100% - 32px); margin: 0 16px 16px;
+      background: rgba(0,0,0,0.35); border: 0.5px solid rgba(255,255,255,0.2); color: #fff;
+      font-size: 14px; font-family: inherit;
+      border-radius: 6px; padding: 6px 10px; outline: none;
+      display: block; text-align: center;
+      caret-color: #0a84ff;
+      box-sizing: border-box;
+      -webkit-appearance: none; appearance: none;
     }
+    /* Hide native number spinners */
+    .dialog-input::-webkit-inner-spin-button,
+    .dialog-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .dialog-input[type=number] { -moz-appearance: textfield; }
+    .dialog-input:focus { border-color: rgba(255,255,255,0.35); }
     .dialog-btns {
-      display: flex; border-top: 0.5px solid rgba(255,255,255,0.1);
+      display: flex; border-top: 0.5px solid rgba(255,255,255,0.15);
+      margin-top: 0;
     }
     .dialog-btns button {
-      flex: 1; background: none; border: none; color: #007aff;
-      font-size: 17px; font-family: inherit; padding: 14px; cursor: pointer;
+      flex: 1; height: 44px; background: none; border: none; color: #0a84ff;
+      font-size: 17px; font-family: inherit; padding: 0; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background-color 0.1s;
+      outline: none;
     }
-    .dialog-btns button:not(:last-child) { border-right: 0.5px solid rgba(255,255,255,0.1); }
-    .dialog-btns button:first-child { color: #8e8e93; }
-    #dialog-record { color: #ff9500; }
+    .dialog-btns button:active { background-color: rgba(255,255,255,0.08); }
+    .dialog-btns button:not(:last-child) { border-right: 0.5px solid rgba(255,255,255,0.15); }
+    .dialog-btns button:last-child { font-weight: 600; }
+    #dialog-record { color: #ff9500; font-weight: 400; }
+    .dialog-box.wide {
+      width: 320px;
+    }
+    .dialog-autocomplete {
+      max-height: 180px;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.25);
+      border-top: 0.5px solid rgba(255, 255, 255, 0.15);
+      display: none;
+    }
+    .autocomplete-item {
+      padding: 10px 16px;
+      border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      transition: background-color 0.1s;
+      text-align: left;
+    }
+    .autocomplete-item:last-child {
+      border-bottom: none;
+    }
+    .autocomplete-item:active {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+    .autocomplete-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: #fff;
+    }
+    .autocomplete-subtitle {
+      font-size: 11px;
+      color: #8e8e93;
+    }
 
     /* ── Context Menu (Right-click) ── */
     .context-menu {
@@ -664,7 +770,7 @@
   <div id="triggers-root"></div>
   <div class="page-footer">
     <strong>RemoteCompanion</strong>
-    <span class="app-version-display">v3.3.0</span>
+    <span class="app-version-display">v3.4.0</span>
   </div>
 </div>
 
@@ -686,7 +792,17 @@
     </button>
   </div>
   <div class="panel-content">
-    <h1 class="panel-large-title" id="actions-large-title"></h1>
+    <div class="panel-large-title-row">
+      <h1 class="panel-large-title" id="actions-large-title"></h1>
+      <div class="panel-large-title-actions">
+        <button class="panel-action white" onclick="showActionPickerPanel()" title="Add Action">
+          <i class="f7-icons">plus</i>
+        </button>
+        <button class="panel-action white" onclick="showEllipsisMenu(event)" title="More Options">
+          <i class="f7-icons">ellipsis_circle</i>
+        </button>
+      </div>
+    </div>
 
     <div class="action-list-header" style="margin-top:28px">Trigger Configuration</div>
     <div class="action-list-card">
@@ -701,9 +817,6 @@
       <!-- Rendered by renderActionList() -->
     </div>
 
-    <button class="add-action-btn" onclick="showActionPickerPanel()">+ Add Action</button>
-    <div style="padding:8px 32px 0;color:#636366;font-size:12px">
-      Swipe left on an action to delete it
     </div>
   </div>
 </div>
@@ -751,12 +864,7 @@
           <input type="checkbox" class="ios-toggle" id="setting-webui" onchange="config.webUIEnabled=this.checked;saveConfig()">
         </div>
       </div>
-      <div class="settings-row">
-        <span class="settings-label">Fixed iPad Volume Buttons</span>
-        <div class="settings-btn">
-          <input type="checkbox" class="ios-toggle" id="setting-fixedvolume" onchange="config.fixedVolumeButtons=this.checked;saveConfig()">
-        </div>
-      </div>
+
     </div>
 
     <div class="action-list-header">Backup</div>
@@ -800,15 +908,34 @@
 </div>
 
 <!-- ══ DIALOG ══════════════════════════════════════════════════════════════ -->
-<div class="dialog-backdrop" id="dialog-backdrop">
+<div class="dialog-backdrop" id="dialog-backdrop" onclick="_dialogBackdropClick(event)">
   <div class="dialog-box">
     <div class="dialog-title" id="dialog-title"></div>
     <div class="dialog-msg" id="dialog-msg"></div>
     <input class="dialog-input" id="dialog-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <div class="dialog-autocomplete" id="dialog-autocomplete"></div>
     <div class="dialog-btns">
       <button onclick="closeDialog()">Cancel</button>
       <button id="dialog-record" style="display:none;" onclick="dialogRecord()">Record</button>
       <button id="dialog-ok" onclick="dialogOk()">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ IMPORT ACTION DIALOG ════════════════════════════════════════════ -->
+<div class="dialog-backdrop" id="import-dialog-backdrop" onclick="_importDialogBackdropClick(event)">
+  <div class="dialog-box" style="max-width: 480px; width: 90%;">
+    <div class="dialog-title">Import Actions</div>
+    <div class="dialog-msg" style="padding-bottom: 8px;">Paste JSON array or line-separated action commands:</div>
+    <div style="position: relative; margin: 0 16px 12px; width: calc(100% - 32px); box-sizing: border-box;">
+      <textarea class="dialog-input" id="import-dialog-textarea" rows="8" placeholder='["flashlight toggle", "delay 1"]' style="height:180px; text-align:left; resize:none; font-family:monospace; font-size:12px; margin: 0; width: 100%; box-sizing: border-box; padding-right: 32px;"></textarea>
+      <button onclick="clearImportTextarea()" style="position: absolute; right: 8px; top: 8px; background: none; border: none; padding: 0; color: #8e8e93; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px;" title="Clear">
+        <i class="f7-icons" style="font-size: 18px;">xmark_circle_fill</i>
+      </button>
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closeImportDialog()" style="color: #ff3b30;">Cancel</button>
+      <button onclick="importDialogOk()" style="font-weight: 600;">Import</button>
     </div>
   </div>
 </div>
@@ -819,7 +946,7 @@
     <div class="dialog-msg" id="complex-dialog-msg">Select Device</div>
     
     <div style="margin: 16px 0;">
-      <div style="display:flex; background:rgba(255,255,255,0.1); border-radius:8px; overflow:hidden; margin-bottom: 12px;">
+      <div style="display:flex; background:rgba(255,255,255,0.1); border-radius:8px; overflow:hidden; margin: 0 16px 12px;">
         <div id="complex-seg-connect" onclick="setComplexSegment('connect')" style="flex:1; padding:8px; text-align:center; background:#007aff; color:#fff; font-size:14px; font-weight:500; cursor:pointer;">Connect</div>
         <div id="complex-seg-disconnect" onclick="setComplexSegment('disconnect')" style="flex:1; padding:8px; text-align:center; color:#fff; font-size:14px; font-weight:500; cursor:pointer;">Disconnect</div>
       </div>
@@ -911,6 +1038,10 @@ let currentKey = null;
 let dialogCallback = null;
 let editMode = false;
 let cachedApps = [];
+try {
+  const saved = localStorage.getItem('rc_cached_apps');
+  if (saved) cachedApps = JSON.parse(saved);
+} catch (e) {}
 
 // ── Scroll-linked small title ─────────────────────────────────────────────────
 window.addEventListener('scroll', () => {
@@ -938,7 +1069,7 @@ const TRIGGER_SECTIONS = [
   { title: 'Favorites',              id: 'favorites', keys: [] },
   { title: 'Volume Buttons',         id: 'volume',    keys: ['volume_up_hold','volume_down_hold','volume_both_press'] },
   { title: 'Power Button',           id: 'power',     keys: ['power_double_tap','power_triple_click','power_quadruple_click','power_volume_up','power_volume_down','power_long_press'] },
-  { title: 'Screen Gestures',        id: 'statusbar', keys: ['trigger_statusbar_left_hold','trigger_statusbar_center_hold','trigger_statusbar_right_hold','trigger_statusbar_swipe_left','trigger_statusbar_swipe_right'] },
+  { title: 'Screen Gestures',        id: 'statusbar', keys: ['trigger_statusbar_left_hold','trigger_statusbar_center_hold','trigger_statusbar_right_hold','trigger_statusbar_swipe_left','trigger_statusbar_swipe_right','trigger_statusbar_double_tap'] },
   { title: 'Edge Gestures',          id: 'edge',      keys: ['trigger_edge_left_swipe_up','trigger_edge_left_swipe_down','trigger_edge_right_swipe_up','trigger_edge_right_swipe_down'] },
   { title: 'Bottom Bar Gestures',    id: 'bottombar', keys: ['trigger_bottombar_swipe_left','trigger_bottombar_swipe_right'] },
   { title: 'Home Button',            id: 'home',      keys: ['trigger_home_double_click','trigger_home_triple_click','trigger_home_quadruple_click','touchid_tap','touchid_hold'] },
@@ -961,7 +1092,7 @@ const TRIGGER_NAMES = {
   power_volume_up:'Power + Volume Up', power_volume_down:'Power + Volume Down',
   trigger_statusbar_left_hold:'Status Bar Left Hold', trigger_statusbar_center_hold:'Status Bar Center Hold',
   trigger_statusbar_right_hold:'Status Bar Right Hold', trigger_statusbar_swipe_left:'Status Bar Swipe Left',
-  trigger_statusbar_swipe_right:'Status Bar Swipe Right',
+  trigger_statusbar_swipe_right:'Status Bar Swipe Right', trigger_statusbar_double_tap:'Status Bar Double Tap',
   trigger_home_double_click:'Home (Double Click)', trigger_home_triple_click:'Home (Triple Click)',
   trigger_home_quadruple_click:'Home (Quadruple Click)',
   touchid_tap:'Touch ID Tap', touchid_hold:'Touch ID Hold (Rest Finger)',
@@ -989,6 +1120,7 @@ const TRIGGER_ICONS = {
   trigger_statusbar_right_hold:  { icon:'hand_draw',     cls:'icon-gray' },
   trigger_statusbar_swipe_left:  { icon:'arrow_left_to_line', cls:'icon-gray' },
   trigger_statusbar_swipe_right: { icon:'arrow_right_to_line',cls:'icon-gray' },
+  trigger_statusbar_double_tap:  { icon:'hand_draw',         cls:'icon-gray' },
   trigger_home_double_click:   { icon:'house_fill',      cls:'icon-blue' },
   trigger_home_triple_click:   { icon:'house_fill',      cls:'icon-blue' },
   trigger_home_quadruple_click:{ icon:'house_fill',      cls:'icon-blue' },
@@ -1020,7 +1152,7 @@ function iconForKey(key) {
   if (key.startsWith('bt_disconnect_')) return { icon:'bolt_horizontal', cls:'icon-orange' };
   if (key.startsWith('bt_'))         return { icon:'bolt_horizontal_fill',          cls:'icon-indigo' };
   if (key.startsWith('app_launch_')) return { icon:'app_badge_fill',                cls:'icon-pink' };
-  if (key.startsWith('notif_'))      return { icon:'bell_circle_fill',              cls:'icon-red' };
+  if (key.startsWith('notif_') || key.startsWith('notify_'))      return { icon:'bell_circle_fill',              cls:'icon-red' };
   if (key.startsWith('sched_'))      return { icon:'clock_fill',                    cls:'icon-orange' };
   return { icon:'hand_tap', cls:'icon-gray' };
 }
@@ -1037,7 +1169,10 @@ function nameForKey(key) {
   if (key.startsWith('bt_disconnect_')) return `BT Disconnect: ${key.slice(14)}`;
   if (key.startsWith('bt_'))         return `BT: ${key.slice(3)}`;
   if (key.startsWith('app_launch_')) return `Launch: ${key.slice(11)}`;
-  if (key.startsWith('notif_'))      return `Notif: ${key.slice(6)}`;
+  if (key.startsWith('notif_') || key.startsWith('notify_')) {
+    if (key.startsWith('notify_')) return `Notif: ${key.slice(7)}`;
+    return `Notif: ${key.slice(6)}`;
+  }
   if (key.startsWith('sched_'))      return `Sched: ${key.slice(6)}`;
   return key;
 }
@@ -1046,6 +1181,7 @@ const CMD_NAMES = {
   'play':'Play','pause':'Pause','playpause':'Play/Pause','next':'Next Track','prev':'Previous Track',
   'volume up':'Volume Up','volume down':'Volume Down',
   'flashlight':'Flashlight Toggle','flashlight on':'Flashlight On','flashlight off':'Flashlight Off','flashlight toggle':'Flashlight Toggle',
+  'appearance dark':'Appearance Dark','appearance light':'Appearance Light','appearance toggle':'Appearance Toggle',
   'rotate lock':'Rotate Lock','rotate unlock':'Rotate Unlock','rotate toggle':'Rotate Toggle',
   'wifi on':'WiFi On','wifi off':'WiFi Off','wifi toggle':'WiFi Toggle',
   'bluetooth on':'Bluetooth On','bluetooth off':'Bluetooth Off','bluetooth toggle':'Bluetooth Toggle',
@@ -1053,6 +1189,7 @@ const CMD_NAMES = {
   'haptic':'Haptic Feedback','screenshot':'Screenshot',
   'lock':'Lock Device','unlock':'Unlock Device',
   'dnd on':'Do Not Disturb On','dnd off':'Do Not Disturb Off','dnd toggle':'Do Not Disturb Toggle',
+  'audiomix on':'AudioMix On','audiomix off':'AudioMix Off','audiomix toggle':'AudioMix Toggle',
   'respring':'Respring','siri':'Activate Siri','home':'Home Button','switcher':'App Switcher',
   'previous app':'Previous App',
   'open control center':'Control Center',
@@ -1061,7 +1198,7 @@ const CMD_NAMES = {
   'anc on':'Noise Cancellation On','anc off':'Noise Cancellation Off','anc transparency':'Transparency Mode',
   'airplay disconnect':'Disconnect AirPlay',
   'vibration silent-toggle':'Silent Vibrate Toggle','vibration ring-toggle':'Ring Vibrate Toggle',
-  'mute toggle':'Mute Toggle',
+  'mute':'Mute Toggle','mute on':'Mute On','mute off':'Mute Off','mute toggle':'Mute Toggle',
   'haptic':'Haptic Feedback',
   'trigger_bottombar_swipe_left':'Bottom Bar Swipe Left',
   'trigger_bottombar_swipe_right':'Bottom Bar Swipe Right',
@@ -1072,10 +1209,15 @@ function nameForCmd(cmd) {
   if (typeof cmd === 'object') {
     const t = (cmd.type||'').toLowerCase();
     if (t === 'if') return `If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
+    if (t === 'else_if') return `Else If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
     if (t === 'else') return 'Else';
     if (t === 'end_if' || t === 'end') return 'End If';
     if (t === 'repeat') return `Repeat ${cmd.count||''}`;
     return 'Block';
+  }
+  const toggleInfo = parseToggleCmd(cmd);
+  if (toggleInfo) {
+    return `${toggleInfo.name} ${toggleInfo.currentDisplaySuffix}`;
   }
   const lowCmd = cmd.toLowerCase();
   if (CMD_NAMES[lowCmd]) return CMD_NAMES[lowCmd];
@@ -1090,7 +1232,16 @@ function nameForCmd(cmd) {
   if (lowCmd.startsWith('set-vol '))      return `Set Volume ${cmd.slice(8)}%`;
   if (lowCmd.startsWith('brightness '))   return `Set Brightness ${cmd.slice(11)}%`;
   if (lowCmd.startsWith('shortcut:'))     return `Shortcut: ${cmd.slice(9)}`;
-  if (lowCmd.startsWith('uiopen '))       return `Open: ${cmd.slice(7)}`;
+  if (lowCmd.startsWith('uiopen ')) {
+    const bundleId = cmd.slice(7).trim().toLowerCase();
+    const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
+    return `Open ${app ? app.name : cmd.slice(7).trim()}`;
+  }
+  if (lowCmd.startsWith('kill ')) {
+    const bundleId = cmd.slice(5).trim().toLowerCase();
+    const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
+    return `Kill ${app ? app.name : cmd.slice(5).trim()}`;
+  }
   // Touch gesture display names
   if (lowCmd.startsWith('tap '))   { const p=cmd.slice(4).trim().split(/\s+/); return `Tap (${p[0]||'?'}, ${p[1]||'?'})`; }
   if (lowCmd.startsWith('hold '))  { const p=cmd.slice(5).trim().split(/\s+/); return `Hold (${p[0]||'?'}, ${p[1]||'?'})${p[2]?` ${p[2]}ms`:''}`; }
@@ -1107,7 +1258,7 @@ function iconForCmd(cmd) {
   if (!cmd) return { icon:'questionmark', cls:'icon-gray' };
   if (typeof cmd === 'object') {
     const t = (cmd.type||'').toLowerCase();
-    if (t === 'if' || t === 'else') return { icon:'arrow_triangle_branch', cls:'icon-purple' };
+    if (t === 'if' || t === 'else_if' || t === 'else') return { icon:'arrow_triangle_branch', cls:'icon-purple' };
     if (t === 'end_if' || t === 'end') return { icon:'arrow_turn_up_left', cls:'icon-purple' };
     return { icon:'repeat', cls:'icon-green' };
   }
@@ -1116,19 +1267,25 @@ function iconForCmd(cmd) {
     'next':'forward_fill','prev':'backward_fill',
     'volume up':'speaker_3_fill','volume down':'speaker_1_fill',
     'flashlight':'bolt_fill','flashlight on':'bolt_fill','flashlight off':'bolt_slash_fill','flashlight toggle':'bolt_fill',
+    'appearance dark':'moon_fill','appearance light':'sun_max_fill','appearance toggle':'moon_fill',
     'wifi on':'wifi','wifi off':'wifi_slash','wifi toggle':'wifi',
     'bluetooth on':'bolt_horizontal_fill','bluetooth off':'bolt_horizontal','bluetooth toggle':'bolt_horizontal_fill',
     'airplane on':'airplane','airplane off':'airplane','airplane toggle':'airplane',
     'lock':'lock_fill','unlock':'lock_open_fill',
     'dnd on':'moon_fill','dnd off':'moon','dnd toggle':'moon_circle_fill',
+    'audiomix on':'equalizer','audiomix off':'equalizer','audiomix toggle':'equalizer',
     'respring':'arrow_2_circlepath','siri':'mic_fill','home':'house_fill',
     'open control center':'gear',
     'low power on':'battery_25','low power off':'battery_100',
     'screenshot':'camera_fill','haptic':'hand_raised_fill',
+    'mute':'speaker_slash_fill','mute on':'speaker_slash_fill','mute off':'speaker_3_fill','mute toggle':'speaker_slash_fill',
   };
   const lowCmd = cmd.toLowerCase();
   if (map[lowCmd]) return { icon:map[lowCmd], cls:'icon-dark' };
+  const toggleInfo = parseToggleCmd(cmd);
+  if (toggleInfo) return { icon:toggleInfo.icon, cls:'icon-dark' };
   if (lowCmd.startsWith('flashlight ')) return { icon:'bolt_fill',       cls:'icon-orange' };
+  if (lowCmd.startsWith('toast'))         return { icon:'text_bubble',     cls:'icon-orange' };
   if (lowCmd.startsWith('lua:'))          return { icon:'command',         cls:'icon-purple' };
   if (lowCmd.startsWith('delay '))        return { icon:'timer',           cls:'icon-orange' };
   if (lowCmd.startsWith('bt connect '))   return { icon:'link',            cls:'icon-indigo' };
@@ -1137,6 +1294,7 @@ function iconForCmd(cmd) {
   if (lowCmd.startsWith('brightness '))   return { icon:'sun_max_fill',    cls:'icon-yellow' };
   if (lowCmd.startsWith('shortcut:'))     return { icon:'command',         cls:'icon-indigo' };
   if (lowCmd.startsWith('uiopen '))       return { icon:'app_badge_fill',  cls:'icon-pink' };
+  if (lowCmd.startsWith('kill '))         return { icon:'xmark_circle_fill', cls:'icon-red' };
   if (lowCmd.startsWith('exec ') || lowCmd.startsWith('root ')) return { icon:'command', cls:'icon-dark' };
   if (lowCmd.startsWith('trigger_bottombar')) return { icon:'square_stack_3d_up_fill', cls:'icon-gray' };
   // Touch gestures
@@ -1158,26 +1316,18 @@ const ACTION_SECTIONS = [
     { name:'Volume Down',       cmd:'volume down',  icon:'speaker_1_fill' },
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
+    { name:'Mute',              cmd:'mute toggle',  icon:'speaker_slash_fill', is_toggle:true },
   ]},
   { title:'Device Controls', actions:[
-    { name:'Flashlight Toggle', cmd:'flashlight toggle', icon:'bolt_fill' },
-    { name:'Flashlight On',     cmd:'flashlight on',     icon:'bolt_fill' },
-    { name:'Flashlight Off',    cmd:'flashlight off',    icon:'bolt_slash_fill' },
+    { name:'Appearance',        cmd:'appearance toggle', icon:'moon_fill', is_toggle:true },
+    { name:'Flashlight',        cmd:'flashlight toggle', icon:'bolt_fill', is_toggle:true },
     { name:'Flashlight Intensity…', cmd:'__SET_FLASHLIGHT__', icon:'bolt_fill', needs_input:true },
-    { name:'Rotate Lock',       cmd:'rotate lock',       icon:'lock_rotation' },
-    { name:'Rotate Unlock',     cmd:'rotate unlock',     icon:'lock_rotation_open' },
-    { name:'Rotate Toggle',     cmd:'rotate toggle',     icon:'lock_rotation' },
+    { name:'Rotation Lock',     cmd:'rotate toggle',     icon:'lock_rotation', is_toggle:true },
   ]},
   { title:'Connectivity', actions:[
-    { name:'WiFi On',           cmd:'wifi on',      icon:'wifi' },
-    { name:'WiFi Off',          cmd:'wifi off',     icon:'wifi_slash' },
-    { name:'WiFi Toggle',       cmd:'wifi toggle',  icon:'wifi' },
-    { name:'Bluetooth On',      cmd:'bluetooth on', icon:'bolt_horizontal_fill' },
-    { name:'Bluetooth Off',     cmd:'bluetooth off',icon:'bolt_horizontal' },
-    { name:'Bluetooth Toggle',  cmd:'bluetooth toggle',icon:'bolt_horizontal_fill' },
-    { name:'Airplane Mode On',  cmd:'airplane on',  icon:'airplane' },
-    { name:'Airplane Mode Off', cmd:'airplane off', icon:'airplane' },
-    { name:'Airplane Toggle',   cmd:'airplane toggle',icon:'airplane' },
+    { name:'Wi-Fi',             cmd:'wifi toggle',  icon:'wifi', is_toggle:true },
+    { name:'Bluetooth',         cmd:'bluetooth toggle',icon:'bolt_horizontal_fill', is_toggle:true },
+    { name:'Airplane Mode',     cmd:'airplane toggle',icon:'airplane', is_toggle:true },
     { name:'Connect Bluetooth…',cmd:'__BT_CONNECT__',icon:'link', needs_input:true },
     { name:'Disconnect Bluetooth…',cmd:'__BT_DISCONNECT__',icon:'xmark_circle', needs_input:true },
     { name:'Connect AirPlay…',   cmd:'__AIRPLAY_CONNECT__',icon:'airplayaudio', needs_input:true },
@@ -1188,11 +1338,11 @@ const ACTION_SECTIONS = [
     { name:'Screenshot',        cmd:'screenshot',    icon:'camera_fill' },
     { name:'Run Shortcut…',     cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'Open App…',         cmd:'__OPEN_APP__',  icon:'square_grid_2x2_fill', needs_input:true },
+    { name:'Kill App…',         cmd:'__KILL_APP__',  icon:'xmark_circle_fill', needs_input:true },
     { name:'Lock Device',       cmd:'lock',          icon:'lock_fill' },
     { name:'Unlock Device',     cmd:'unlock',        icon:'lock_open_fill' },
-    { name:'Do Not Disturb On', cmd:'dnd on',        icon:'moon_fill' },
-    { name:'Do Not Disturb Off',cmd:'dnd off',       icon:'moon' },
-    { name:'DND Toggle',        cmd:'dnd toggle',    icon:'moon_circle_fill' },
+    { name:'Do Not Disturb',    cmd:'dnd toggle',    icon:'moon_fill', is_toggle:true },
+    { name:'AudioMix',          cmd:'audiomix toggle',icon:'equalizer', is_toggle:true },
     { name:'Activate Siri',     cmd:'siri',          icon:'mic_fill' },
     { name:'Home Button',       cmd:'home',          icon:'house_fill' },
     { name:'App Switcher',      cmd:'switcher',      icon:'square_stack_3d_up_fill' },
@@ -1200,15 +1350,16 @@ const ACTION_SECTIONS = [
     { name:'Control Center',    cmd:'open control center',icon:'gear' },
     { name:'Respring',          cmd:'respring',      icon:'arrow_2_circlepath' },
     { name:'Soft Reboot',       cmd:'ldrestart',     icon:'arrow_clockwise' },
-    { name:'Low Power On',      cmd:'low power on',  icon:'battery_25' },
-    { name:'Low Power Off',     cmd:'low power off', icon:'battery_100' },
-    { name:'Low Power Toggle',  cmd:'low power toggle',icon:'battery_25' },
+    { name:'Low Power Mode',    cmd:'low power toggle',icon:'battery_25', is_toggle:true },
+    { name:'Silent Vibration',  cmd:'vibration silent-toggle', icon:'bell_slash', is_toggle:true },
+    { name:'Ring Vibration',    cmd:'vibration ring-toggle', icon:'bell', is_toggle:true },
   ]},
   { title:'Scripting & Logic', actions:[
     { name:'If Condition…',     cmd:'__IF_CONDITION__',icon:'arrow_triangle_branch', needs_input:true },
     { name:'Delay…',            cmd:'__DELAY__',     icon:'timer', needs_input:true },
     { name:'Terminal Command…', cmd:'__CUSTOM__',    icon:'command', needs_input:true },
     { name:'Lua Script…',       cmd:'__LUA_SCRIPT__',icon:'command', needs_input:true },
+    { name:'HUD Toast…',        cmd:'__TOAST__',     icon:'text_bubble', needs_input:true },
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
   ]},
 ];
@@ -1220,7 +1371,7 @@ const CONDITION_DEFS = [
   { key:'bluetooth',  title:'Bluetooth',    values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'airplane',   title:'Airplane Mode',values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'orientation',title:'Orientation',  values:[{value:'PORTRAIT',title:'Portrait'},{value:'LANDSCAPE',title:'Landscape'}] },
-  { key:'frontApp',   title:'Front App is', values:null, freeText:true },
+  { key:'front_app',   title:'Front App is', values:null, freeText:true },
 ];
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -1235,6 +1386,7 @@ async function loadData() {
     hasLoadedData = true;
     renderAll();
     loadVersion();
+    refreshDatalists();
   } catch(e) {
     document.getElementById('conn-banner').classList.add('visible');
   }
@@ -1583,7 +1735,7 @@ function deleteTrigger(key) {
       delete config.triggers[key];
       config.favoriteTriggers = (config.favoriteTriggers||[]).filter(k => k !== key);
       // Also remove from notificationTriggers array if applicable
-      if (key.startsWith('notif_') && config.notificationTriggers) {
+      if ((key.startsWith('notif_') || key.startsWith('notify_')) && config.notificationTriggers) {
         config.notificationTriggers = config.notificationTriggers.filter(t => t.triggerKey !== key);
       }
       saveConfig(); renderAll();
@@ -1679,7 +1831,7 @@ function openActionsPanel(key) {
   // Show/Hide edit settings button based on trigger type
   const editBtn = document.getElementById('edit-trigger-nav-btn');
   const isSched = key.startsWith('sched_');
-  const isNotif = key.startsWith('notif_');
+  const isNotif = key.startsWith('notif_') || key.startsWith('notify_');
   const isWiFi = key.startsWith('wifi_');
   const isBT = key.startsWith('bt_');
   const isApp = key.startsWith('app_launch_');
@@ -1697,7 +1849,7 @@ function openActionsPanel(key) {
 function onEditTriggerSettings() {
   if (!currentKey) return;
   const isSched = currentKey.startsWith('sched_');
-  const isNotif = currentKey.startsWith('notif_');
+  const isNotif = currentKey.startsWith('notif_') || currentKey.startsWith('notify_');
   const isWiFi = currentKey.startsWith('wifi_');
   const isBT = currentKey.startsWith('bt_');
   
@@ -1754,7 +1906,7 @@ function renderActionList() {
   const actions = triggerData(currentKey).actions || [];
 
   if (actions.length === 0) {
-    card.innerHTML = `<div style="padding:20px 16px;color:#636366;font-size:15px;font-style:italic">No actions — tap "+ Add Action" below</div>`;
+    card.innerHTML = `<div style="padding:20px 16px;color:#636366;font-size:15px;font-style:italic">No actions — tap "+" in the top right to add</div>`;
     return;
   }
 
@@ -1764,8 +1916,9 @@ function renderActionList() {
     const type   = isCtrl ? (action.type||'').toLowerCase() : null;
     const isEnd  = type === 'end_if' || type === 'end';
     const isElse = type === 'else';
+    const isElseIf = type === 'else_if';
     const isIf   = type === 'if';
-    const rowIndent = (isEnd || isElse) ? Math.max(0, indent - 1) : indent;
+    const rowIndent = (isEnd || isElse || isElseIf) ? Math.max(0, indent - 1) : indent;
     const { icon, cls } = iconForCmd(action);
 
     // Outer wrapper
@@ -1787,7 +1940,7 @@ function renderActionList() {
       <div class="action-row-icon ${cls}" style="width:24px;height:24px;border-radius:6px;margin-right:14px;flex-shrink:0">
         <i class="f7-icons" style="font-size:13px">${icon}</i>
       </div>
-      <div style="flex:1;min-width:0;font-size:16px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(nameForCmd(action))}</div>
+      <div style="flex:1;min-width:0;font-size:16px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${renderActionNameHtml(action, idx)}</div>
       <i class="f7-icons drag-handle" style="color:#3a3a3c;font-size:18px;flex-shrink:0;margin-left:8px;cursor:grab;">bars</i>
     `;
     row.appendChild(inner);
@@ -1858,12 +2011,64 @@ function renderActionList() {
       window.addEventListener('mouseup', onMouseUp);
     });
 
-    // ── Context menu (Right-click) ──
+    // ── Context menu (Right-click / Long press) ──
     inner.addEventListener('contextmenu', e => {
       const items = [];
       if (typeof action === 'string') {
         items.push({ label: 'Run Action', icon: 'play_fill', action: () => runSingleAction(action) });
       }
+
+      if (isCtrl) {
+        if (type === 'if' || type === 'else_if' || type === 'else' || type === 'end_if' || type === 'end') {
+          const parentIf = findParentIfIndex(actions, idx);
+          if (parentIf > -1) {
+            if (type === 'if' || type === 'else_if') {
+              items.push({
+                label: 'Edit Condition',
+                icon: 'pencil',
+                action: () => showConditionPicker(idx, undefined, type)
+              });
+            }
+
+            const insertIdx = getElseIfInsertionIndex(actions, idx);
+            if (insertIdx > -1) {
+              items.push({
+                label: 'Add Else If',
+                icon: 'arrow_triangle_branch',
+                action: () => showConditionPicker(undefined, insertIdx, 'else_if')
+              });
+            }
+
+            const siblingElse = findSiblingElseIndex(actions, parentIf);
+            if (siblingElse > -1) {
+              if (type === 'else' || type === 'if') {
+                items.push({
+                  label: 'Remove Else',
+                  icon: 'trash_fill',
+                  destructive: true,
+                  action: () => {
+                    actions.splice(siblingElse, 1);
+                    saveConfig(); renderActionList();
+                  }
+                });
+              }
+            } else {
+              items.push({
+                label: 'Add Else',
+                icon: 'arrow_triangle_branch',
+                action: () => {
+                  const endIdx = findMatchingEndIfIndex(actions, parentIf);
+                  if (endIdx > -1) {
+                    actions.splice(endIdx, 0, { type: 'else' });
+                    saveConfig(); renderActionList();
+                  }
+                }
+              });
+            }
+          }
+        }
+      }
+
       items.push({ label: 'Delete Action', icon: 'trash_fill', action: () => removeAction(idx), destructive: true });
       showContextMenu(e, items);
     });
@@ -1876,8 +2081,8 @@ function renderActionList() {
 
     card.appendChild(row);
 
-    if (isIf || isElse) indent++;
-    if (isEnd || isElse) indent = Math.max(0, indent - 1);
+    if (isIf || isElse || isElseIf) indent++;
+    if (isEnd || isElse || isElseIf) indent = Math.max(0, indent - 1);
   });
 
   if (window._actionSortable) {
@@ -1901,6 +2106,331 @@ function removeAction(idx) {
   const arr = triggerData(currentKey).actions;
   arr.splice(idx, 1);
   saveConfig(); renderActionList();
+}
+
+function parseToggleCmd(cmd) {
+  if (!cmd || typeof cmd !== 'string') return null;
+  const lower = cmd.toLowerCase();
+
+  const definitions = [
+    {
+      key: 'airplane',
+      name: 'Airplane Mode',
+      icon: 'airplane',
+      prefixes: ['airplane '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'low_power',
+      name: 'Low Power Mode',
+      icon: 'battery_25',
+      prefixes: ['low power ', 'lpm ', 'low power mode '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'appearance',
+      name: 'Appearance',
+      icon: 'moon_fill',
+      prefixes: ['appearance '],
+      suffixes: ['dark', 'light', 'toggle'],
+      displaySuffixes: ['Dark', 'Light', 'Toggle']
+    },
+    {
+      key: 'dnd',
+      name: 'Do Not Disturb',
+      icon: 'moon_fill',
+      prefixes: ['dnd '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'wifi',
+      name: 'Wi-Fi',
+      icon: 'wifi',
+      prefixes: ['wifi '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'bluetooth',
+      name: 'Bluetooth',
+      icon: 'bolt_horizontal_fill',
+      prefixes: ['bluetooth ', 'bt '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'flashlight',
+      name: 'Flashlight',
+      icon: 'bolt_fill',
+      prefixes: ['flashlight ', 'flash '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'audiomix',
+      name: 'AudioMix',
+      icon: 'equalizer',
+      prefixes: ['audiomix '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle'],
+      exactMatches: { 'audiomix': 'toggle' }
+    },
+    {
+      key: 'rotate',
+      name: 'Rotation Lock',
+      icon: 'lock_rotation',
+      prefixes: ['rotate '],
+      suffixes: ['lock', 'unlock', 'toggle'],
+      displaySuffixes: ['Lock', 'Unlock', 'Toggle']
+    },
+    {
+      key: 'vibration_silent',
+      name: 'Silent Vibration',
+      icon: 'bell_slash',
+      prefixes: ['vibration silent-'],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'vibration_ring',
+      name: 'Ring Vibration',
+      icon: 'bell',
+      prefixes: ['vibration ring-'],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle']
+    },
+    {
+      key: 'mute',
+      name: 'Mute',
+      icon: 'speaker_slash_fill',
+      prefixes: ['mute '],
+      suffixes: ['on', 'off', 'toggle'],
+      displaySuffixes: ['On', 'Off', 'Toggle'],
+      exactMatches: { 'mute': 'toggle' }
+    }
+  ];
+
+  for (const def of definitions) {
+    if (def.exactMatches && def.exactMatches[lower]) {
+      const suffix = def.exactMatches[lower];
+      const idx = def.suffixes.indexOf(suffix);
+      const displaySuffix = def.displaySuffixes[idx];
+      return {
+        key: def.key,
+        name: def.name,
+        icon: def.icon,
+        currentSuffix: suffix,
+        currentDisplaySuffix: displaySuffix,
+        suffixes: def.suffixes,
+        displaySuffixes: def.displaySuffixes,
+        matchedPrefix: '',
+        prefixes: def.prefixes
+      };
+    }
+
+    for (const prefix of def.prefixes) {
+      if (lower.startsWith(prefix)) {
+        const suffix = lower.slice(prefix.length);
+        const idx = def.suffixes.indexOf(suffix);
+        if (idx !== -1) {
+          const displaySuffix = def.displaySuffixes[idx];
+          return {
+            key: def.key,
+            name: def.name,
+            icon: def.icon,
+            currentSuffix: suffix,
+            currentDisplaySuffix: displaySuffix,
+            suffixes: def.suffixes,
+            displaySuffixes: def.displaySuffixes,
+            matchedPrefix: prefix,
+            prefixes: def.prefixes
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function changeToggleState(event, idx) {
+  if (event) event.stopPropagation();
+  const actions = triggerData(currentKey).actions || [];
+  const action = actions[idx];
+  const toggleInfo = parseToggleCmd(action);
+  if (!toggleInfo) return;
+
+  const buttons = toggleInfo.suffixes.map((suffix, sIdx) => {
+    const displaySuffix = toggleInfo.displaySuffixes[sIdx];
+    return {
+      label: displaySuffix,
+      action: () => {
+        const canonicalPrefix = toggleInfo.matchedPrefix || toggleInfo.prefixes[0] || '';
+        let newCommand = canonicalPrefix + suffix;
+        if (!toggleInfo.matchedPrefix && toggleInfo.key === 'audiomix' && suffix === 'toggle') {
+          newCommand = 'audiomix';
+        }
+        actions[idx] = newCommand;
+        saveConfig();
+        renderActionList();
+      }
+    };
+  });
+
+  buttons.push({
+    label: 'Cancel',
+    action: () => {}
+  });
+
+  showSheet(toggleInfo.name, buttons);
+}
+
+function changeParamValue(event, idx) {
+  if (event) event.stopPropagation();
+  const actions = triggerData(currentKey).actions || [];
+  const action = actions[idx];
+  if (typeof action !== 'string') return;
+
+  const lower = action.toLowerCase();
+
+  const needsText = {
+    '__DELAY__':          { title:'Edit Delay',        msg:'Seconds:', type:'number', build: v => `delay ${v}` },
+    '__SET_VOLUME__':     { title:'Edit Volume',        msg:'Value (0-100):', type:'number', build: v => `set-vol ${Math.max(0,Math.min(100,+v||50))}` },
+    '__SET_BRIGHTNESS__': { title:'Edit Brightness',    msg:'Value (0-100):', type:'number', build: v => `brightness ${Math.max(0,Math.min(100,+v||50))}` },
+    '__SET_FLASHLIGHT__': { title:'Edit Flashlight %',      msg:'Value (0-100):', type:'number', build: v => `flashlight ${Math.max(0,Math.min(100,+v||50))}` },
+    '__BT_CONNECT__':     { title:'Edit BT Device', msg:'Device name:',   type:'text',   build: v => `bt connect ${v}` },
+    '__BT_DISCONNECT__':  { title:'Edit BT Disconnect', msg:'Device name:',   type:'text',   build: v => `bt disconnect ${v}` },
+    '__AIRPLAY_CONNECT__':{ title:'Edit AirPlay',  msg:'Device name:',   type:'text',   build: v => `airplay connect ${v}` },
+    '__SHORTCUT__':       { title:'Edit Shortcut',      msg:'Shortcut name:', type:'text',   build: v => `shortcut:${v}` },
+    '__OPEN_APP__':       { title:'Edit App',          msg:'Search App:',     type:'text',   build: v => `uiopen ${v}` },
+    '__KILL_APP__':       { title:'Edit Kill App',     msg:'Search App:',     type:'text',   build: v => `kill ${v}` }
+  };
+
+  let typeKey = null;
+  let currentVal = '';
+
+  if (lower.startsWith('set-vol ')) {
+    typeKey = '__SET_VOLUME__';
+    currentVal = action.slice(8);
+  } else if (lower.startsWith('brightness ')) {
+    typeKey = '__SET_BRIGHTNESS__';
+    currentVal = action.slice(11);
+  } else if (lower.startsWith('flashlight ') || lower.startsWith('flash ')) {
+    const val = action.slice(lower.startsWith('flashlight ') ? 11 : 6);
+    if (!isNaN(val) && val.trim() !== '') {
+      typeKey = '__SET_FLASHLIGHT__';
+      currentVal = val;
+    }
+  } else if (lower.startsWith('delay ')) {
+    typeKey = '__DELAY__';
+    currentVal = action.slice(6);
+  } else if (lower.startsWith('shortcut:')) {
+    typeKey = '__SHORTCUT__';
+    currentVal = action.slice(9);
+  } else if (lower.startsWith('uiopen ')) {
+    typeKey = '__OPEN_APP__';
+    currentVal = action.slice(7);
+  } else if (lower.startsWith('kill ')) {
+    typeKey = '__KILL_APP__';
+    currentVal = action.slice(5);
+  } else if (lower.startsWith('airplay connect ')) {
+    typeKey = '__AIRPLAY_CONNECT__';
+    currentVal = action.slice(16);
+  } else if (lower.startsWith('bt connect ') || lower.startsWith('bluetooth connect ')) {
+    typeKey = '__BT_CONNECT__';
+    currentVal = action.slice(lower.startsWith('bt connect ') ? 11 : 18);
+  } else if (lower.startsWith('bt disconnect ') || lower.startsWith('bluetooth disconnect ')) {
+    typeKey = '__BT_DISCONNECT__';
+    currentVal = action.slice(lower.startsWith('bt disconnect ') ? 14 : 21);
+  }
+
+  if (typeKey && needsText[typeKey]) {
+    const d = needsText[typeKey];
+    let listId = null;
+    if (typeKey === '__OPEN_APP__' || typeKey === '__KILL_APP__') listId = 'app-datalist';
+    if (typeKey === '__BT_CONNECT__' || typeKey === '__BT_DISCONNECT__') listId = 'bt-datalist';
+    if (typeKey === '__AIRPLAY_CONNECT__') listId = 'airplay-datalist';
+    
+    if (listId) refreshDatalists();
+
+    showDialog(d.title, d.msg, currentVal, 'Save', val => {
+      if (!val) return;
+      actions[idx] = d.build(val);
+      saveConfig();
+      renderActionList();
+    }, d.type, listId);
+  }
+}
+
+function renderActionNameHtml(action, idx) {
+  const toggleInfo = parseToggleCmd(action);
+  if (toggleInfo) {
+    return `${escHtml(toggleInfo.name)} <span class="toggle-link" style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="changeToggleState(event, ${idx})">${escHtml(toggleInfo.currentDisplaySuffix)}</span>`;
+  }
+
+  if (typeof action === 'object') {
+    const t = (action.type || '').toLowerCase();
+    if (t === 'if' || t === 'else_if') {
+      const prefix = t === 'if' ? 'If' : 'Else If';
+      const condTitle = action.conditionTitle || 'Condition';
+      const expTitle = action.expectedTitle || 'Value';
+      return `${prefix} ${escHtml(condTitle)} is <span class="toggle-link" style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="event.stopPropagation(); showConditionPicker(${idx}, undefined, '${t}')">${escHtml(expTitle)}</span>`;
+    }
+  }
+
+  if (typeof action === 'string') {
+    const lower = action.toLowerCase();
+    let baseText = null;
+    let paramText = null;
+
+    if (lower.startsWith('set-vol ')) {
+      baseText = 'Set Volume ';
+      paramText = action.slice(8) + '%';
+    } else if (lower.startsWith('brightness ')) {
+      baseText = 'Set Brightness ';
+      paramText = action.slice(11) + '%';
+    } else if (lower.startsWith('flashlight ') || lower.startsWith('flash ')) {
+      const val = action.slice(lower.startsWith('flashlight ') ? 11 : 6);
+      if (!isNaN(val) && val.trim() !== '') {
+        baseText = 'Flashlight ';
+        paramText = val + '%';
+      }
+    } else if (lower.startsWith('delay ')) {
+      baseText = 'Wait ';
+      paramText = action.slice(6) + 's';
+    } else if (lower.startsWith('shortcut:')) {
+      baseText = 'Shortcut: ';
+      paramText = action.slice(9);
+    } else if (lower.startsWith('uiopen ')) {
+      baseText = 'Open ';
+      const bundleId = action.slice(7).trim().toLowerCase();
+      const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
+      paramText = app ? app.name : action.slice(7).trim();
+    } else if (lower.startsWith('kill ')) {
+      baseText = 'Kill ';
+      const bundleId = action.slice(5).trim().toLowerCase();
+      const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
+      paramText = app ? app.name : action.slice(5).trim();
+    } else if (lower.startsWith('airplay connect ')) {
+      baseText = 'AirPlay Connect ';
+      paramText = action.slice(16);
+    } else if (lower.startsWith('bt connect ') || lower.startsWith('bluetooth connect ')) {
+      baseText = 'Connect ';
+      paramText = action.slice(lower.startsWith('bt connect ') ? 11 : 18);
+    } else if (lower.startsWith('bt disconnect ') || lower.startsWith('bluetooth disconnect ')) {
+      baseText = 'Disconnect ';
+      paramText = action.slice(lower.startsWith('bt disconnect ') ? 14 : 21);
+    }
+
+    if (baseText && paramText) {
+      return `${escHtml(baseText)}<span style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="changeParamValue(event, ${idx})">${escHtml(paramText)}</span>`;
+    }
+  }
+
+  return escHtml(nameForCmd(action));
 }
 
 // ── Action picker ─────────────────────────────────────────────────────────────
@@ -1958,6 +2488,33 @@ function renderPickerSections() {
 async function selectAction(action) {
   const cmd = action.cmd;
 
+  if (action.is_toggle) {
+    const toggleInfo = parseToggleCmd(cmd);
+    if (toggleInfo) {
+      const buttons = toggleInfo.suffixes.map((suffix, sIdx) => {
+        const displaySuffix = toggleInfo.displaySuffixes[sIdx];
+        return {
+          label: displaySuffix,
+          action: () => {
+            const canonicalPrefix = toggleInfo.matchedPrefix || toggleInfo.prefixes[0] || '';
+            let newCommand = canonicalPrefix + suffix;
+            if (!toggleInfo.matchedPrefix && toggleInfo.key === 'audiomix' && suffix === 'toggle') {
+              newCommand = 'audiomix';
+            }
+            addAction(newCommand);
+            closePickerPanel();
+          }
+        };
+      });
+      buttons.push({
+        label: 'Cancel',
+        action: () => {}
+      });
+      showSheet(toggleInfo.name, buttons);
+      return;
+    }
+  }
+
   const needsText = {
     '__DELAY__':          { title:'Add Delay',        msg:'Seconds:', def:'1', type:'number', build: v => `delay ${v}` },
     '__SET_VOLUME__':     { title:'Set Volume',        msg:'Value (0-100):', def:'50', type:'number', build: v => `set-vol ${Math.max(0,Math.min(100,+v||50))}` },
@@ -1967,8 +2524,10 @@ async function selectAction(action) {
     '__BT_DISCONNECT__':  { title:'Disconnect BT',     msg:'Device name:',   def:'',  type:'text',   build: v => `bt disconnect ${v}` },
     '__AIRPLAY_CONNECT__':{ title:'Connect AirPlay',  msg:'Device name:',   def:'',  type:'text',   build: v => `airplay connect ${v}` },
     '__SHORTCUT__':       { title:'Run Shortcut',      msg:'Shortcut name:', def:'',  type:'text',   build: v => `shortcut:${v}` },
-    '__OPEN_APP__':       { title:'Open App',          msg:'Bundle ID:',     def:'',  type:'text',   build: v => `uiopen ${v}` },
+    '__OPEN_APP__':       { title:'Open App',          msg:'Search App:',    def:'',  type:'text',   build: v => `uiopen ${v}` },
+    '__KILL_APP__':       { title:'Kill App',          msg:'Search App:',    def:'',  type:'text',   build: v => `kill ${v}` },
     '__LUA_SCRIPT__':     { title:'Lua Script',        msg:'Lua code:',      def:'',  type:'text',   build: v => `Lua ${v}` },
+    '__TOAST__':          { title:'HUD Toast Notification', msg:'Format: "Title" ["Subtitle"] ["SF Symbol"] (e.g., "Hello" "World" "info.circle")', def:'"Hello" "World" "info.circle"', type:'text', build: v => `toast ${v.trim()}` },
     '__CUSTOM__':         { title:'Terminal Command',  msg:'Command:',       def:'',  type:'text',   build: v => `exec ${v}` },
     '__TAP__':            { title:'Tap at Coordinates', msg:'x y  (pixels, e.g. 195 422):', def:'195 422', type:'text', build: v => `tap ${v.trim()}` },
     '__HOLD__':           { title:'Hold at Coordinates', msg:'x y [ms]  (e.g. 195 422 800):', def:'195 422 800', type:'text', build: v => `hold ${v.trim()}` },
@@ -1978,7 +2537,7 @@ async function selectAction(action) {
   if (needsText[cmd]) {
     const d = needsText[cmd];
     let listId = null;
-    if (cmd === '__OPEN_APP__') listId = 'app-datalist';
+    if (cmd === '__OPEN_APP__' || cmd === '__KILL_APP__') listId = 'app-datalist';
     if (cmd === '__BT_CONNECT__' || cmd === '__BT_DISCONNECT__') listId = 'bt-datalist';
     if (cmd === '__AIRPLAY_CONNECT__') listId = 'airplay-datalist';
     
@@ -2012,34 +2571,155 @@ function addAction(cmd) {
   closePickerPanel();
 }
 
-function showConditionPicker() {
+function findParentIfIndex(actions, index) {
+  const item = actions[index];
+  if (!item || typeof item !== 'object') return -1;
+  const type = (item.type || '').toLowerCase();
+  
+  if (type === 'if') return index;
+  
+  if (type === 'else_if' || type === 'else') {
+    let depth = 0;
+    for (let idx = index - 1; idx >= 0; idx--) {
+      const checkItem = actions[idx];
+      if (typeof checkItem === 'object') {
+        const cType = (checkItem.type || '').toLowerCase();
+        if (cType === 'end_if' || cType === 'end') {
+          depth++;
+        } else if (cType === 'if') {
+          depth--;
+          if (depth < 0) return idx;
+        }
+      }
+    }
+  } else if (type === 'end_if' || type === 'end') {
+    let depth = 0;
+    for (let idx = index - 1; idx >= 0; idx--) {
+      const checkItem = actions[idx];
+      if (typeof checkItem === 'object') {
+        const cType = (checkItem.type || '').toLowerCase();
+        if (cType === 'end_if' || cType === 'end') {
+          depth++;
+        } else if (cType === 'if') {
+          depth--;
+          if (depth === 0) return idx;
+        }
+      }
+    }
+  }
+  return -1;
+}
+
+function findSiblingElseIndex(actions, ifIndex) {
+  if (ifIndex < 0) return -1;
+  let depth = 0;
+  for (let idx = ifIndex; idx < actions.length; idx++) {
+    const checkItem = actions[idx];
+    if (typeof checkItem === 'object') {
+      const cType = (checkItem.type || '').toLowerCase();
+      if (cType === 'if') {
+        depth++;
+      } else if (cType === 'end_if' || cType === 'end') {
+        depth--;
+        if (depth === 0) return -1;
+      } else if (cType === 'else') {
+        if (depth === 1) return idx;
+      }
+    }
+  }
+  return -1;
+}
+
+function findMatchingEndIfIndex(actions, ifIndex) {
+  if (ifIndex < 0) return -1;
+  let depth = 0;
+  for (let idx = ifIndex; idx < actions.length; idx++) {
+    const checkItem = actions[idx];
+    if (typeof checkItem === 'object') {
+      const cType = (checkItem.type || '').toLowerCase();
+      if (cType === 'if') {
+        depth++;
+      } else if (cType === 'end_if' || cType === 'end') {
+        depth--;
+        if (depth === 0) return idx;
+      }
+    }
+  }
+  return -1;
+}
+
+function getElseIfInsertionIndex(actions, index) {
+  const ifIndex = findParentIfIndex(actions, index);
+  if (ifIndex < 0) return -1;
+  
+  let depth = 0;
+  for (let idx = ifIndex; idx < actions.length; idx++) {
+    const checkItem = actions[idx];
+    if (typeof checkItem === 'object') {
+      const cType = (checkItem.type || '').toLowerCase();
+      if (cType === 'if') {
+        depth++;
+      } else if (cType === 'end_if' || cType === 'end') {
+        depth--;
+        if (depth === 0) return idx;
+      } else if (cType === 'else') {
+        if (depth === 1) return idx;
+      }
+    }
+  }
+  return -1;
+}
+
+function showConditionPicker(existingIdx, insertIdx, type) {
+  const actionType = type || 'if';
+  const isEdit = existingIdx !== undefined && existingIdx !== null;
+  const isInsert = insertIdx !== undefined && insertIdx !== null;
+  const sheetTitle = actionType === 'else_if' ? 'Else If Condition' : 'If Condition';
+  
   const btns = CONDITION_DEFS.map(c => ({
     label: c.title,
     action: () => {
       if (c.freeText) {
-        showDialog(`If ${c.title}`, 'App bundle ID (e.g. com.apple.Music):', '', 'Add', val => {
+        let initialVal = '';
+        if (isEdit) {
+          const act = triggerData(currentKey).actions[existingIdx];
+          initialVal = act.expectedValue || '';
+        }
+        showDialog(`${actionType === 'else_if' ? 'Else If' : 'If'} ${c.title}`, 'App bundle ID (e.g. com.apple.Music):', initialVal, isEdit ? 'Save' : 'Add', val => {
           if (!val) return;
-          const ifAction = { type:'if', conditionKey:c.key, conditionTitle:c.title, expectedValue:val, expectedTitle:val };
+          const ifAction = { type: actionType, conditionKey: c.key, conditionTitle: c.title, expectedValue: val, expectedTitle: val };
           const data = triggerData(currentKey);
           if (!data.actions) data.actions = [];
-          data.actions.push(ifAction, { type:'end_if' });
+          if (isEdit) {
+            data.actions[existingIdx] = ifAction;
+          } else if (isInsert) {
+            data.actions.splice(insertIdx, 0, ifAction);
+          } else {
+            data.actions.push(ifAction, { type: 'end_if' });
+          }
           saveConfig(); renderActionList(); closePickerPanel();
         });
       } else if (c.values) {
         showSheet(`${c.title} is…`, c.values.map(v => ({
           label: v.title,
           action: () => {
-            const ifAction = { type:'if', conditionKey:c.key, conditionTitle:c.title, expectedValue:v.value, expectedTitle:v.title };
+            const ifAction = { type: actionType, conditionKey: c.key, conditionTitle: c.title, expectedValue: v.value, expectedTitle: v.title };
             const data = triggerData(currentKey);
             if (!data.actions) data.actions = [];
-            data.actions.push(ifAction, { type:'end_if' });
+            if (isEdit) {
+              data.actions[existingIdx] = ifAction;
+            } else if (isInsert) {
+              data.actions.splice(insertIdx, 0, ifAction);
+            } else {
+              data.actions.push(ifAction, { type: 'end_if' });
+            }
             saveConfig(); renderActionList(); closePickerPanel();
           }
         })));
       }
     }
   }));
-  showSheet('If Condition', btns);
+  showSheet(sheetTitle, btns);
 }
 
 // ── Add trigger ───────────────────────────────────────────────────────────────
@@ -2213,8 +2893,9 @@ function schedDialogOk() {
 function generateNotifName(bundleId, textMatch) {
   let appName = 'Any App';
   if (bundleId) {
-    const app = cachedApps.find(a => a.bundleId === bundleId);
-    appName = app ? app.name : bundleId;
+    const bid = bundleId.trim().toLowerCase();
+    const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bid);
+    appName = app ? app.name : bundleId.trim();
   }
   
   if (bundleId) {
@@ -2305,6 +2986,10 @@ async function fetchDevices() {
 async function refreshDatalists() {
   console.log('UI: refreshing datalists...');
   const data = await refreshDatalistsInternal();
+  renderAll();
+  if (currentKey && document.getElementById('actions-panel').classList.contains('active')) {
+    renderActionList();
+  }
   return data;
 }
 
@@ -2315,6 +3000,9 @@ async function refreshDatalistsInternal() {
   const appList = document.getElementById('app-datalist');
   if (appList && data.apps) {
     cachedApps = data.apps;
+    try {
+      localStorage.setItem('rc_cached_apps', JSON.stringify(cachedApps));
+    } catch (e) {}
     appList.innerHTML = '';
     console.log(`UI: Populating app-datalist with ${data.apps.length} items`);
     data.apps.forEach(app => {
@@ -2438,7 +3126,6 @@ function openSettings() {
   document.getElementById('setting-master').checked = !!config.masterEnabled;
   document.getElementById('setting-nfc').checked    = !!config.nfcEnabled;
   document.getElementById('setting-webui').checked  = !!config.webUIEnabled;
-  document.getElementById('setting-fixedvolume').checked = !!config.fixedVolumeButtons;
   document.getElementById('settings-panel').classList.add('active');
   document.getElementById('footer-settings-fixed').style.display = 'block';
 }
@@ -2506,30 +3193,106 @@ function closeSheet() {
 let dialogRecordInterval = null;
 let originalDialogMsg = '';
 
+function _dialogBackdropClick(e) {
+  if (e.target === document.getElementById('dialog-backdrop')) closeDialog();
+}
+
 function showDialog(title, msg, defaultVal, okLabel, callback, inputType='text', listId=null) {
   document.getElementById('dialog-title').textContent = title;
-  document.getElementById('dialog-msg').textContent = msg;
+
+  const msgEl = document.getElementById('dialog-msg');
+  msgEl.textContent = msg || '';
+  msgEl.style.display = (msgEl.textContent ? 'block' : 'none');
+
   const input = document.getElementById('dialog-input');
-  input.type = inputType === 'number' ? 'number' : 'text';
-  if (listId) input.setAttribute('list', listId);
-  else input.removeAttribute('list');
   input.value = defaultVal || '';
+
+  if (inputType === 'number') {
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.pattern = '[0-9]*';
+  } else {
+    input.type = 'text';
+    input.inputMode = '';
+    input.pattern = '';
+  }
+
+  const autocompleteContainer = document.getElementById('dialog-autocomplete');
+  const dialogBox = document.querySelector('.dialog-box');
+
+  if (listId === 'app-datalist') {
+    // Disable native datalist autocomplete and use custom iOS-style selection
+    input.removeAttribute('list');
+    dialogBox.classList.add('wide');
+    autocompleteContainer.style.display = 'block';
+
+    const updateMatches = () => {
+      const query = input.value.trim().toLowerCase();
+      const matches = (cachedApps || []).filter(app =>
+        (app.name || '').toLowerCase().includes(query) ||
+        (app.bundleId || '').toLowerCase().includes(query)
+      );
+
+      autocompleteContainer.innerHTML = '';
+      matches.forEach(app => {
+        const item = document.createElement('div');
+        item.className = 'autocomplete-item';
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'autocomplete-name';
+        nameDiv.textContent = app.name;
+
+        const subDiv = document.createElement('div');
+        subDiv.className = 'autocomplete-subtitle';
+        subDiv.textContent = app.bundleId;
+
+        item.appendChild(nameDiv);
+        item.appendChild(subDiv);
+
+        item.addEventListener('click', () => {
+          input.value = app.bundleId;
+          dialogOk();
+        });
+
+        autocompleteContainer.appendChild(item);
+      });
+    };
+
+    input.addEventListener('input', updateMatches);
+    updateMatches();
+
+    input._autocompleteCleanup = () => {
+      input.removeEventListener('input', updateMatches);
+      dialogBox.classList.remove('wide');
+      autocompleteContainer.style.display = 'none';
+      autocompleteContainer.innerHTML = '';
+    };
+  } else {
+    if (input._autocompleteCleanup) {
+      input._autocompleteCleanup();
+      input._autocompleteCleanup = null;
+    }
+    if (listId) input.setAttribute('list', listId);
+    else input.removeAttribute('list');
+  }
+
   document.getElementById('dialog-ok').textContent = okLabel || 'OK';
   dialogCallback = callback;
-  
+
   const recordBtn = document.getElementById('dialog-record');
-  if (title.includes('Tap') || title.includes('Hold')) {
-    recordBtn.style.display = 'inline-block';
-  } else {
-    recordBtn.style.display = 'none';
-  }
-  
+  recordBtn.style.display = (title.includes('Tap') || title.includes('Hold')) ? 'inline-block' : 'none';
+
   document.getElementById('dialog-backdrop').classList.add('visible');
-  setTimeout(() => input.focus(), 100);
+  setTimeout(() => input.focus(), 150);
 }
 function closeDialog() {
   document.getElementById('dialog-backdrop').classList.remove('visible');
   dialogCallback = null;
+  const input = document.getElementById('dialog-input');
+  if (input._autocompleteCleanup) {
+    input._autocompleteCleanup();
+    input._autocompleteCleanup = null;
+  }
   if (dialogRecordInterval) {
     clearInterval(dialogRecordInterval);
     dialogRecordInterval = null;
@@ -2540,6 +3303,150 @@ function closeDialog() {
     msgEl.style.color = '';
     originalDialogMsg = '';
   }
+}
+
+// ── Import/Export Action Sequences ──
+function _importDialogBackdropClick(e) {
+  if (e.target === document.getElementById('import-dialog-backdrop')) closeImportDialog();
+}
+function showImportDialog() {
+  const textarea = document.getElementById('import-dialog-textarea');
+  if (currentKey) {
+    const activeTrigger = triggerData(currentKey);
+    const actions = activeTrigger.actions || [];
+    if (actions.length > 0) {
+      textarea.value = JSON.stringify(actions, null, 2);
+    } else {
+      textarea.value = '';
+    }
+  } else {
+    textarea.value = '';
+  }
+  document.getElementById('import-dialog-backdrop').classList.add('visible');
+  setTimeout(() => textarea.focus(), 150);
+}
+function clearImportTextarea() {
+  const textarea = document.getElementById('import-dialog-textarea');
+  textarea.value = '';
+  textarea.focus();
+}
+function closeImportDialog() {
+  document.getElementById('import-dialog-backdrop').classList.remove('visible');
+}
+function importDialogOk() {
+  const textarea = document.getElementById('import-dialog-textarea');
+  const text = textarea.value.trim();
+  if (!text) {
+    closeImportDialog();
+    return;
+  }
+  
+  let newCommands = null;
+  if (text.startsWith('[') && text.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        newCommands = parsed;
+      }
+    } catch (e) {}
+  }
+  
+  if (!newCommands) {
+    newCommands = text.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+  }
+  
+  if (newCommands && newCommands.length > 0) {
+    const validCmds = [];
+    newCommands.forEach(cmd => {
+      if (typeof cmd === 'string') {
+        const clean = cmd.trim();
+        if (clean) validCmds.push(clean);
+      } else if (cmd && typeof cmd === 'object') {
+        validCmds.push(cmd);
+      }
+    });
+    
+    if (validCmds.length > 0) {
+      const activeTrigger = triggerData(currentKey);
+      if (activeTrigger) {
+        activeTrigger.actions = validCmds; // Always replace
+        saveConfig();
+        renderActionList();
+        closeImportDialog();
+        showToast(`✓ Replaced with ${validCmds.length} action(s)`);
+      } else {
+        closeImportDialog();
+        showToast('⚠ Error: No active trigger');
+      }
+    } else {
+      showToast('⚠ Error: No valid commands found');
+    }
+  } else {
+    showToast('⚠ Error: Could not parse input');
+  }
+}
+
+function showEllipsisMenu(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const items = [
+    {
+      label: 'Import Actions',
+      icon: 'square_arrow_down',
+      action: () => showImportDialog()
+    },
+    {
+      label: 'Export Actions',
+      icon: 'square_arrow_up',
+      action: () => exportActions()
+    }
+  ];
+  
+  const fakeEvent = {
+    preventDefault: () => {},
+    clientX: rect.left,
+    clientY: rect.bottom + 8
+  };
+  showContextMenu(fakeEvent, items);
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  } else {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (err) {
+      console.error('Fallback clipboard copy failed', err);
+    }
+    document.body.removeChild(textarea);
+    return Promise.resolve();
+  }
+}
+
+function exportActions() {
+  if (!currentKey) {
+    showToast('⚠ No active trigger selected');
+    return;
+  }
+  const actions = triggerData(currentKey).actions || [];
+  if (actions.length === 0) {
+    showToast('Sequence is empty');
+    return;
+  }
+  const jsonStr = JSON.stringify(actions, null, 2);
+  copyToClipboard(jsonStr).then(() => {
+    showToast('✓ Sequence copied to clipboard');
+  }).catch(() => {
+    showToast('Failed to copy sequence');
+  });
 }
 async function dialogRecord() {
   const msgEl = document.getElementById('dialog-msg');

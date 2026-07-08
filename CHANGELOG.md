@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.0] - 2026-06-22
+
+### Added
+- **Cellular Data Control**: Added native toggle and status query support for Cellular Data (`cellular on`, `cellular off`, `cellular toggle`, `cellular status`) via the CLI, Web UI, and Action conditions, utilizing private CoreTelephony server connection APIs.
+- **Dynamic Web UI Port Selection**: The Web UI server now scans ports sequentially starting from `8080` (up to `8099`) and binds to the first available port. This prevents binding failures and conflicts when other web servers (such as AutoTouch) are already listening on port `8080`.
+- **HUD Toast Action Picker Option**: Exposed the HUD Toast action (`toast`) under the "Scripting & Logic" section in both the native iOS Companion App and Web UI action pickers. The companion app now offers a native 3-field input controller (Title, Subtitle, SF Symbol name), and both list views render the action with the text bubble icon and highlight parameters dynamically.
+- **Action Sequence Play Button**: Added a play icon in the iOS companion app's action sequence view to instantly run/simulate the current sequence. The play icon is positioned to the left of the edit settings button.
+- **Proximity Sensor & Pocket Detection**:
+  - Implemented the `proximity` CLI command (`rc proximity`, `rc proximity on`, `rc proximity off`, `rc proximity debug`).
+  - Added a first-class **Proximity Sensor** condition to the iOS companion app's visual rule builder, supporting evaluations for `Near` and `Far`.
+  - Added support for `proximity`, `pocket`, and `device_in_pocket` condition keys in action sequence IF/ELSE blocks.
+- **Forced Proximity State Override**:
+  - Automatically activates the proximity sensor during the power button down hold sequence.
+  - Implemented a forced state override (`g_forceProximityDetection`) to prevent SpringBoard's backlight policy or lockscreen lifecycle from turning off the sensor while the button is held, ensuring 100% consistent detection.
+  - Automatically deactivates the sensor on button release to ensure zero standby battery drain.
+- **Lock State Queries**:
+  - Implemented the `rc is-locked` and `rc lock status` CLI commands (previously documented but missing in the SpringBoard tweak daemon), returning `locked` or `unlocked`.
+- **Appearance Action**: Added `appearance dark/light/toggle` commands to control the device's Light/Dark mode via CLI, Web UI, and iOS App.
+- **Status Bar Double Tap Trigger**: Added a new gesture trigger to bind actions to double-tapping the status bar.
+- **AudioMix Integration**: Added first-class control actions (`audiomix`, `audiomix on`, `audiomix off`, `audiomix toggle`, `audiomix status`) to control KingPuffdaddi's AudioMix tweak settings.
+- **Heads-Up Display (HUD) Toast**: Implemented a system-wide dropdown glassmorphism HUD toast notification that animates with spring physics to confirm toggling states.
+- **Consolidated Toggle Actions**: Consolidated redundant toggle options (On/Off/Toggle) into single entries in the Action Picker for both the iOS app and Web UI, displaying states as interactive links that open slide-up sheets to edit them.
+- **Native iOS Alert Styling in Web UI**: Redesigned the Web UI edit action dialog to mirror the native iOS `UIAlertController` style, featuring a translucent dark-mode card, centered text input field, and hairline-separated blue buttons.
+- **Auto-Sync & Pull-to-Refresh**: Integrated background configuration reloading when returning to the iOS app, and implemented a manual pull-to-refresh control on the main screen.
+- **Sequential Else If Conditional Blocks**: Added first-class support for sequential `Else If` (`else_if`) blocks in the execution engine, iOS App, and Web UI. Sibling conditions are evaluated sequentially if preceding branches are false.
+- **Action Sequence Import/Export Sharing Enhancements**:
+  - Separated action creation (direct `+` button) from action sharing/importing (moved to a new ellipsis `...` menu).
+  - Added option to **Append** vs **Replace** when importing sequences on both the iOS app and the Web UI.
+  - Fixed a bug to support importing full dictionary block structures (like `if` / `else_if`) rather than discarding them.
+  - Enlarged the import text container in the Web UI to twice its original height and simplified clipboard confirmation messages.
+  - Integrated the dropdown glassmorphism HUD toast for iOS companion app copy/paste actions to reduce notification clutter.
+- **Improved UI Navigation & Settings**:
+  - Fixed a bug where selecting a Front App condition dismissed the entire view stack, returning the user to the main menu.
+  - Hid the non-functional settings edit icon for non-configurable triggers in the action view navigation bar.
+- **Kill App Action & Picker Autocomplete Enhancements**:
+  - Implemented a first-class **Kill App** action in the action sequence builders for both the native iOS App and the Web UI.
+  - Resolved bundle ID names to friendly application names (e.g. "Kill YouTube") in action displays.
+  - Linked applications to their real springboard icons (using `USER_APP:<bundleId>`) for both open and kill app list items.
+  - Re-implemented the Web UI app selection picker with a custom, high-fidelity iOS-style autocomplete search overlay (replacing the native browser `<datalist>`) for both Open App and Kill App configurations.
+  - Fixed a selection dismissal bug in the native app picker that caused duplicate action insertions.
+  - Removed outdated helper text ("Swipe left on an action to delete it") from the Web UI.
+
+
 ## [3.3.1] - 2026-06-19
 
 ### Fixed

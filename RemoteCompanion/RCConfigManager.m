@@ -29,8 +29,18 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     self = [super init];
     if (self) {
         [self loadConfig];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self 
+                                                 selector:@selector(handleAppDidBecomeActive:) 
+                                                     name:UIApplicationDidBecomeActiveNotification 
+                                                   object:nil];
     }
     return self;
+}
+
+- (void)handleAppDidBecomeActive:(NSNotification *)note {
+    [self loadConfig];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RCConfigChangedNotification object:nil];
 }
 
 - (void)loadConfig {
@@ -74,6 +84,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                              @"power_triple_click", @"power_quadruple_click", 
                              @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", 
                              @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right",
+                             @"trigger_statusbar_double_tap",
                              @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_home_double_click",
                              @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", 
                              @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down",
@@ -166,6 +177,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                 @"trigger_statusbar_right_hold": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_statusbar_swipe_left": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_statusbar_swipe_right": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
+                @"trigger_statusbar_double_tap": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_triple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_quadruple_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
                 @"trigger_home_double_click": [@{ @"enabled": @NO, @"actions": @[] } mutableCopy],
@@ -278,11 +290,11 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     }
     
     // Also clean up from notificationTriggers metadata if it's a notification trigger
-    if ([triggerKey hasPrefix:@"notif_"]) {
+    if ([triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"]) {
         NSMutableArray *notifTriggers = [[self notificationTriggers] mutableCopy];
         for (NSInteger i = notifTriggers.count - 1; i >= 0; i--) {
             NSDictionary *notif = notifTriggers[i];
-            if ([notif[@"key"] isEqualToString:triggerKey]) {
+            if ([notif[@"triggerKey"] isEqualToString:triggerKey]) {
                 [notifTriggers removeObjectAtIndex:i];
             }
         }
@@ -315,7 +327,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 }
 
 - (NSArray<NSString *> *)allTriggerKeys {
-    return @[@"volume_up_hold", @"volume_down_hold", @"volume_both_press", @"power_double_tap", @"power_long_press", @"power_triple_click", @"power_quadruple_click", @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_home_double_click", @"touchid_tap", @"touchid_hold", @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down", @"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle", @"trigger_bottombar_swipe_left", @"trigger_bottombar_swipe_right", @"power_volume_up", @"power_volume_down", @"shake", @"trigger_device_lock", @"trigger_device_unlock", @"trigger_media_play", @"trigger_media_pause", @"trigger_media_track_change"];
+    return @[@"volume_up_hold", @"volume_down_hold", @"volume_both_press", @"power_double_tap", @"power_long_press", @"power_triple_click", @"power_quadruple_click", @"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_statusbar_double_tap", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"trigger_home_double_click", @"touchid_tap", @"touchid_hold", @"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down", @"trigger_ringer_mute", @"trigger_ringer_unmute", @"trigger_ringer_toggle", @"trigger_bottombar_swipe_left", @"trigger_bottombar_swipe_right", @"power_volume_up", @"power_volume_down", @"shake", @"trigger_device_lock", @"trigger_device_unlock", @"trigger_media_play", @"trigger_media_pause", @"trigger_media_track_change"];
 }
 
 - (NSArray<NSDictionary *> *)notificationTriggers {
@@ -353,6 +365,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"trigger_statusbar_right_hold": @"Status Bar Right Hold",
         @"trigger_statusbar_swipe_left": @"Status Bar Swipe Left",
         @"trigger_statusbar_swipe_right": @"Status Bar Swipe Right",
+        @"trigger_statusbar_double_tap": @"Status Bar Double Tap",
         @"trigger_home_triple_click": @"Home Button (Triple Click)",
         @"trigger_home_quadruple_click": @"Home Button (Quadruple Click)",
         @"trigger_home_double_click": @"Home Button (Double Click)",
@@ -375,7 +388,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return customName ?: [NSString stringWithFormat:@"NFC Tag %@", [triggerKey substringFromIndex:4]];
     }
 
-    if ([triggerKey hasPrefix:@"wifi_"] || [triggerKey hasPrefix:@"bt_"] || [triggerKey hasPrefix:@"app_launch_"] || [triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"sched_"]) {
+    if ([triggerKey hasPrefix:@"wifi_"] || [triggerKey hasPrefix:@"bt_"] || [triggerKey hasPrefix:@"app_launch_"] || [triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"] || [triggerKey hasPrefix:@"sched_"]) {
         return _config[@"triggers"][triggerKey][@"name"] ?: triggerKey;
     }
     
@@ -388,9 +401,12 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         triggers = [NSMutableDictionary dictionary];
         _config[@"triggers"] = triggers;
     }
-    NSMutableDictionary *trigger = triggers[triggerKey];
+    id trigger = triggers[triggerKey];
     if (!trigger) {
         trigger = [@{ @"enabled": @NO, @"actions": @[] } mutableCopy];
+        triggers[triggerKey] = trigger;
+    } else if (![trigger isKindOfClass:[NSMutableDictionary class]]) {
+        trigger = [trigger mutableCopy];
         triggers[triggerKey] = trigger;
     }
     return trigger;
@@ -644,6 +660,14 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             }
             NSString *legacy = dict[@"condition"] ?: @"Condition";
             return [NSString stringWithFormat:@"If %@", legacy];
+        } else if ([type isEqualToString:@"else_if"]) {
+            NSString *conditionTitle = dict[@"conditionTitle"] ?: dict[@"conditionName"];
+            NSString *expectedTitle = dict[@"expectedTitle"] ?: dict[@"expectedLabel"];
+            if (conditionTitle.length > 0 && expectedTitle.length > 0) {
+                return [NSString stringWithFormat:@"Else If %@ is %@", conditionTitle, expectedTitle];
+            }
+            NSString *legacy = dict[@"condition"] ?: @"Condition";
+            return [NSString stringWithFormat:@"Else If %@", legacy];
         } else if ([type isEqualToString:@"else"]) {
             return @"Else";
         } else if ([type isEqualToString:@"repeat"]) {
@@ -671,12 +695,21 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"flashlight on": @"Flashlight On",
         @"flashlight off": @"Flashlight Off",
         @"flashlight toggle": @"Flashlight Toggle",
+        @"appearance dark": @"Appearance Dark",
+        @"appearance light": @"Appearance Light",
+        @"appearance toggle": @"Appearance Toggle",
         @"rotate lock": @"Rotate Lock",
         @"rotate unlock": @"Rotate Unlock",
         @"rotate toggle": @"Rotate Toggle",
         @"wifi on": @"WiFi On",
         @"wifi off": @"WiFi Off",
         @"wifi toggle": @"WiFi Toggle",
+        @"cellular on": @"Cellular On",
+        @"cellular off": @"Cellular Off",
+        @"cellular toggle": @"Cellular Toggle",
+        @"cell on": @"Cellular On",
+        @"cell off": @"Cellular Off",
+        @"cell toggle": @"Cellular Toggle",
         @"bluetooth on": @"Bluetooth On",
         @"bluetooth off": @"Bluetooth Off",
         @"bluetooth toggle": @"Bluetooth Toggle",
@@ -701,6 +734,11 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"airplane on": @"Airplane On",
         @"airplane off": @"Airplane Off",
         @"airplane toggle": @"Airplane Toggle",
+        @"audiomix on": @"AudioMix On",
+        @"audiomix off": @"AudioMix Off",
+        @"audiomix toggle": @"AudioMix Toggle",
+        @"audiomix status": @"AudioMix Status",
+        @"audiomix": @"AudioMix Toggle",
         @"low power on": @"Low Power Mode On",
         @"low power off": @"Low Power Mode Off",
         @"low power mode on": @"Low Power Mode On",
@@ -708,6 +746,10 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"low power toggle": @"Low Power Mode Toggle",
         @"low power mode toggle": @"Low Power Mode Toggle",
         @"mute toggle": @"Mute Toggle",
+        @"mute on": @"Mute On",
+        @"mute off": @"Mute Off",
+        @"mute status": @"Mute Status",
+        @"mute": @"Mute Toggle",
         @"siri": @"Activate Siri",
         @"home": @"Home Button",
         @"open control center": @"Open Control Center",
@@ -727,7 +769,18 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"swipeL": @"Swipe Left",
         @"swipeLeft": @"Swipe Left",
         @"swipeR": @"Swipe Right",
-        @"swipeRight": @"Swipe Right"
+        @"swipeRight": @"Swipe Right",
+        // System Vibration
+        @"vibration silent-on": @"Silent Vibrate On",
+        @"vibration silent-off": @"Silent Vibrate Off",
+        @"vibration silent-toggle": @"Silent Vibrate Toggle",
+        @"vibration silent-status": @"Silent Vibrate Status",
+        @"vibration ring-on": @"Ring Vibrate On",
+        @"vibration ring-off": @"Ring Vibrate Off",
+        @"vibration ring-toggle": @"Ring Vibrate Toggle",
+        @"vibration ring-status": @"Ring Vibrate Status",
+        @"queuealbum": @"Queue Current Album",
+        @"queueartist": @"Queue Artist"
     };
     
     NSString *result = names[cmd];
@@ -797,6 +850,24 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             } else {
                 result = [NSString stringWithFormat:@"Open %@", bundleId];
             }
+        } else if ([cmd hasPrefix:@"kill "]) {
+            NSString *bundleId = [cmd substringFromIndex:5];
+            Class LSProxy = NSClassFromString(@"LSApplicationProxy");
+            if (LSProxy) {
+                id app = [LSProxy performSelector:@selector(applicationProxyForIdentifier:) withObject:bundleId];
+                if (app) {
+                    NSString *appName = [app performSelector:@selector(localizedName)];
+                    if (appName) {
+                        result = [NSString stringWithFormat:@"Kill %@", appName];
+                    } else {
+                       result = [NSString stringWithFormat:@"Kill %@", bundleId];
+                    }
+                } else {
+                    result = [NSString stringWithFormat:@"Kill %@", bundleId];
+                }
+            } else {
+                result = [NSString stringWithFormat:@"Kill %@", bundleId];
+            }
         } else {
             result = cmd;
         }
@@ -828,7 +899,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmdId isKindOfClass:[NSDictionary class]]) {
         NSDictionary *dict = (NSDictionary *)cmdId;
         NSString *type = [[dict[@"type"] description] lowercaseString];
-        if ([type isEqualToString:@"if"] || [type isEqualToString:@"else"]) {
+        if ([type isEqualToString:@"if"] || [type isEqualToString:@"else_if"] || [type isEqualToString:@"else"]) {
             return @"arrow.triangle.branch";
         } else if ([type isEqualToString:@"repeat"]) {
             return @"repeat";
@@ -842,6 +913,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return @"questionmark";
     }
     NSString *cmd = (NSString *)cmdId;
+    if ([cmd hasPrefix:@"toast"]) return @"text.bubble.fill";
     if ([cmd hasPrefix:@"root "] || [cmd hasPrefix:@"exec-root "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"delay "]) return @"timer";
@@ -856,6 +928,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmd hasPrefix:@"spotify "]) return @"music.note";
     if ([cmd isEqualToString:@"home"]) return @"house.fill";
     if ([cmd hasPrefix:@"uiopen "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:7]];
+    if ([cmd hasPrefix:@"kill "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:5]];
     // Touch gesture prefix icons
     if ([cmd hasPrefix:@"tap "]) return @"hand.tap.fill";
     if ([cmd hasPrefix:@"hold "]) return @"hand.point.up.left.fill";
@@ -873,12 +946,23 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"flashlight on": @"flashlight.on.fill",
         @"flashlight off": @"flashlight.off.fill",
         @"flashlight toggle": @"flashlight.on.fill",
+        @"appearance dark": @"moon.fill",
+        @"appearance light": @"sun.max.fill",
+        @"appearance toggle": @"moon.fill",
         @"rotate lock": @"lock.rotation",
         @"rotate unlock": @"lock.rotation.open",
         @"rotate toggle": @"lock.rotation",
         @"wifi on": @"wifi",
         @"wifi off": @"wifi.slash",
         @"wifi toggle": @"wifi",
+        @"cellular on": @"antenna.radiowaves.left.and.right",
+        @"cellular off": @"antenna.radiowaves.left.and.right",
+        @"cellular toggle": @"antenna.radiowaves.left.and.right",
+        @"cell on": @"antenna.radiowaves.left.and.right",
+        @"cell off": @"antenna.radiowaves.left.and.right",
+        @"cell toggle": @"antenna.radiowaves.left.and.right",
+        @"cellular": @"antenna.radiowaves.left.and.right",
+        @"cell": @"antenna.radiowaves.left.and.right",
         @"bluetooth on": @"bolt.horizontal.fill",
         @"bluetooth off": @"bolt.horizontal",
         @"bluetooth toggle": @"bolt.horizontal.fill",
@@ -908,8 +992,17 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"anc on": @"ear.badge.checkmark",
         @"anc off": @"ear",
         @"anc transparency": @"waveform.circle.fill",
+        @"audiomix on": @"music.note",
+        @"audiomix off": @"music.note",
+        @"audiomix toggle": @"music.note",
+        @"audiomix status": @"music.note",
+        @"audiomix": @"music.note",
         @"airplay disconnect": @"airplayaudio.badge.exclamationmark",
         @"mute toggle": @"speaker.slash.fill",
+        @"mute on": @"speaker.slash.fill",
+        @"mute off": @"speaker.wave.2.fill",
+        @"mute status": @"speaker.slash.fill",
+        @"mute": @"speaker.slash.fill",
         @"siri": @"mic.circle.fill",
         @"open control center": @"switch.2",
         @"control center": @"switch.2",
@@ -936,7 +1029,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"swipeL": @"arrow.left.circle.fill",
         @"swipeLeft": @"arrow.left.circle.fill",
         @"swipeR": @"arrow.right.circle.fill",
-        @"swipeRight": @"arrow.right.circle.fill"
+        @"swipeRight": @"arrow.right.circle.fill",
+        @"queuealbum": @"music.note.list",
+        @"queueartist": @"music.mic"
     };
     
     NSString *result = icons[cmd];
@@ -950,6 +1045,164 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     }
     
     return result ?: @"circle.fill";
+}
+
+- (NSDictionary *)toggleInfoForCommand:(NSString *)cmd {
+    if (![cmd isKindOfClass:[NSString class]]) return nil;
+    
+    NSString *lower = [cmd lowercaseString];
+    
+    NSArray *definitions = @[
+        @{
+            @"key": @"airplane",
+            @"name": @"Airplane Mode",
+            @"icon": @"airplane",
+            @"prefixes": @[@"airplane "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"low_power",
+            @"name": @"Low Power Mode",
+            @"icon": @"battery.25",
+            @"prefixes": @[@"low power ", @"lpm ", @"low power mode "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"dnd",
+            @"name": @"Do Not Disturb",
+            @"icon": @"moon.fill",
+            @"prefixes": @[@"dnd "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"wifi",
+            @"name": @"Wi-Fi",
+            @"icon": @"wifi",
+            @"prefixes": @[@"wifi "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"cellular",
+            @"name": @"Cellular Data",
+            @"icon": @"antenna.radiowaves.left.and.right",
+            @"prefixes": @[@"cellular ", @"cell "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"bluetooth",
+            @"name": @"Bluetooth",
+            @"icon": @"bolt.horizontal.fill",
+            @"prefixes": @[@"bluetooth ", @"bt "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"flashlight",
+            @"name": @"Flashlight",
+            @"icon": @"flashlight.on.fill",
+            @"prefixes": @[@"flashlight ", @"flash "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"appearance",
+            @"name": @"Appearance",
+            @"icon": @"moon.fill",
+            @"prefixes": @[@"appearance "],
+            @"suffixes": @[@"dark", @"light", @"toggle"],
+            @"displaySuffixes": @[@"Dark", @"Light", @"Toggle"]
+        },
+        @{
+            @"key": @"audiomix",
+            @"name": @"AudioMix",
+            @"icon": @"music.note",
+            @"prefixes": @[@"audiomix "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"],
+            @"exactMatches": @{ @"audiomix": @"toggle" }
+        },
+        @{
+            @"key": @"rotate",
+            @"name": @"Rotation Lock",
+            @"icon": @"lock.rotation",
+            @"prefixes": @[@"rotate "],
+            @"suffixes": @[@"lock", @"unlock", @"toggle"],
+            @"displaySuffixes": @[@"Lock", @"Unlock", @"Toggle"]
+        },
+        @{
+            @"key": @"vibration_silent",
+            @"name": @"Silent Vibration",
+            @"icon": @"bell.slash",
+            @"prefixes": @[@"vibration silent-"],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"vibration_ring",
+            @"name": @"Ring Vibration",
+            @"icon": @"bell",
+            @"prefixes": @[@"vibration ring-"],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
+            @"key": @"mute",
+            @"name": @"Mute",
+            @"icon": @"speaker.slash.fill",
+            @"prefixes": @[@"mute "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"],
+            @"exactMatches": @{ @"mute": @"toggle" }
+        }
+    ];
+    
+    for (NSDictionary *def in definitions) {
+        NSDictionary *exactMatches = def[@"exactMatches"];
+        if (exactMatches && exactMatches[lower]) {
+            NSString *suffix = exactMatches[lower];
+            NSUInteger idx = [def[@"suffixes"] indexOfObject:suffix];
+            NSString *displaySuffix = def[@"displaySuffixes"][idx];
+            return @{
+                @"key": def[@"key"],
+                @"name": def[@"name"],
+                @"icon": def[@"icon"],
+                @"currentSuffix": suffix,
+                @"currentDisplaySuffix": displaySuffix,
+                @"suffixes": def[@"suffixes"],
+                @"displaySuffixes": def[@"displaySuffixes"],
+                @"matchedPrefix": @"",
+                @"prefixes": def[@"prefixes"]
+            };
+        }
+        
+        for (NSString *prefix in def[@"prefixes"]) {
+            if ([lower hasPrefix:prefix]) {
+                NSString *suffix = [lower substringFromIndex:prefix.length];
+                NSUInteger idx = [def[@"suffixes"] indexOfObject:suffix];
+                if (idx != NSNotFound) {
+                    NSString *displaySuffix = def[@"displaySuffixes"][idx];
+                    return @{
+                        @"key": def[@"key"],
+                        @"name": def[@"name"],
+                        @"icon": def[@"icon"],
+                        @"currentSuffix": suffix,
+                        @"currentDisplaySuffix": displaySuffix,
+                        @"suffixes": def[@"suffixes"],
+                        @"displaySuffixes": def[@"displaySuffixes"],
+                        @"matchedPrefix": prefix,
+                        @"prefixes": def[@"prefixes"]
+                    };
+                }
+            }
+        }
+    }
+    
+    return nil;
 }
 
 @end

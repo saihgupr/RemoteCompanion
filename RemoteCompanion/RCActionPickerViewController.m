@@ -69,34 +69,29 @@
         @[
             @{ @"name": @"Play", @"command": @"play", @"icon": @"play.fill" },
             @{ @"name": @"Pause", @"command": @"pause", @"icon": @"pause.fill" },
-            @{ @"name": @"Play/Pause Toggle", @"command": @"playpause", @"icon": @"playpause.fill" },
+            @{ @"name": @"Play/Pause", @"command": @"playpause", @"icon": @"playpause.fill" },
             @{ @"name": @"Next Track", @"command": @"next", @"icon": @"forward.fill" },
             @{ @"name": @"Previous Track", @"command": @"prev", @"icon": @"backward.fill" },
             @{ @"name": @"Volume Up", @"command": @"volume up", @"icon": @"speaker.wave.3.fill" },
             @{ @"name": @"Volume Down", @"command": @"volume down", @"icon": @"speaker.wave.1.fill" },
             @{ @"name": @"Set Volume...", @"command": @"__SET_VOLUME__", @"icon": @"speaker.wave.3.fill" },
-            @{ @"name": @"Set Brightness...", @"command": @"__SET_BRIGHTNESS__", @"icon": @"sun.max.fill" }
+            @{ @"name": @"Set Brightness...", @"command": @"__SET_BRIGHTNESS__", @"icon": @"sun.max.fill" },
+            @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" },
+            @{ @"name": @"Queue Current Album", @"command": @"queuealbum", @"icon": @"music.note.list" },
+            @{ @"name": @"Queue Artist", @"command": @"queueartist", @"icon": @"music.mic" }
         ],
         // Device Controls
         @[
-            @{ @"name": @"Flashlight Toggle", @"command": @"flashlight toggle", @"icon": @"flashlight.on.fill" },
-            @{ @"name": @"Flashlight On", @"command": @"flashlight on", @"icon": @"flashlight.on.fill" },
-            @{ @"name": @"Flashlight Off", @"command": @"flashlight off", @"icon": @"flashlight.off.fill" },
-            @{ @"name": @"Rotate Lock", @"command": @"rotate lock", @"icon": @"lock.rotation" },
-            @{ @"name": @"Rotate Unlock", @"command": @"rotate unlock", @"icon": @"lock.rotation.open" },
-            @{ @"name": @"Rotate Toggle", @"command": @"rotate toggle", @"icon": @"lock.rotation" }
+            @{ @"name": @"Appearance", @"command": @"appearance toggle", @"icon": @"moon.fill" },
+            @{ @"name": @"Flashlight", @"command": @"flashlight toggle", @"icon": @"flashlight.on.fill" },
+            @{ @"name": @"Rotation Lock", @"command": @"rotate toggle", @"icon": @"lock.rotation" }
         ],
         // Connectivity
         @[
-            @{ @"name": @"WiFi On", @"command": @"wifi on", @"icon": @"wifi" },
-            @{ @"name": @"WiFi Off", @"command": @"wifi off", @"icon": @"wifi.slash" },
-            @{ @"name": @"WiFi Toggle", @"command": @"wifi toggle", @"icon": @"wifi" },
-            @{ @"name": @"Bluetooth On", @"command": @"bluetooth on", @"icon": @"bolt.horizontal.fill" },
-            @{ @"name": @"Bluetooth Off", @"command": @"bluetooth off", @"icon": @"bolt.horizontal" },
-            @{ @"name": @"Bluetooth Toggle", @"command": @"bluetooth toggle", @"icon": @"bolt.horizontal.fill" },
-            @{ @"name": @"Airplane Mode On", @"command": @"airplane on", @"icon": @"airplane" },
-            @{ @"name": @"Airplane Mode Off", @"command": @"airplane off", @"icon": @"airplane" },
-            @{ @"name": @"Airplane Mode Toggle", @"command": @"airplane toggle", @"icon": @"airplane" },
+            @{ @"name": @"Wi-Fi", @"command": @"wifi toggle", @"icon": @"wifi" },
+            @{ @"name": @"Cellular Data", @"command": @"cellular toggle", @"icon": @"antenna.radiowaves.left.and.right" },
+            @{ @"name": @"Bluetooth", @"command": @"bluetooth toggle", @"icon": @"bolt.horizontal.fill" },
+            @{ @"name": @"Airplane Mode", @"command": @"airplane toggle", @"icon": @"airplane" },
             @{ @"name": @"Connect Bluetooth...", @"command": @"__BT_CONNECT__", @"icon": @"link" },
             @{ @"name": @"Disconnect Bluetooth...", @"command": @"__BT_DISCONNECT__", @"icon": @"xmark.circle" },
             @{ @"name": @"Connect AirPlay...", @"command": @"__AIRPLAY_CONNECT__", @"icon": @"airplayaudio" },
@@ -108,11 +103,10 @@
             @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
             @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
             @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
+            @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },
             @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
             @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
-            @{ @"name": @"Do Not Disturb On", @"command": @"dnd on", @"icon": @"moon.fill" },
-            @{ @"name": @"Do Not Disturb Off", @"command": @"dnd off", @"icon": @"moon" },
-            @{ @"name": @"Do Not Disturb Toggle", @"command": @"dnd toggle", @"icon": @"moon.circle.fill" },
+            @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
             @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
             @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
             @{ @"name": @"App Switcher", @"command": @"switcher", @"icon": @"square.stack.3d.up.fill" },
@@ -122,29 +116,28 @@
             @{ @"name": @"Soft Reboot (ldrestart)", @"command": @"ldrestart", @"icon": @"arrow.clockwise" },
             @{ @"name": @"Userspace Reboot", @"command": @"userspace-reboot", @"icon": @"arrow.clockwise.circle" },
             @{ @"name": @"Refresh Icon Cache (uicache)", @"command": @"uicache", @"icon": @"square.grid.2x2" },
-            @{ @"name": @"Lock Status", @"command": @"lock status", @"icon": @"lock.circle" },
-            @{ @"name": @"Orientation Status", @"command": @"orientation status", @"icon": @"iphone.badge.play" },
+
             
             // System Vibration
-            @{ @"name": @"Silent Vibrate Toggle", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
-            @{ @"name": @"Ring Vibrate Toggle", @"command": @"vibration ring-toggle", @"icon": @"bell" },
+            @{ @"name": @"Silent Vibration", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
+            @{ @"name": @"Ring Vibration", @"command": @"vibration ring-toggle", @"icon": @"bell" },
  
-            @{ @"name": @"Low Power Mode On", @"command": @"low power on", @"icon": @"battery.25" },
-            @{ @"name": @"Low Power Mode Off", @"command": @"low power off", @"icon": @"battery.100" },
-            @{ @"name": @"Low Power Mode Toggle", @"command": @"low power toggle", @"icon": @"battery.25" }
+            @{ @"name": @"Low Power Mode", @"command": @"low power toggle", @"icon": @"battery.25" }
         ],
-        // Audio (ANC)
+        // Audio (ANC & AudioMix)
         @[
             @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
             @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
-            @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" }
+            @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
+            @{ @"name": @"AudioMix", @"command": @"audiomix toggle", @"icon": @"music.note" }
         ],
         // Scripting & Logic
         @[
             @{ @"name": @"Custom Lua Script", @"command": @"__LUA_SCRIPT__", @"icon": @"scroll.fill" },
             @{ @"name": @"If Condition...", @"command": @"__IF_CONDITION__", @"icon": @"arrow.triangle.branch" },
             @{ @"name": @"Delay", @"command": @"__DELAY__", @"icon": @"timer" },
-            @{ @"name": @"Terminal Command", @"command": @"__CUSTOM__", @"icon": @"terminal.fill" }
+            @{ @"name": @"Terminal Command", @"command": @"__CUSTOM__", @"icon": @"terminal.fill" },
+            @{ @"name": @"Toast...", @"command": @"__TOAST__", @"icon": @"text.bubble.fill" }
         ]
     ];
     
@@ -263,7 +256,9 @@
         [cmd isEqualToString:@"__AIRPLAY_CONNECT__"] || 
         [cmd isEqualToString:@"__SHORTCUT_PICKER__"] || 
         [cmd isEqualToString:@"__OPEN_APP__"] || 
+        [cmd isEqualToString:@"__KILL_APP__"] || 
         [cmd isEqualToString:@"__LUA_SCRIPT__"] || 
+        [cmd isEqualToString:@"__TOAST__"] || 
         [cmd isEqualToString:@"__IF_CONDITION__"] ||
         [cmd isEqualToString:@"__DELAY__"] ||
         [cmd isEqualToString:@"__CUSTOM__"] ||

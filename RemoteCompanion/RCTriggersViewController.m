@@ -39,7 +39,7 @@
     if ([triggerKey hasPrefix:@"wifi_"]) return @"wifi";
     if ([triggerKey hasPrefix:@"bt_"]) return @"bolt.horizontal.fill";
     if ([triggerKey hasPrefix:@"app_launch_"]) return @"app.badge";
-    if ([triggerKey hasPrefix:@"notif_"]) return @"bell.badge.fill";
+    if ([triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"]) return @"bell.badge.fill";
     if ([triggerKey hasPrefix:@"sched_"]) return @"clock.fill";
     if ([triggerKey isEqualToString:@"shake"]) return @"waveform.path.ecg";
     if ([triggerKey isEqualToString:@"trigger_device_lock"]) return @"lock.fill";
@@ -87,6 +87,11 @@
     
     self.tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 0, 0.1)];
     self.tableView.tableHeaderView.clipsToBounds = YES;
+
+    // Pull-to-refresh
+    self.refreshControl = [[UIRefreshControl alloc] init];
+    self.refreshControl.tintColor = [UIColor systemGrayColor];
+    [self.refreshControl addTarget:self action:@selector(handleRefresh) forControlEvents:UIControlEventValueChanged];
 
     // Edit button will be shown/hidden based on favorites
 
@@ -184,7 +189,20 @@
 }
 - (void)handleConfigChanged:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self reloadTableData];
+        // Only reload if we're the visible VC; if we're buried in the stack
+        // during an animated transition, skip — viewWillAppear will reload on return.
+        if (self.isViewLoaded && self.view.window && self.navigationController.topViewController == self) {
+            [self reloadTableData];
+        }
+    });
+}
+
+- (void)handleRefresh {
+    [[RCConfigManager sharedManager] loadConfig];
+    [[NSNotificationCenter defaultCenter] postNotificationName:RCConfigChangedNotification object:nil];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self.refreshControl endRefreshing];
     });
 }
 
@@ -227,7 +245,7 @@
     // Standard Sections (Always show headers)
     addSection(@[@"volume_up_hold", @"volume_down_hold", @"volume_both_press"], @"Volume Buttons", NO);
     addSection(@[@"power_double_tap", @"power_triple_click", @"power_quadruple_click", @"power_volume_up", @"power_volume_down", @"power_long_press"], @"Power Button", NO);
-    addSection(@[@"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right"], @"Screen Gestures", NO);
+    addSection(@[@"trigger_statusbar_left_hold", @"trigger_statusbar_center_hold", @"trigger_statusbar_right_hold", @"trigger_statusbar_swipe_left", @"trigger_statusbar_swipe_right", @"trigger_statusbar_double_tap"], @"Screen Gestures", NO);
     addSection(@[@"trigger_edge_left_swipe_up", @"trigger_edge_left_swipe_down", @"trigger_edge_right_swipe_up", @"trigger_edge_right_swipe_down"], @"Edge Gestures", NO);
     addSection(@[@"trigger_bottombar_swipe_left", @"trigger_bottombar_swipe_right"], @"Bottom Bar Gestures", NO);
     addSection(@[@"trigger_home_double_click", @"trigger_home_triple_click", @"trigger_home_quadruple_click", @"touchid_tap", @"touchid_hold"], @"Home Button", NO);
@@ -273,7 +291,7 @@
     // Notification Triggers Section
     NSMutableArray *notifKeys = [NSMutableArray array];
     for (NSString *key in [[RCConfigManager sharedManager] allConfiguredTriggerKeys]) {
-        if ([key hasPrefix:@"notif_"]) [notifKeys addObject:key];
+        if ([key hasPrefix:@"notif_"] || [key hasPrefix:@"notify_"]) [notifKeys addObject:key];
     }
     addSection(notifKeys, @"Notification Triggers", YES);
 
@@ -333,6 +351,7 @@
 
     [alert addAction:[UIAlertAction actionWithTitle:@"App Launch" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
         RCAppPickerViewController *vc = [[RCAppPickerViewController alloc] init];
+        vc.suppressAutoPop = YES; // We handle navigation ourselves
         vc.onAppSelected = ^(NSString *appName, NSString *bundleId) {
             NSString *triggerKey = [NSString stringWithFormat:@"app_launch_%@", bundleId];
             NSString *friendlyName = [NSString stringWithFormat:@"Launch %@", appName];
@@ -345,11 +364,12 @@
             
             [[RCConfigManager sharedManager] updateTrigger:triggerKey withData:triggerData];
             
-            // Redirect to actions view
-            dispatch_async(dispatch_get_main_queue(), ^{
-                RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:triggerKey];
-                [self.navigationController pushViewController:actionsVC animated:YES];
-            });
+            // Push actionsVC, then let the app picker pop (leaving [TriggersVC, ActionsVC])
+            RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:triggerKey];
+            NSMutableArray *vcs = [self.navigationController.viewControllers mutableCopy];
+            [vcs removeLastObject]; // Remove the app picker
+            [vcs addObject:actionsVC];
+            [self.navigationController setViewControllers:vcs animated:YES];
         };
         [self.navigationController pushViewController:vc animated:YES];
     }]];
@@ -727,7 +747,7 @@
     NSString *triggerKey = _sections[indexPath.section][indexPath.row];
 
     // Only allow delete for NFC, WiFi, BT, App, Notif, Sched, Device State triggers
-    if (![triggerKey hasPrefix:@"nfc_"] && ![triggerKey hasPrefix:@"wifi_"] && ![triggerKey hasPrefix:@"bt_"] && ![triggerKey hasPrefix:@"app_launch_"] && ![triggerKey hasPrefix:@"notif_"] && ![triggerKey hasPrefix:@"sched_"] && ![triggerKey hasPrefix:@"trigger_device_"] && ![triggerKey hasPrefix:@"trigger_media_"]) {
+    if (![triggerKey hasPrefix:@"nfc_"] && ![triggerKey hasPrefix:@"wifi_"] && ![triggerKey hasPrefix:@"bt_"] && ![triggerKey hasPrefix:@"app_launch_"] && ![triggerKey hasPrefix:@"notif_"] && ![triggerKey hasPrefix:@"notify_"] && ![triggerKey hasPrefix:@"sched_"] && ![triggerKey hasPrefix:@"trigger_device_"] && ![triggerKey hasPrefix:@"trigger_media_"]) {
         return [UISwipeActionsConfiguration configurationWithActions:@[]];
     }
 

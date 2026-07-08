@@ -3,12 +3,15 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.3.0**
-> - **Device Lock/Unlock Triggers**: Fire custom action sequences automatically when locking or unlocking the screen.
-> - **Media Playback Triggers**: Observers for media events (Media Playing, Media Paused, and Media Track Changed).
-> - **Previous App Command**: Added `rc previous app` (or `rc last app`) to instantly return to the last active application.
-> - **Web UI & Companion Integration**: Complete support for media and lock status events with custom icons, pickers, and live testing.
-> - **RootHide Support**: Native compatibility for RootHide-based jailbreaks.
+> **What’s New in v3.4.0**
+> - **Proximity Sensor & Pocket Detection**: Bind actions based on device coverage/pocket states, auto-enabling during power button holds for zero standby battery drain.
+> - **Dynamic Web UI Port Selection**: Scans sequentially (8080-8099) to bind the first available port, preventing conflicts with other background web servers.
+> - **Action Sequence Play Button & Else If Blocks**: Test/simulate sequences instantly with a play button in the iOS app, and build nested, sequential `else_if` logic blocks.
+> - **Native-Style HUD Toasts**: Dropdown spring-physics toasts to confirm toggled states system-wide, featuring robust handling to resolve rapid-fire click conflicts.
+> - **Cellular Data Control**: Enable, disable, or query cellular data natively via CLI commands, Web UI triggers, and action workflow condition evaluations.
+> - **Action Sequence Import/Export**: You can now export, import, and share your custom action sequences (via a new ellipsis menu) with options to append or replace them.
+> - **AI Scripting Guide**: Generate custom action sequences from plain English using any AI assistant with a pre-configured prompt and reference documentation in [SCRIPTING.md](SCRIPTING.md).
+> - **Kill App & AudioMix Actions**: Force-close apps natively with a high-fidelity iOS-style autocomplete UI, and toggle/query KingPuffdaddi's AudioMix tweak state.
 
 
 <p align="center">
@@ -24,6 +27,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 - **Universal Search**: Instantly find actions, shortcuts, and devices with integrated search bars in every picker.
 - **Cross-Version Support**: Full compatibility for iOS 14 through iOS 16+, supporting Rootless, Rootful, and RootHide environments.
 - **Advanced Automation**: Full support for NFC tags, custom Lua scripts (with `objc_call` support), and native Siri integration.
+- **AI-Assisted Scripting**: Use any AI assistant to generate action sequences from plain English — see [SCRIPTING.md](SCRIPTING.md).
 - **iPad Experience**: Native landscape orientation and optimized layouts for iPad power users.
 - **Live Discovery**: Discovery-based live lists for nearby AirPlay and Bluetooth hardware.
 - **Trigger Favorites**: Mark any trigger as a favorite for instant access at the top of the picker.
@@ -64,6 +68,7 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc brightness 0-100` - Set screen brightness.
 - `rc flashlight [on|off|toggle]` - Control the torch.
 - `rc rotate [lock|unlock|toggle]` - Orientation lock control.
+- `rc appearance [dark|light|toggle]` - Set device appearance.
 - `rc dnd [on|off|toggle]` - Toggle Do Not Disturb.
 - `rc low power mode [on|off|toggle]` - Toggle battery saver.
 - `rc airplane [on|off|toggle]` - Control Airplane Mode.
@@ -82,7 +87,7 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc spotify play` - Resume Spotify playback.
 
 ### Connectivity
-- `rc wifi [on|off|toggle]` / `rc bluetooth [on|off|toggle]`
+- `rc wifi [on|off|toggle]` / `rc cellular [on|off|toggle]` / `rc bluetooth [on|off|toggle]`
 - `rc bluetooth [connect|disconnect] <name>` - Manage paired devices.
 - `rc airplay list` - See speakers and their UIDs.
 - `rc airplay connect <UID|Name>` / `rc airplay disconnect`
@@ -129,6 +134,7 @@ Use the `rc blacklist` command to manage the list:
 ### Text & Notifications
 - `rc type "Text"` - Type text (supports symbols).
 - `rc paste "Text"` - Paste into clipboard.
+- `rc toast "Title" ["Subtitle"] ["SF Symbol"]` - Display a HUD toast notification. Note: use single quotes if passing special characters like `!` to prevent shell history expansion (e.g., `rc toast "Hello" 'World!'`).
 - `rc key <hex>` - Specific keyboard keys (e.g., `0x04` for 'A', `0x28` for Enter).
 - `rc log` - View the RemoteCompanion server logs.
 
@@ -147,16 +153,21 @@ Get instant feedback from your device state.
 - `rc dnd status` - Returns Do Not Disturb state.
 - `rc lpm status` - Returns Low Power Mode state.
 - `rc airplane status` - Returns Airplane Mode state.
-- `rc wifi status` / `rc bt status` - Returns connectivity states.
+- `rc wifi status` / `rc cellular status` / `rc bt status` - Returns connectivity states.
 - `rc flashlight status` - Returns torch state.
+- `rc proximity` - Returns `near` or `far`. *(Note: iOS powers off the sensor when the screen is asleep. To test manually while the screen is awake, run `rc proximity on` to force it active, then `rc proximity off` to disable it.)*
 
 <details>
 <summary><b>Conditional Actions</b></summary>
 
 Combine status queries with actions for smart automation:
 
+- **Pocket/Proximity-Awareness**: `If Proximity Sensor is Near (Covered / Pocket)` -> `Skip Action` (perfect for preventing accidental pocket flashlight activation).
 - **Orientation-Awareness**: `If Orientation is Landscape` -> `Flashlight Toggle`.
 - **Bluetooth/Wi-Fi State**: `If Wi-Fi is OFF` -> `Wi-Fi ON`.
+
+> [!NOTE]
+> **Proximity Sensor Cooldown**: To conserve battery, the proximity sensor is only powered on dynamically during button holds and is shut off immediately on release. Due to iOS kernel-level hardware power-gating, rapid consecutive clicks (within ~5 seconds) may temporarily bypass proximity evaluation until the sensor's hardware cooldown window resets.
 
 </details>
 
@@ -308,6 +319,27 @@ end
 
 > [!NOTE]
 > `objc_call` works like standard Objective-C messaging — it does not scan memory for existing instances. To call an instance method, you first need to obtain the instance via a class-level accessor (e.g. `sharedInstance`, `currentDevice`) or by allocating a new one with `alloc`/`init`.
+
+</details>
+
+<details>
+<summary><b>AI-Assisted Sequence Builder</b></summary>
+
+Use any AI assistant (ChatGPT, Claude, Gemini, etc.) to build action sequences from plain English, then paste the result directly into the app using **Import**.
+
+**[→ Full guide + copy-paste AI prompt: SCRIPTING.md](SCRIPTING.md)**
+
+Example prompt:
+```
+Read this guide: https://github.com/saihgupr/remotecompanion/blob/main/SCRIPTING.md
+
+Using the action format defined there, create a RemoteCompanion sequence that:
+pause music, wait 2 seconds, take a screenshot, then play music again
+
+Return ONLY the raw JSON array. No explanation, no markdown, no code fences.
+```
+
+Copy the JSON output → open your trigger → tap **⋯** → **Import** → paste → **Import**.
 
 </details>
 

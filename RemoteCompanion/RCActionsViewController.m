@@ -10,6 +10,10 @@
 #import "RCWiFiTriggerViewController.h"
 #import "RCBluetoothTriggerViewController.h"
 #import "RCNFCTriggerViewController.h"
+#import <notify.h>
+
+#define kSimulateNotificationPrefix "com.pizzaman.rc.simulate."
+
 
 @interface UIImage (Private)
 + (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleIdentifier format:(int)format scale:(CGFloat)scale;
@@ -26,6 +30,117 @@ static id g_actionClipboard = nil;
 
 - (NSString *)displayNameForCommand:(id)cmd {
     return [[RCConfigManager sharedManager] nameForCommand:cmd truncate:YES];
+}
+
+- (NSAttributedString *)attributedDisplayNameForCommand:(NSString *)cmd {
+    if (![cmd isKindOfClass:[NSString class]]) return nil;
+    NSString *lower = [cmd lowercaseString];
+    NSString *baseText = nil;
+    NSString *paramText = nil;
+    
+    UIColor *accentColor = [UIColor systemBlueColor];
+    
+    if ([lower hasPrefix:@"set-vol "]) {
+        baseText = @"Set Volume ";
+        paramText = [NSString stringWithFormat:@"%@%%", [cmd substringFromIndex:8]];
+    } else if ([lower hasPrefix:@"brightness "]) {
+        baseText = @"Set Brightness ";
+        paramText = [NSString stringWithFormat:@"%@%%", [cmd substringFromIndex:11]];
+    } else if ([lower hasPrefix:@"flashlight "] || [lower hasPrefix:@"flash "]) {
+        NSString *val = [cmd substringFromIndex:[lower hasPrefix:@"flashlight "] ? 11 : 6];
+        // Only if it's a number (flashlight intensity)
+        NSScanner *scanner = [NSScanner scannerWithString:val];
+        BOOL isNumeric = [scanner scanFloat:NULL] && [scanner isAtEnd];
+        if (isNumeric) {
+            baseText = @"Flashlight ";
+            paramText = [NSString stringWithFormat:@"%@%%", val];
+        }
+    } else if ([lower hasPrefix:@"delay "]) {
+        baseText = @"Wait ";
+        paramText = [NSString stringWithFormat:@"%@s", [cmd substringFromIndex:6]];
+    } else if ([lower hasPrefix:@"shortcut:"]) {
+        baseText = @"Shortcut: ";
+        paramText = [cmd substringFromIndex:9];
+    } else if ([lower hasPrefix:@"uiopen "]) {
+        baseText = @"Open ";
+        NSString *bundleId = [cmd substringFromIndex:7];
+        NSString *appName = bundleId;
+        Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+        if (proxyClass) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            id proxy = [proxyClass performSelector:@selector(applicationProxyForIdentifier:) withObject:bundleId];
+            if (proxy) {
+                NSString *name = [proxy performSelector:@selector(localizedName)];
+                if (name.length > 0) {
+                    appName = name;
+                }
+            }
+#pragma clang diagnostic pop
+        }
+        paramText = appName;
+    } else if ([lower hasPrefix:@"kill "]) {
+        baseText = @"Kill ";
+        NSString *bundleId = [cmd substringFromIndex:5];
+        NSString *appName = bundleId;
+        Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+        if (proxyClass) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            id proxy = [proxyClass performSelector:@selector(applicationProxyForIdentifier:) withObject:bundleId];
+            if (proxy) {
+                NSString *name = [proxy performSelector:@selector(localizedName)];
+                if (name.length > 0) {
+                    appName = name;
+                }
+            }
+#pragma clang diagnostic pop
+        }
+        paramText = appName;
+    } else if ([lower hasPrefix:@"airplay connect "]) {
+        baseText = @"AirPlay Connect ";
+        paramText = [cmd substringFromIndex:16];
+    } else if ([lower hasPrefix:@"bt connect "] || [lower hasPrefix:@"bluetooth connect "]) {
+        baseText = @"Connect ";
+        paramText = [cmd substringFromIndex:[lower hasPrefix:@"bt connect "] ? 11 : 18];
+    } else if ([lower hasPrefix:@"bt disconnect "] || [lower hasPrefix:@"bluetooth disconnect "]) {
+        baseText = @"Disconnect ";
+        paramText = [cmd substringFromIndex:[lower hasPrefix:@"bt disconnect "] ? 14 : 21];
+    } else if ([lower hasPrefix:@"toast "]) {
+        baseText = @"Toast ";
+        NSString *argString = [cmd substringFromIndex:6];
+        NSString *firstArg = nil;
+        if ([argString hasPrefix:@"\""]) {
+            NSRange nextQuote = [argString rangeOfString:@"\"" options:0 range:NSMakeRange(1, argString.length - 1)];
+            if (nextQuote.location != NSNotFound) {
+                firstArg = [argString substringWithRange:NSMakeRange(1, nextQuote.location - 1)];
+            } else {
+                firstArg = [argString substringFromIndex:1];
+            }
+        } else {
+            NSRange firstSpace = [argString rangeOfString:@" "];
+            if (firstSpace.location != NSNotFound) {
+                firstArg = [argString substringToIndex:firstSpace.location];
+            } else {
+                firstArg = argString;
+            }
+        }
+        paramText = firstArg;
+    }
+    
+    if (baseText && paramText) {
+        NSString *fullText = [NSString stringWithFormat:@"%@%@", baseText, paramText];
+        NSMutableAttributedString *attrStr = [[NSMutableAttributedString alloc] initWithString:fullText];
+        NSRange baseRange = NSMakeRange(0, baseText.length);
+        NSRange paramRange = NSMakeRange(baseText.length, paramText.length);
+        
+        [attrStr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:17 weight:UIFontWeightMedium] range:NSMakeRange(0, fullText.length)];
+        [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor labelColor] range:baseRange];
+        [attrStr addAttribute:NSForegroundColorAttributeName value:accentColor range:paramRange];
+        return attrStr;
+    }
+    
+    return nil;
 }
 
 - (NSString *)iconForCommand:(id)cmd {
@@ -48,22 +163,58 @@ static id g_actionClipboard = nil;
     
     self.title = [[RCConfigManager sharedManager] displayNameForTrigger:_triggerKey];
     
-    // Setup Navigation Items
-    UIBarButtonItem *addButton = [[UIBarButtonItem alloc] 
-        initWithBarButtonSystemItem:UIBarButtonSystemItemAdd 
-        target:self 
-        action:@selector(addAction)];
-        
-    self.navigationItem.rightBarButtonItem = addButton;
-
-    // Add Settings Button for configurable triggers
-    UIBarButtonItem *settingsButton = [[UIBarButtonItem alloc] 
-        initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"] 
+    // Plus Button to add action directly
+    UIBarButtonItem *plusButton = [[UIBarButtonItem alloc] 
+        initWithImage:[UIImage systemImageNamed:@"plus"] 
         style:UIBarButtonItemStylePlain 
         target:self 
-        action:@selector(editTriggerSettings)];
+        action:@selector(addAction)];
     
-    self.navigationItem.rightBarButtonItems = @[addButton, settingsButton];
+    // More options menu (Import, Export)
+    NSMutableArray *menuActions = [NSMutableArray array];
+    __weak typeof(self) weakSelf = self;
+    [menuActions addObject:[UIAction actionWithTitle:@"Import Actions" 
+                                               image:[UIImage systemImageNamed:@"square.and.arrow.down"] 
+                                          identifier:nil 
+                                             handler:^(__kindof UIAction * _Nonnull action) {
+        [weakSelf importActions];
+    }]];
+    [menuActions addObject:[UIAction actionWithTitle:@"Export Actions" 
+                                               image:[UIImage systemImageNamed:@"square.and.arrow.up"] 
+                                          identifier:nil 
+                                             handler:^(__kindof UIAction * _Nonnull action) {
+        [weakSelf exportActions];
+    }]];
+    
+    UIMenu *shareMenu = [UIMenu menuWithTitle:@"" children:menuActions];
+    UIBarButtonItem *moreButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis.circle"] menu:shareMenu];
+    
+    NSMutableArray *rightItems = [NSMutableArray arrayWithArray:@[moreButton, plusButton]];
+    
+    BOOL isConfigurable = [_triggerKey hasPrefix:@"sched_"] ||
+                          [_triggerKey hasPrefix:@"notif_"] ||
+                          [_triggerKey hasPrefix:@"notify_"] ||
+                          [_triggerKey hasPrefix:@"wifi_"] ||
+                          [_triggerKey hasPrefix:@"bt_"] ||
+                          [_triggerKey hasPrefix:@"app_launch_"];
+    
+    if (isConfigurable) {
+        UIBarButtonItem *settingsButton = [[UIBarButtonItem alloc] 
+            initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"] 
+            style:UIBarButtonItemStylePlain 
+            target:self 
+            action:@selector(editTriggerSettings)];
+        [rightItems addObject:settingsButton];
+    }
+    
+    UIBarButtonItem *playButton = [[UIBarButtonItem alloc] 
+        initWithImage:[UIImage systemImageNamed:@"play"] 
+        style:UIBarButtonItemStylePlain 
+        target:self 
+        action:@selector(runSequence)];
+    [rightItems addObject:playButton];
+    
+    self.navigationItem.rightBarButtonItems = rightItems;
 
     // Add tap gesture to title if it's an NFC trigger
     if ([_triggerKey hasPrefix:@"nfc_"]) {
@@ -90,7 +241,12 @@ static id g_actionClipboard = nil;
     // Listen for color tweak changes
     [[NSNotificationCenter defaultCenter] addObserver:self 
                                              selector:@selector(handleTweaksChanged:) 
-                                                 name:@"RCConfigTweaksChangedNotification" 
+                                                  name:@"RCConfigTweaksChangedNotification" 
+                                               object:nil];
+    // Listen for config changes
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(handleConfigChanged:) 
+                                                  name:RCConfigChangedNotification 
                                                object:nil];
     [self applyTweaks];
     
@@ -116,6 +272,13 @@ static id g_actionClipboard = nil;
     [self applyTweaks];
 }
 
+- (void)handleConfigChanged:(NSNotification *)note {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        _actions = [[[RCConfigManager sharedManager] actionsForTrigger:_triggerKey] mutableCopy];
+        [self.tableView reloadData];
+    });
+}
+
 - (void)applyTweaks {
     RCConfigManager *cm = [RCConfigManager sharedManager];
     self.view.backgroundColor = [cm tweakColorForKey:@"mainBackground" defaultVal:0.09];
@@ -133,12 +296,24 @@ static id g_actionClipboard = nil;
     }
 }
 
+- (void)runSequence {
+    UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [haptic impactOccurred];
+    
+    NSString *notificationName = [NSString stringWithFormat:@"%s%@", kSimulateNotificationPrefix, _triggerKey];
+    
+    // Slight delay to ensure haptic plays before the app is potentially obscured
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        notify_post([notificationName UTF8String]);
+    });
+}
+
 - (void)editTriggerSettings {
     UIViewController *vc = nil;
     
     if ([_triggerKey hasPrefix:@"sched_"]) {
         vc = [[RCScheduledTriggerViewController alloc] initWithTriggerKey:_triggerKey];
-    } else if ([_triggerKey hasPrefix:@"notif_"]) {
+    } else if ([_triggerKey hasPrefix:@"notif_"] || [_triggerKey hasPrefix:@"notify_"]) {
         vc = [[RCNotificationTriggerViewController alloc] initWithTriggerKey:_triggerKey];
     } else if ([_triggerKey hasPrefix:@"wifi_"]) {
         vc = [[RCWiFiTriggerViewController alloc] initWithTriggerKey:_triggerKey];
@@ -214,7 +389,123 @@ static id g_actionClipboard = nil;
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (void)showHUDToast:(NSString *)title subtitle:(NSString *)subtitle icon:(NSString *)iconName {
+    NSString *safeTitle = [title stringByReplacingOccurrencesOfString:@"\"" withString:@"'"];
+    NSString *safeSubtitle = [subtitle stringByReplacingOccurrencesOfString:@"\"" withString:@"'"];
+    NSString *safeIcon = [iconName stringByReplacingOccurrencesOfString:@"\"" withString:@"'"];
+
+    NSString *cmd = [NSString stringWithFormat:@"toast \"%@\" \"%@\" \"%@\"", 
+                     safeTitle ?: @"", 
+                     safeSubtitle ?: @"", 
+                     safeIcon ?: @""];
+                     
+    [[RCServerClient sharedClient] executeCommand:cmd completion:^(NSString * _Nullable output, NSError * _Nullable error) {
+        if (error) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                           message:subtitle
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [self presentViewController:alert animated:YES completion:nil];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [alert dismissViewControllerAnimated:YES completion:nil];
+            });
+        }
+    }];
+}
+
+- (void)exportActions {
+    if (_actions.count == 0) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No Actions"
+                                                                       message:@"There are no actions in this sequence to export."
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    
+    NSError *error = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:_actions options:NSJSONWritingPrettyPrinted error:&error];
+    if (error || !jsonData) {
+        NSLog(@"Failed to serialize actions for export: %@", error);
+        return;
+    }
+    
+    NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+    [UIPasteboard generalPasteboard].string = jsonString;
+    
+    [self showHUDToast:@"Copied to Clipboard" subtitle:nil icon:@"doc.on.doc"];
+}
+
+- (void)importActions {
+    __weak typeof(self) weakSelf = self;
+    
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Actions"
+                                                                   message:nil
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        textField.autocorrectionType = UITextAutocorrectionTypeNo;
+        textField.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
+        // Pre-fill with current sequence so user can see and clear it
+        if (self.actions.count > 0) {
+            NSError *serErr = nil;
+            NSData *jsonData = [NSJSONSerialization dataWithJSONObject:self.actions options:NSJSONWritingPrettyPrinted error:&serErr];
+            if (!serErr && jsonData) {
+                textField.text = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+            }
+        }
+    }];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Import" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        NSString *text = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!strongSelf || text.length == 0) return;
+        
+        NSArray *newCommands = nil;
+        if ([text hasPrefix:@"["] && [text hasSuffix:@"]"]) {
+            NSError *jsonErr = nil;
+            id parsed = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&jsonErr];
+            if (!jsonErr && [parsed isKindOfClass:[NSArray class]]) newCommands = parsed;
+        }
+        if (!newCommands) {
+            NSMutableArray *lines = [NSMutableArray array];
+            for (NSString *rawLine in [text componentsSeparatedByString:@"\n"]) {
+                NSString *line = [rawLine stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (line.length > 0) [lines addObject:line];
+            }
+            if (lines.count > 0) newCommands = lines;
+        }
+        NSMutableArray *validCmds = [NSMutableArray array];
+        for (id cmd in newCommands) {
+            if ([cmd isKindOfClass:[NSString class]]) {
+                NSString *clean = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (clean.length > 0) [validCmds addObject:clean];
+            } else if ([cmd isKindOfClass:[NSDictionary class]]) {
+                [validCmds addObject:cmd];
+            }
+        }
+        if (validCmds.count > 0) {
+            [strongSelf.actions removeAllObjects];
+            [strongSelf.actions addObjectsFromArray:validCmds];
+            [strongSelf saveActions];
+            [strongSelf.tableView reloadData];
+            [strongSelf showHUDToast:@"Import Successful"
+                           subtitle:[NSString stringWithFormat:@"Loaded %lu action(s).", (unsigned long)validCmds.count]
+                               icon:@"square.and.arrow.down"];
+        } else {
+            [strongSelf showHUDToast:@"Import Failed" subtitle:@"No valid actions found." icon:@"exclamationmark.triangle"];
+        }
+    }]];
+    
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+
 - (void)addAction {
+
     RCActionPickerViewController *picker = [[RCActionPickerViewController alloc] init];
     picker.onActionSelected = ^(NSString *action) {
         if ([action isEqualToString:@"__SHORTCUT_PICKER__"]) {
@@ -358,6 +649,19 @@ static id g_actionClipboard = nil;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentViewController:nav animated:YES completion:nil];
             });
+        } else if ([action isEqualToString:@"__KILL_APP__"]) {
+            RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
+            appPicker.onAppSelected = ^(NSString *name, NSString *bundleId) {
+                // Save as "kill <bundleId>"
+                [self.actions addObject:[NSString stringWithFormat:@"kill %@", bundleId]];
+                [self saveActions];
+                [self.tableView reloadData];
+            };
+            
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:appPicker];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentViewController:nav animated:YES completion:nil];
+            });
         } else if ([action isEqualToString:@"__IF_CONDITION__"]) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentIfConditionPickerForIndex:NSNotFound];
@@ -379,6 +683,50 @@ static id g_actionClipboard = nil;
             
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentViewController:nav animated:YES completion:nil];
+            });
+        } else if ([action isEqualToString:@"__TOAST__"]) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Toast" 
+                message:@"Enter toast title, subtitle and SFSymbol name" 
+                preferredStyle:UIAlertControllerStyleAlert];
+                
+            [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+                textField.placeholder = @"Title (required)";
+            }];
+            [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+                textField.placeholder = @"Subtitle (optional)";
+            }];
+            [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+                textField.placeholder = @"SFSymbol name (optional, e.g. info.circle)";
+            }];
+            
+            [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull alertAction) {
+                NSString *title = alert.textFields[0].text;
+                NSString *subtitle = alert.textFields[1].text;
+                NSString *icon = alert.textFields[2].text;
+                
+                if (title.length > 0) {
+                    NSString *escTitle = [title stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+                    NSString *escSub = [subtitle stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+                    NSString *escIcon = [icon stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+                    
+                    NSString *cmd;
+                    if (escIcon.length > 0) {
+                        cmd = [NSString stringWithFormat:@"toast \"%@\" \"%@\" \"%@\"", escTitle, escSub ?: @"", escIcon];
+                    } else if (escSub.length > 0) {
+                        cmd = [NSString stringWithFormat:@"toast \"%@\" \"%@\"", escTitle, escSub];
+                    } else {
+                        cmd = [NSString stringWithFormat:@"toast \"%@\"", escTitle];
+                    }
+                    
+                    [self.actions addObject:cmd];
+                    [self saveActions];
+                    [self.tableView reloadData];
+                }
+            }]];
+            
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentViewController:alert animated:YES completion:nil];
             });
         } else {
             [self.actions addObject:action];
@@ -408,6 +756,10 @@ static id g_actionClipboard = nil;
 
 - (BOOL)isElseActionItem:(id)item {
     return [[self actionTypeForItem:item] isEqualToString:@"else"];
+}
+
+- (BOOL)isElseIfActionItem:(id)item {
+    return [[self actionTypeForItem:item] isEqualToString:@"else_if"];
 }
 
 - (BOOL)isEndIfActionItem:(id)item {
@@ -517,7 +869,7 @@ static id g_actionClipboard = nil;
     }
     
     id current = self.actions[row];
-    if ([self isEndIfActionItem:current] || [self isElseActionItem:current]) {
+    if ([self isEndIfActionItem:current] || [self isElseActionItem:current] || [self isElseIfActionItem:current]) {
         return MAX(depth - 1, 0);
     }
     return depth;
@@ -593,6 +945,14 @@ static id g_actionClipboard = nil;
         @{
             @"key": @"front_app",
             @"title": @"Front Application"
+        },
+        @{
+            @"key": @"proximity",
+            @"title": @"Proximity Sensor",
+            @"values": @[
+                @{ @"value": @"NEAR", @"title": @"Near" },
+                @{ @"value": @"FAR", @"title": @"Far" }
+            ]
         }
     ];
 }
@@ -614,7 +974,9 @@ static id g_actionClipboard = nil;
     };
 }
 
-- (void)presentIfValuePickerForCondition:(NSDictionary *)condition existingIndex:(NSInteger)index {
+- (void)presentIfValuePickerForCondition:(NSDictionary *)condition existingIndex:(NSInteger)existingIndex insertIndex:(NSInteger)insertIndex type:(NSString *)type {
+    NSString *actionType = type ?: @"if";
+    
     if ([condition[@"key"] isEqualToString:@"front_app"]) {
         RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
         __weak typeof(self) weakSelf = self;
@@ -623,22 +985,23 @@ static id g_actionClipboard = nil;
             if (!strongSelf) return;
             
             NSDictionary *ifAction = @{
-                @"type": @"if",
+                @"type": actionType,
                 @"conditionKey": @"front_app",
                 @"conditionTitle": @"Front Application",
                 @"expectedValue": bundleId,
                 @"expectedTitle": name
             };
             
-            if (index != NSNotFound && index >= 0 && index < (NSInteger)strongSelf.actions.count) {
-                strongSelf.actions[index] = ifAction;
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)strongSelf.actions.count) {
+                strongSelf.actions[existingIndex] = ifAction;
+            } else if (insertIndex != NSNotFound && insertIndex >= 0 && insertIndex <= (NSInteger)strongSelf.actions.count) {
+                [strongSelf.actions insertObject:ifAction atIndex:insertIndex];
             } else {
                 [strongSelf.actions addObject:ifAction];
                 [strongSelf.actions addObject:@{ @"type": @"end_if" }];
             }
             [strongSelf saveActions];
             [strongSelf.tableView reloadData];
-            [strongSelf.navigationController popViewControllerAnimated:YES];
         };
         [self.navigationController pushViewController:appPicker animated:YES];
         return;
@@ -658,9 +1021,17 @@ static id g_actionClipboard = nil;
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (!strongSelf) return;
             
-            NSDictionary *ifAction = [strongSelf buildIfActionWithCondition:condition expectedValue:value];
-            if (index != NSNotFound && index >= 0 && index < (NSInteger)strongSelf.actions.count) {
-                strongSelf.actions[index] = ifAction;
+            NSDictionary *ifAction = @{
+                @"type": actionType,
+                @"conditionKey": condition[@"key"] ?: @"",
+                @"conditionTitle": condition[@"title"] ?: @"Condition",
+                @"expectedValue": value[@"value"] ?: @"",
+                @"expectedTitle": value[@"title"] ?: @"Value"
+            };
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)strongSelf.actions.count) {
+                strongSelf.actions[existingIndex] = ifAction;
+            } else if (insertIndex != NSNotFound && insertIndex >= 0 && insertIndex <= (NSInteger)strongSelf.actions.count) {
+                [strongSelf.actions insertObject:ifAction atIndex:insertIndex];
             } else {
                 [strongSelf.actions addObject:ifAction];
                 [strongSelf.actions addObject:@{ @"type": @"end_if" }];
@@ -675,8 +1046,9 @@ static id g_actionClipboard = nil;
     [self presentViewController:picker animated:YES completion:nil];
 }
 
-- (void)presentIfConditionPickerForIndex:(NSInteger)index {
-    UIAlertController *picker = [UIAlertController alertControllerWithTitle:@"If Condition"
+- (void)presentIfConditionPickerForIndex:(NSInteger)existingIndex insertIndex:(NSInteger)insertIndex type:(NSString *)type {
+    NSString *title = [type isEqualToString:@"else_if"] ? @"Else If Condition" : @"If Condition";
+    UIAlertController *picker = [UIAlertController alertControllerWithTitle:title
                                                                      message:@"Choose a status to evaluate"
                                                               preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
@@ -687,13 +1059,72 @@ static id g_actionClipboard = nil;
                                                 handler:^(__unused UIAlertAction * _Nonnull action) {
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (!strongSelf) return;
-            [strongSelf presentIfValuePickerForCondition:condition existingIndex:index];
+            [strongSelf presentIfValuePickerForCondition:condition existingIndex:existingIndex insertIndex:insertIndex type:type];
         }]];
     }
     
     [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self configurePopoverSourceForAlert:picker];
     [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)presentIfConditionPickerForIndex:(NSInteger)index {
+    NSString *type = @"if";
+    if (index != NSNotFound && index >= 0 && index < (NSInteger)self.actions.count) {
+        id actionItem = self.actions[index];
+        if ([self isElseIfActionItem:actionItem]) {
+            type = @"else_if";
+        }
+    }
+    [self presentIfConditionPickerForIndex:index insertIndex:NSNotFound type:type];
+}
+
+- (void)presentIfValuePickerForCondition:(NSDictionary *)condition existingIndex:(NSInteger)index {
+    [self presentIfValuePickerForCondition:condition existingIndex:index insertIndex:NSNotFound type:@"if"];
+}
+
+- (NSInteger)elseIfInsertionIndexForBlockIndex:(NSInteger)index {
+    id item = self.actions[index];
+    NSInteger ifIndex = NSNotFound;
+    if ([self isIfActionItem:item]) {
+        ifIndex = index;
+    } else if ([self isElseIfActionItem:item] || [self isElseActionItem:item]) {
+        NSInteger depth = 0;
+        for (NSInteger idx = index; idx >= 0; idx--) {
+            id checkItem = self.actions[idx];
+            if ([self isEndIfActionItem:checkItem]) {
+                depth++;
+            } else if ([self isIfActionItem:checkItem]) {
+                depth--;
+                if (depth < 0) {
+                    ifIndex = idx;
+                    break;
+                }
+            }
+        }
+    } else if ([self isEndIfActionItem:item]) {
+        ifIndex = [self matchingIfIndexForEndAtIndex:index];
+    }
+    
+    if (ifIndex == NSNotFound) return NSNotFound;
+    
+    NSInteger depth = 0;
+    for (NSInteger idx = ifIndex; idx < (NSInteger)self.actions.count; idx++) {
+        id checkItem = self.actions[idx];
+        if ([self isIfActionItem:checkItem]) {
+            depth++;
+        } else if ([self isEndIfActionItem:checkItem]) {
+            depth--;
+            if (depth == 0) {
+                return idx;
+            }
+        } else if ([self isElseActionItem:checkItem]) {
+            if (depth == 1) {
+                return idx;
+            }
+        }
+    }
+    return NSNotFound;
 }
 
 - (NSInteger)moveActionFromIndex:(NSInteger)sourceIndex toFinalIndex:(NSInteger)finalIndex {
@@ -768,30 +1199,70 @@ static id g_actionClipboard = nil;
         }
 
         // If-specific options
-        if ([self isIfActionItem:item]) {
-            NSInteger elseIndex = [self matchingElseIndexForIfAtIndex:indexPath.row];
-            BOOL hasElse = (elseIndex != NSNotFound);
-            
-            if (hasElse) {
-                [alert addAction:[UIAlertAction actionWithTitle:@"Remove Else" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
-                    [self.actions removeObjectAtIndex:elseIndex];
-                    [self saveActions];
-                    [self.tableView reloadData];
-                }]];
-            } else {
-                [alert addAction:[UIAlertAction actionWithTitle:@"Add Else" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-                    NSInteger endIndex = [self matchingEndIndexForIfAtIndex:indexPath.row];
-                    if (endIndex != NSNotFound) {
-                        [self.actions insertObject:@{ @"type": @"else" } atIndex:endIndex];
-                        [self saveActions];
-                        [self.tableView reloadData];
-                    }
+        if ([self isIfActionItem:item] || [self isElseIfActionItem:item] || [self isElseActionItem:item] || [self isEndIfActionItem:item]) {
+            NSInteger insertionIndex = [self elseIfInsertionIndexForBlockIndex:indexPath.row];
+            if (insertionIndex != NSNotFound) {
+                [alert addAction:[UIAlertAction actionWithTitle:@"Add Else If" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                    [self presentIfConditionPickerForIndex:NSNotFound insertIndex:insertionIndex type:@"else_if"];
                 }]];
             }
             
-            [alert addAction:[UIAlertAction actionWithTitle:@"Edit Condition" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-                [self presentIfConditionPickerForIndex:indexPath.row];
-            }]];
+            NSInteger ifIndex = NSNotFound;
+            if ([self isIfActionItem:item]) {
+                ifIndex = indexPath.row;
+            } else {
+                NSInteger depth = 0;
+                for (NSInteger idx = indexPath.row; idx >= 0; idx--) {
+                    id checkItem = self.actions[idx];
+                    if ([self isEndIfActionItem:checkItem]) {
+                        depth++;
+                    } else if ([self isIfActionItem:checkItem]) {
+                        depth--;
+                        if (depth < 0) {
+                            ifIndex = idx;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (ifIndex != NSNotFound) {
+                NSInteger elseIndex = [self matchingElseIndexForIfAtIndex:ifIndex];
+                BOOL hasElse = (elseIndex != NSNotFound);
+                
+                if (hasElse) {
+                    if ([self isElseActionItem:item] || [self isIfActionItem:item]) {
+                        [alert addAction:[UIAlertAction actionWithTitle:@"Remove Else" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+                            [self.actions removeObjectAtIndex:elseIndex];
+                            [self saveActions];
+                            [self.tableView reloadData];
+                        }]];
+                    }
+                } else {
+                    [alert addAction:[UIAlertAction actionWithTitle:@"Add Else" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                        NSInteger endIndex = [self matchingEndIndexForIfAtIndex:ifIndex];
+                        if (endIndex != NSNotFound) {
+                            [self.actions insertObject:@{ @"type": @"else" } atIndex:endIndex];
+                            [self saveActions];
+                            [self.tableView reloadData];
+                        }
+                    }]];
+                }
+            }
+            
+            if ([self isIfActionItem:item] || [self isElseIfActionItem:item]) {
+                [alert addAction:[UIAlertAction actionWithTitle:@"Edit Condition" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                    [self presentIfConditionPickerForIndex:indexPath.row];
+                }]];
+            }
+            
+            if ([self isElseIfActionItem:item]) {
+                [alert addAction:[UIAlertAction actionWithTitle:@"Delete Else If" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+                    [self.actions removeObjectAtIndex:indexPath.row];
+                    [self saveActions];
+                    [self.tableView reloadData];
+                }]];
+            }
         }
     } else {
         // Long press on empty space
@@ -857,13 +1328,62 @@ static id g_actionClipboard = nil;
     id actionData = self.actions[indexPath.row];
     
     if ([actionData isKindOfClass:[NSDictionary class]]) {
-        if ([self isIfActionItem:actionData]) {
+        if ([self isIfActionItem:actionData] || [self isElseIfActionItem:actionData]) {
             [self presentIfConditionPickerForIndex:indexPath.row];
         }
         return;
     }
     
     NSString *currentAction = (NSString *)actionData;
+    NSDictionary *toggleInfo = [[RCConfigManager sharedManager] toggleInfoForCommand:currentAction];
+    
+    if (toggleInfo) {
+        UIAlertController *picker = [UIAlertController alertControllerWithTitle:toggleInfo[@"name"]
+                                                                         message:@"Select desired state"
+                                                                  preferredStyle:UIAlertControllerStyleActionSheet];
+        
+        NSArray *suffixes = toggleInfo[@"suffixes"];
+        NSArray *displaySuffixes = toggleInfo[@"displaySuffixes"];
+        NSString *matchedPrefix = toggleInfo[@"matchedPrefix"];
+        NSArray *prefixes = toggleInfo[@"prefixes"];
+        NSString *canonicalPrefix = (matchedPrefix.length > 0) ? matchedPrefix : (prefixes.firstObject ?: @"");
+        
+        __weak typeof(self) weakSelf = self;
+        for (NSUInteger idx = 0; idx < suffixes.count; idx++) {
+            NSString *suffix = suffixes[idx];
+            NSString *displaySuffix = displaySuffixes[idx];
+            
+            [picker addAction:[UIAlertAction actionWithTitle:displaySuffix
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(__unused UIAlertAction * _Nonnull action) {
+                __strong typeof(weakSelf) strongSelf = weakSelf;
+                if (!strongSelf) return;
+                
+                NSString *newCommand = [NSString stringWithFormat:@"%@%@", canonicalPrefix, suffix];
+                if (matchedPrefix.length == 0 && [toggleInfo[@"key"] isEqualToString:@"audiomix"] && [suffix isEqualToString:@"toggle"]) {
+                    newCommand = @"audiomix";
+                }
+                
+                strongSelf.actions[indexPath.row] = newCommand;
+                [strongSelf saveActions];
+                [strongSelf.tableView reloadData];
+            }]];
+        }
+        
+        [picker addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        
+        picker.popoverPresentationController.sourceView = self.view;
+        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+        if (cell) {
+            picker.popoverPresentationController.sourceRect = cell.bounds;
+            picker.popoverPresentationController.sourceView = cell;
+        } else {
+            picker.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1);
+        }
+        
+        [self presentViewController:picker animated:YES completion:nil];
+        return;
+    }
     
     if ([currentAction hasPrefix:@"exec "] || [currentAction hasPrefix:@"root "]) {
         // Edit Terminal Command
@@ -980,6 +1500,17 @@ static id g_actionClipboard = nil;
         RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
         appPicker.onAppSelected = ^(NSString *name, NSString *bundleId) {
             self.actions[indexPath.row] = [NSString stringWithFormat:@"uiopen %@", bundleId];
+            [self saveActions];
+            [self.tableView reloadData];
+        };
+        
+        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:appPicker];
+        [self presentViewController:nav animated:YES completion:nil];
+    } else if ([currentAction hasPrefix:@"kill "]) {
+        // Edit Kill App
+        RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
+        appPicker.onAppSelected = ^(NSString *name, NSString *bundleId) {
+            self.actions[indexPath.row] = [NSString stringWithFormat:@"kill %@", bundleId];
             [self saveActions];
             [self.tableView reloadData];
         };
@@ -1310,48 +1841,82 @@ static id g_actionClipboard = nil;
     }
 
     NSString *action = (NSString *)actionItem;
+    NSDictionary *toggleInfo = [[RCConfigManager sharedManager] toggleInfoForCommand:action];
 
     // Logic to separate "Type" from "Value"
-    if ([action hasPrefix:@"exec "]) {
-        cell.textLabel.text = [action substringFromIndex:5];
-        subtitle = @"Terminal Command";
-    } else if ([action hasPrefix:@"root "]) {
-        cell.textLabel.text = [action substringFromIndex:5];
-        subtitle = @"Root Command";
-    } else if ([action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
-        cell.textLabel.text = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
-        subtitle = @"Lua Script";
-    } else if ([action hasPrefix:@"delay "]) {
-        cell.textLabel.text = [NSString stringWithFormat:@"Wait %@s", [action substringFromIndex:6]];
-        subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
-    } else if ([action hasPrefix:@"shortcut:"]) {
-        cell.textLabel.text = cleanName;
-        subtitle = @"Siri Shortcut";
-    } else if ([action hasPrefix:@"uiopen "]) {
-        cell.textLabel.text = cleanName;
-        subtitle = @"Application";
-    } else if ([action hasPrefix:@"airplay connect "]) {
-        cell.textLabel.text = cleanName;
-        subtitle = @"AirPlay Device";
-    } else if ([action hasPrefix:@"bt connect "] || [action hasPrefix:@"bluetooth connect "]) {
-        cell.textLabel.text = cleanName;
-        subtitle = @"Bluetooth Device";
-    } else if ([action hasPrefix:@"bt disconnect "] || [action hasPrefix:@"bluetooth disconnect "]) {
-        cell.textLabel.text = cleanName;
-        subtitle = nil;
-    } else if ([action hasPrefix:@"airplay disconnect"]) {
-        cell.textLabel.text = cleanName;
-        subtitle = nil;
-    } else if ([action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
-        cell.textLabel.text = cleanName;
+    if (toggleInfo) {
+        NSString *baseName = toggleInfo[@"name"];
+        NSString *suffix = toggleInfo[@"currentDisplaySuffix"];
+        NSString *fullText = [NSString stringWithFormat:@"%@ %@", baseName, suffix];
+        NSMutableAttributedString *attrStr = [[NSMutableAttributedString alloc] initWithString:fullText];
+        
+        NSRange baseRange = NSMakeRange(0, baseName.length + 1); // includes the space
+        NSRange suffixRange = [fullText rangeOfString:suffix options:NSBackwardsSearch];
+        
+        UIColor *accentColor = [UIColor systemBlueColor];
+        
+        [attrStr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:17 weight:UIFontWeightMedium] range:NSMakeRange(0, fullText.length)];
+        [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor labelColor] range:baseRange];
+        if (suffixRange.location != NSNotFound) {
+            [attrStr addAttribute:NSForegroundColorAttributeName value:accentColor range:suffixRange];
+        }
+        cell.textLabel.attributedText = attrStr;
         subtitle = nil;
     } else {
-        cell.textLabel.text = cleanName;
-        subtitle = nil;
+        cell.textLabel.attributedText = nil; // Clear any attributed text
+        
+        NSAttributedString *paramAttrStr = [self attributedDisplayNameForCommand:action];
+        if (paramAttrStr) {
+            cell.textLabel.attributedText = paramAttrStr;
+            subtitle = nil;
+        } else {
+            if ([action hasPrefix:@"exec "]) {
+                cell.textLabel.text = [action substringFromIndex:5];
+                subtitle = @"Terminal Command";
+            } else if ([action hasPrefix:@"root "]) {
+                cell.textLabel.text = [action substringFromIndex:5];
+                subtitle = @"Root Command";
+            } else if ([action hasPrefix:@"Lua "] || [action hasPrefix:@"lua "]) {
+                cell.textLabel.text = [action hasPrefix:@"Lua "] ? [action substringFromIndex:4] : [action substringFromIndex:4];
+                subtitle = @"Lua Script";
+            } else if ([action hasPrefix:@"delay "]) {
+                cell.textLabel.text = [NSString stringWithFormat:@"Wait %@s", [action substringFromIndex:6]];
+                subtitle = [NSString stringWithFormat:@"%@ seconds", [action substringFromIndex:6]];
+            } else if ([action hasPrefix:@"shortcut:"]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"Siri Shortcut";
+            } else if ([action hasPrefix:@"uiopen "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"Application";
+            } else if ([action hasPrefix:@"kill "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"Kill Application";
+            } else if ([action hasPrefix:@"airplay connect "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"AirPlay Device";
+            } else if ([action hasPrefix:@"bt connect "] || [action hasPrefix:@"bluetooth connect "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = @"Bluetooth Device";
+            } else if ([action hasPrefix:@"bt disconnect "] || [action hasPrefix:@"bluetooth disconnect "]) {
+                cell.textLabel.text = cleanName;
+                subtitle = nil;
+            } else if ([action hasPrefix:@"airplay disconnect"]) {
+                cell.textLabel.text = cleanName;
+                subtitle = nil;
+            } else if ([action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
+                cell.textLabel.text = cleanName;
+                subtitle = nil;
+            } else {
+                cell.textLabel.text = cleanName;
+                subtitle = nil;
+            }
+        }
     }
 
-    cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
-    cell.textLabel.textColor = [UIColor labelColor];
+    if (cell.textLabel.attributedText == nil) {
+        cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
+        cell.textLabel.textColor = [UIColor labelColor];
+    }
 
     if (subtitle) {
         cell.detailTextLabel.text = subtitle;

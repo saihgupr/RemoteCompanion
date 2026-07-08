@@ -9,7 +9,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Action Sequence Play Button & Else If Blocks**: Test/simulate sequences instantly with a play button in the iOS app, and build nested, sequential `else_if` logic blocks.
 > - **Native-Style HUD Toasts**: Dropdown spring-physics toasts to confirm toggled states system-wide, featuring robust handling to resolve rapid-fire click conflicts.
 > - **Cellular Data Control**: Enable, disable, or query cellular data natively via CLI commands, Web UI triggers, and action workflow condition evaluations.
-> - **Sequence Import/Export Sharing**: Relocated action sharing/importing to a clean ellipsis menu, added options to Append vs Replace, resolved block dictionary parsing bugs, and integrated HUD toasts for copy/paste feedback.
+> - **Action Sequence Import/Export**: You can now export, import, and share your custom action sequences (via a new ellipsis menu) with options to append or replace them.
 > - **Kill App & AudioMix Actions**: Force-close apps natively with a high-fidelity iOS-style autocomplete UI, and toggle/query KingPuffdaddi's AudioMix tweak state.
 
 

@@ -12,6 +12,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Action Sequence Import/Export**: You can now export, import, and share your custom action sequences (via a new ellipsis menu) with options to append or replace them.
 > - **AI Scripting Guide**: Generate custom action sequences from plain English using any AI assistant with a pre-configured prompt and reference documentation in [SCRIPTING.md](SCRIPTING.md).
 > - **Kill App & AudioMix Actions**: Force-close apps natively with a high-fidelity iOS-style autocomplete UI, and toggle/query KingPuffdaddi's AudioMix tweak state.
+> - **Double Tap Status Bar Trigger**: Bind actions to a double tap on the status bar, adding a new gesture-based hardware trigger option.
 
 
 <p align="center">

@@ -4,7 +4,7 @@ Use this guide to generate action sequences with any AI assistant (ChatGPT, Clau
 
 ---
 
-## ✨ How to use AI to build a sequence
+## How to use AI to build a sequence
 
 **Copy this prompt, fill in what you want, and paste it into any AI:**
 

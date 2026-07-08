@@ -10,6 +10,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Native-Style HUD Toasts**: Dropdown spring-physics toasts to confirm toggled states system-wide, featuring robust handling to resolve rapid-fire click conflicts.
 > - **Cellular Data Control**: Enable, disable, or query cellular data natively via CLI commands, Web UI triggers, and action workflow condition evaluations.
 > - **Action Sequence Import/Export**: You can now export, import, and share your custom action sequences (via a new ellipsis menu) with options to append or replace them.
+> - **AI Scripting Guide**: Generate custom action sequences from plain English using any AI assistant with a pre-configured prompt and reference documentation in [SCRIPTING.md](SCRIPTING.md).
 > - **Kill App & AudioMix Actions**: Force-close apps natively with a high-fidelity iOS-style autocomplete UI, and toggle/query KingPuffdaddi's AudioMix tweak state.
 
 

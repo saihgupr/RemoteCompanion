@@ -1180,6 +1180,7 @@ function nameForKey(key) {
 const CMD_NAMES = {
   'play':'Play','pause':'Pause','playpause':'Play/Pause','next':'Next Track','prev':'Previous Track',
   'volume up':'Volume Up','volume down':'Volume Down',
+  'queuealbum':'Queue Current Album','queueartist':'Queue Artist (Shuffle)','shuffleall':'Shuffle All Songs',
   'flashlight':'Flashlight Toggle','flashlight on':'Flashlight On','flashlight off':'Flashlight Off','flashlight toggle':'Flashlight Toggle',
   'appearance dark':'Appearance Dark','appearance light':'Appearance Light','appearance toggle':'Appearance Toggle',
   'rotate lock':'Rotate Lock','rotate unlock':'Rotate Unlock','rotate toggle':'Rotate Toggle',
@@ -1266,6 +1267,7 @@ function iconForCmd(cmd) {
     'play':'play_fill','pause':'pause_fill','playpause':'playpause_fill',
     'next':'forward_fill','prev':'backward_fill',
     'volume up':'speaker_3_fill','volume down':'speaker_1_fill',
+    'queuealbum':'music_note_list','queueartist':'music_mic','shuffleall':'shuffle',
     'flashlight':'bolt_fill','flashlight on':'bolt_fill','flashlight off':'bolt_slash_fill','flashlight toggle':'bolt_fill',
     'appearance dark':'moon_fill','appearance light':'sun_max_fill','appearance toggle':'moon_fill',
     'wifi on':'wifi','wifi off':'wifi_slash','wifi toggle':'wifi',
@@ -1317,6 +1319,9 @@ const ACTION_SECTIONS = [
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
     { name:'Mute',              cmd:'mute toggle',  icon:'speaker_slash_fill', is_toggle:true },
+    { name:'Queue Current Album', cmd:'queuealbum', icon:'music_note_list' },
+    { name:'Queue Artist (Shuffle)', cmd:'queueartist', icon:'music_mic' },
+    { name:'Shuffle All Songs', cmd:'shuffleall',   icon:'shuffle' },
   ]},
   { title:'Device Controls', actions:[
     { name:'Appearance',        cmd:'appearance toggle', icon:'moon_fill', is_toggle:true },

@@ -780,7 +780,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"vibration ring-toggle": @"Ring Vibrate Toggle",
         @"vibration ring-status": @"Ring Vibrate Status",
         @"queuealbum": @"Queue Current Album",
-        @"queueartist": @"Queue Artist"
+        @"queueartist": @"Queue Artist",
+        @"shuffleall": @"Shuffle All Songs"
     };
     
     NSString *result = names[cmd];
@@ -1031,7 +1032,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"swipeR": @"arrow.right.circle.fill",
         @"swipeRight": @"arrow.right.circle.fill",
         @"queuealbum": @"music.note.list",
-        @"queueartist": @"music.mic"
+        @"queueartist": @"music.mic",
+        @"shuffleall": @"shuffle"
     };
     
     NSString *result = icons[cmd];

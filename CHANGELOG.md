@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.0] - 2026-07-09
+
+### Added
+- **Shuffle All Songs Action**: Added a first-class `shuffleall` action to trigger the AudioStream/AudioReceiver app to shuffle the entire device music library and start playback.
+- **AudioStream/AudioReceiver Integration**:
+  - Implemented the Darwin notification listener for `com.saihgupr.audioreceiver.shuffleall` inside `AudioPlayerService`.
+  - Added native iOS Companion App action picker and config manager support for the "Shuffle All Songs" command.
+  - Exposed **Queue Current Album**, **Queue Artist (Shuffle)**, and **Shuffle All Songs** actions directly inside the Web UI dashboard (`rc_webui.html`).
+
 ## [3.4.0] - 2026-06-22
 
 ### Added

@@ -1555,7 +1555,7 @@ static NSString *rc_status_command_for_condition_key(NSString *conditionKey) {
         @"airplane": @"airplane status",
         @"silent_vibration": @"vibration silent-status",
         @"ring_vibration": @"vibration ring-status",
-        @"orientation": @"orientation"
+        @"orientation": @"orientation status"
     };
     return map[conditionKey];
 }

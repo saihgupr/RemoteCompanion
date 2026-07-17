@@ -996,6 +996,7 @@ static id g_actionClipboard = nil;
                 strongSelf.actions[existingIndex] = ifAction;
             } else if (insertIndex != NSNotFound && insertIndex >= 0 && insertIndex <= (NSInteger)strongSelf.actions.count) {
                 [strongSelf.actions insertObject:ifAction atIndex:insertIndex];
+                [strongSelf.actions insertObject:@{ @"type": @"end_if" } atIndex:insertIndex + 1];
             } else {
                 [strongSelf.actions addObject:ifAction];
                 [strongSelf.actions addObject:@{ @"type": @"end_if" }];
@@ -1032,6 +1033,7 @@ static id g_actionClipboard = nil;
                 strongSelf.actions[existingIndex] = ifAction;
             } else if (insertIndex != NSNotFound && insertIndex >= 0 && insertIndex <= (NSInteger)strongSelf.actions.count) {
                 [strongSelf.actions insertObject:ifAction atIndex:insertIndex];
+                [strongSelf.actions insertObject:@{ @"type": @"end_if" } atIndex:insertIndex + 1];
             } else {
                 [strongSelf.actions addObject:ifAction];
                 [strongSelf.actions addObject:@{ @"type": @"end_if" }];
@@ -1207,6 +1209,19 @@ static id g_actionClipboard = nil;
                 }]];
             }
             
+            // Add Nested If option for if/else/end_if items themselves
+            [alert addAction:[UIAlertAction actionWithTitle:@"Add Nested If" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                NSInteger insertIndex = indexPath.row + 1;
+                if ([self isIfActionItem:item]) {
+                    insertIndex = indexPath.row + 1;
+                } else if ([self isElseIfActionItem:item] || [self isElseActionItem:item]) {
+                    insertIndex = indexPath.row + 1;
+                } else if ([self isEndIfActionItem:item]) {
+                    insertIndex = indexPath.row;
+                }
+                [self presentIfConditionPickerForIndex:NSNotFound insertIndex:insertIndex type:@"if"];
+            }]];
+            
             NSInteger ifIndex = NSNotFound;
             if ([self isIfActionItem:item]) {
                 ifIndex = indexPath.row;
@@ -1263,6 +1278,14 @@ static id g_actionClipboard = nil;
                     [self.tableView reloadData];
                 }]];
             }
+        }
+        
+        // Add Nested If option for regular items inside if blocks
+        NSInteger currentIndent = [self indentationLevelForRow:indexPath.row];
+        if (currentIndent > 0 && ![self isIfActionItem:item] && ![self isElseIfActionItem:item] && ![self isElseActionItem:item] && ![self isEndIfActionItem:item]) {
+            [alert addAction:[UIAlertAction actionWithTitle:@"Add Nested If" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                [self presentIfConditionPickerForIndex:NSNotFound insertIndex:indexPath.row type:@"if"];
+            }]];
         }
     } else {
         // Long press on empty space

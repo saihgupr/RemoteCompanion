@@ -5311,6 +5311,25 @@ static NSString *handle_command(NSString *cmd) {
             toggle_lpm(!current);
             return [NSString stringWithFormat:@"Low Power Mode %@\n", !current ? @"Enabled" : @"Disabled"];
         }
+    } else if ([cleanCmd isEqualToString:@"orientation status"]) {
+        __block NSString *result = nil;
+        void (^orientationBlock)(void) = ^{
+            SpringBoard *sb = (SpringBoard *)[UIApplication sharedApplication];
+            UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
+            if ([sb respondsToSelector:@selector(activeInterfaceOrientation)]) {
+                orientation = [sb activeInterfaceOrientation];
+            }
+            
+            if (orientation == UIInterfaceOrientationPortrait || orientation == UIInterfaceOrientationPortraitUpsideDown) {
+                result = @"PORTRAIT\n";
+            } else {
+                result = @"LANDSCAPE\n";
+            }
+        };
+        
+        if ([NSThread isMainThread]) orientationBlock();
+        else dispatch_sync(dispatch_get_main_queue(), orientationBlock);
+        return result;
     } else if ([cleanCmd isEqualToString:@"orientation lock"] || [cleanCmd isEqualToString:@"orientation"] || [cleanCmd isEqualToString:@"rotation"] || [cleanCmd isEqualToString:@"rotate"]) {
         return handle_command(@"orientation toggle");
     } else if ([cleanCmd hasPrefix:@"rotate "]) {

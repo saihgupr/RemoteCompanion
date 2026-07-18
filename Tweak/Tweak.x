@@ -5234,16 +5234,31 @@ static NSString *handle_command(NSString *cmd) {
         return [NSString stringWithFormat:@"Toast displayed: '%@' - '%@' (%@)\n", title ?: @"", subtitle ?: @"", icon ?: @"none"];
     } else if ([cleanCmd isEqualToString:@"queuealbum"]) {
         // Signal AudioReceiver app to queue the album of the currently playing song
+        [@"queuealbum" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
+             [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
+        });
         notify_post("com.saihgupr.audiostream.queuealbum");
         rc_show_hud_toast(@"Album Queued", @"Queuing album of current song", @"music.note.list");
         return @"Queue album command sent to AudioReceiver\n";
     } else if ([cleanCmd isEqualToString:@"queueartist"]) {
         // Signal AudioReceiver app to queue the artist of the currently playing song
+        [@"queueartist" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
+             [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
+        });
         notify_post("com.saihgupr.audiostream.queueartist");
         rc_show_hud_toast(@"Artist Queued", @"Queuing artist of current song", @"music.mic");
         return @"Queue artist command sent to AudioReceiver\n";
     } else if ([cleanCmd isEqualToString:@"shuffleall"]) {
         // Signal AudioReceiver app to shuffle all songs and play
+        [@"shuffleall" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
+             [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
+        });
         notify_post("com.saihgupr.audiostream.shuffleall");
         rc_show_hud_toast(@"Shuffle All Songs", @"Shuffling all songs and playing", @"shuffle");
         return @"Shuffle all command sent to AudioReceiver\n";

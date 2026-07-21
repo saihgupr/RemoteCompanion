@@ -1101,6 +1101,7 @@ const TRIGGER_NAMES = {
   trigger_ringer_mute:'Ringer Muted', trigger_ringer_unmute:'Ringer Unmuted', trigger_ringer_toggle:'Ringer Toggled',
   trigger_bottombar_swipe_left:'Bottom Bar Swipe Left', trigger_bottombar_swipe_right:'Bottom Bar Swipe Right',
   trigger_device_lock: 'Device Locked', trigger_device_unlock: 'Device Unlocked',
+  trigger_power_connect: 'Power Connected', trigger_power_disconnect: 'Power Disconnected',
   trigger_media_play: 'Media Playing', trigger_media_pause: 'Media Paused', trigger_media_track_change: 'Media Track Changed',
 };
 
@@ -1137,6 +1138,8 @@ const TRIGGER_ICONS = {
   trigger_ringer_toggle: { icon:'bell_badge_fill', cls:'icon-orange' },
   trigger_device_lock:   { icon:'lock_fill',       cls:'icon-red' },
   trigger_device_unlock: { icon:'lock_open_fill',  cls:'icon-green' },
+  trigger_power_connect:    { icon:'bolt_fill',       cls:'icon-green' },
+  trigger_power_disconnect: { icon:'bolt_slash_fill', cls:'icon-orange' },
   trigger_media_play:   { icon:'play_fill',        cls:'icon-blue' },
   trigger_media_pause:  { icon:'pause_fill',       cls:'icon-orange' },
   trigger_media_track_change: { icon:'forward_fill', cls:'icon-purple' },
@@ -2744,6 +2747,8 @@ function showAddSystemEventSheet() {
   showSheet('New System Event', [
     { label:'Device Locked',         action:() => createSystemEventTrigger('trigger_device_lock', 'Device Locked') },
     { label:'Device Unlocked',       action:() => createSystemEventTrigger('trigger_device_unlock', 'Device Unlocked') },
+    { label:'Power Connected',        action:() => createSystemEventTrigger('trigger_power_connect', 'Power Connected') },
+    { label:'Power Disconnected',     action:() => createSystemEventTrigger('trigger_power_disconnect', 'Power Disconnected') },
     { label:'Media Playing',         action:() => createSystemEventTrigger('trigger_media_play', 'Media Playing') },
     { label:'Media Paused',          action:() => createSystemEventTrigger('trigger_media_pause', 'Media Paused') },
     { label:'Media Track Changed',   action:() => createSystemEventTrigger('trigger_media_track_change', 'Media Track Changed') },

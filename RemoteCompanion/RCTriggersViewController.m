@@ -42,6 +42,8 @@
     if ([triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"]) return @"bell.badge.fill";
     if ([triggerKey hasPrefix:@"sched_"]) return @"clock.fill";
     if ([triggerKey isEqualToString:@"shake"]) return @"waveform.path.ecg";
+    if ([triggerKey isEqualToString:@"trigger_power_connect"]) return @"bolt.fill";
+    if ([triggerKey isEqualToString:@"trigger_power_disconnect"]) return @"bolt.slash.fill";
     if ([triggerKey isEqualToString:@"trigger_device_lock"]) return @"lock.fill";
     if ([triggerKey isEqualToString:@"trigger_device_unlock"]) return @"lock.open.fill";
     if ([triggerKey isEqualToString:@"trigger_media_play"]) return @"play.fill";
@@ -259,6 +261,12 @@
     if ([configuredKeys containsObject:@"trigger_device_unlock"]) {
         [deviceStateKeys addObject:@"trigger_device_unlock"];
     }
+    if ([configuredKeys containsObject:@"trigger_power_connect"]) {
+        [deviceStateKeys addObject:@"trigger_power_connect"];
+    }
+    if ([configuredKeys containsObject:@"trigger_power_disconnect"]) {
+        [deviceStateKeys addObject:@"trigger_power_disconnect"];
+    }
     if ([configuredKeys containsObject:@"trigger_media_play"]) {
         [deviceStateKeys addObject:@"trigger_media_play"];
     }
@@ -400,6 +408,24 @@
             NSString *key = @"trigger_device_unlock";
             if (![[[RCConfigManager sharedManager] allConfiguredTriggerKeys] containsObject:key]) {
                 [[RCConfigManager sharedManager] updateTrigger:key withData:@{@"name": @"Device Unlocked", @"enabled": @YES, @"actions": @[]}];
+            }
+            RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:key];
+            [self.navigationController pushViewController:actionsVC animated:YES];
+        }]];
+        
+        [systemAlert addAction:[UIAlertAction actionWithTitle:@"Power Connected" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+            NSString *key = @"trigger_power_connect";
+            if (![[[RCConfigManager sharedManager] allConfiguredTriggerKeys] containsObject:key]) {
+                [[RCConfigManager sharedManager] updateTrigger:key withData:@{@"name": @"Power Connected", @"enabled": @YES, @"actions": @[]}];
+            }
+            RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:key];
+            [self.navigationController pushViewController:actionsVC animated:YES];
+        }]];
+        
+        [systemAlert addAction:[UIAlertAction actionWithTitle:@"Power Disconnected" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+            NSString *key = @"trigger_power_disconnect";
+            if (![[[RCConfigManager sharedManager] allConfiguredTriggerKeys] containsObject:key]) {
+                [[RCConfigManager sharedManager] updateTrigger:key withData:@{@"name": @"Power Disconnected", @"enabled": @YES, @"actions": @[]}];
             }
             RCActionsViewController *actionsVC = [[RCActionsViewController alloc] initWithTriggerKey:key];
             [self.navigationController pushViewController:actionsVC animated:YES];

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Power Event Triggers**:
+  - Added **Power Connected** (`trigger_power_connect`) and **Power Disconnected** (`trigger_power_disconnect`) system event triggers.
+  - Automatically listens to Cocoa Touch `UIDeviceBatteryStateDidChangeNotification`, `UIDeviceBatteryLevelDidChangeNotification`, Darwin power source notifications (`com.apple.system.powersources.*`), and hooks `SBUIController` in SpringBoard for instant trigger execution when connecting or disconnecting AC power/chargers.
+  - Fully integrated across the native iOS Companion App (System Event picker, Device State table section, and trigger list icons) and Web UI (`rc_webui.html`).
+
 ## [3.5.0] - 2026-07-09
 
 ### Added

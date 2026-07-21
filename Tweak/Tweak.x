@@ -471,6 +471,11 @@ extern void BKSTerminateApplicationForReasonAndReportWithDescription(NSString *b
 - (void)handleHomeButtonTap:(id)arg1;
 - (void)clickedMenuButton;
 - (void)handleScreenshotGestureFired:(id)arg1;
+- (BOOL)isACPowerConnected;
+- (BOOL)isOnAC;
+- (void)ACPowerChanged;
+- (void)updateBatteryState:(id)arg1;
+- (void)setIsACPowerConnected:(BOOL)arg1;
 @end
 
 @interface UISUserInterfaceStyleMode : NSObject
@@ -2058,6 +2063,67 @@ static void handle_wifi_notification(CFNotificationCenterRef center, void *obser
     });
 }
 
+// Power State Globals & Helpers
+static BOOL g_powerStateInitialized = NO;
+static BOOL g_lastPowerConnectedState = NO;
+
+static BOOL is_device_power_connected() {
+    [UIDevice currentDevice].batteryMonitoringEnabled = YES;
+    UIDeviceBatteryState state = [UIDevice currentDevice].batteryState;
+    if (state == UIDeviceBatteryStateCharging || state == UIDeviceBatteryStateFull) {
+        return YES;
+    }
+    if (state == UIDeviceBatteryStateUnplugged) {
+        return NO;
+    }
+    
+    Class SBUIClass = objc_getClass("SBUIController");
+    if (SBUIClass) {
+        id uiCtrl = [SBUIClass respondsToSelector:@selector(sharedInstance)] ? [SBUIClass performSelector:@selector(sharedInstance)] : nil;
+        if (uiCtrl) {
+            if ([uiCtrl respondsToSelector:@selector(isACPowerConnected)]) {
+                return [uiCtrl isACPowerConnected];
+            } else if ([uiCtrl respondsToSelector:@selector(isOnAC)]) {
+                return [uiCtrl isOnAC];
+            }
+        }
+    }
+    return NO;
+}
+
+static void initialize_power_state() {
+    if (g_powerStateInitialized) return;
+    [UIDevice currentDevice].batteryMonitoringEnabled = YES;
+    g_lastPowerConnectedState = is_device_power_connected();
+    g_powerStateInitialized = YES;
+    SRLog(@"⚡ [RCSystem] Power state successfully initialized to: %@", g_lastPowerConnectedState ? @"CONNECTED" : @"DISCONNECTED");
+}
+
+static void handle_power_state_transition(BOOL isConnected, NSString *source) {
+    if (!g_powerStateInitialized) {
+        initialize_power_state();
+    }
+    
+    if (isConnected != g_lastPowerConnectedState) {
+        g_lastPowerConnectedState = isConnected;
+        if (isConnected) {
+            SRLog(@"⚡ [RCSystem] Transition detected (%@): POWER CONNECTED. Executing trigger_power_connect.", source);
+            RCExecuteTrigger(@"trigger_power_connect");
+        } else {
+            SRLog(@"⚡ [RCSystem] Transition detected (%@): POWER DISCONNECTED. Executing trigger_power_disconnect.", source);
+            RCExecuteTrigger(@"trigger_power_disconnect");
+        }
+    }
+}
+
+static void handle_power_state_notification(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    NSString *notifName = (__bridge NSString *)name;
+    SRLog(@"⚡ [RCSystem] Received Power State Notification: %@", notifName);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        handle_power_state_transition(is_device_power_connected(), @"Darwin Notification");
+    });
+}
+
 // Biometric / Touch ID / Lock State Globals
 static NSTimeInterval g_bioFingerDownTime = 0;
 static BOOL g_bioHoldTriggered = NO;
@@ -2219,8 +2285,45 @@ static void handle_media_state_notification(CFNotificationCenterRef center, void
 static void register_system_event_observers() {
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
     
-    // Initialize initial lock state
+    // Initialize initial lock state & power state
     initialize_lock_state();
+    initialize_power_state();
+
+    // Power State: Cocoa Touch observers
+    [nc addObserverForName:UIDeviceBatteryStateDidChangeNotification 
+                    object:nil 
+                     queue:[NSOperationQueue mainQueue] 
+                usingBlock:^(NSNotification *note) {
+        handle_power_state_transition(is_device_power_connected(), @"UIDeviceBatteryStateDidChangeNotification");
+    }];
+    [nc addObserverForName:UIDeviceBatteryLevelDidChangeNotification 
+                    object:nil 
+                     queue:[NSOperationQueue mainQueue] 
+                usingBlock:^(NSNotification *note) {
+        handle_power_state_transition(is_device_power_connected(), @"UIDeviceBatteryLevelDidChangeNotification");
+    }];
+
+    // Power State: Darwin Notifications
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), 
+                                    NULL, 
+                                    handle_power_state_notification, 
+                                    CFSTR("com.apple.system.powersources.source"), 
+                                    NULL, 
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), 
+                                    NULL, 
+                                    handle_power_state_notification, 
+                                    CFSTR("com.apple.system.powersources.timeremaining"), 
+                                    NULL, 
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), 
+                                    NULL, 
+                                    handle_power_state_notification, 
+                                    CFSTR("com.apple.system.powersources.percent"), 
+                                    NULL, 
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
 
     // WiFi: Track network changes (Darwin Notification)
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), 
@@ -8624,6 +8727,32 @@ static void update_edge_gestures() {
         SRLog(@"ERROR in update_edge_gestures: %@", e);
     }
 }
+
+
+%hook SBUIController
+
+- (void)ACPowerChanged {
+    %orig;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        handle_power_state_transition(is_device_power_connected(), @"SBUIController ACPowerChanged");
+    });
+}
+
+- (void)updateBatteryState:(id)arg1 {
+    %orig;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        handle_power_state_transition(is_device_power_connected(), @"SBUIController updateBatteryState");
+    });
+}
+
+- (void)setIsACPowerConnected:(BOOL)arg1 {
+    %orig;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        handle_power_state_transition(arg1, @"SBUIController setIsACPowerConnected");
+    });
+}
+
+%end
 
 
 %hook SpringBoard

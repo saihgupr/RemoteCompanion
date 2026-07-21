@@ -348,6 +348,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"shake": @"Shake Device",
         @"trigger_device_lock": @"Device Locked",
         @"trigger_device_unlock": @"Device Unlocked",
+        @"trigger_power_connect": @"Power Connected",
+        @"trigger_power_disconnect": @"Power Disconnected",
         @"trigger_media_play": @"Media Playing",
         @"trigger_media_pause": @"Media Paused",
         @"trigger_media_track_change": @"Media Track Changed",

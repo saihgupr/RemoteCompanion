@@ -5335,7 +5335,7 @@ static NSString *handle_command(NSString *cmd) {
         
         rc_show_hud_toast(title, subtitle, icon);
         return [NSString stringWithFormat:@"Toast displayed: '%@' - '%@' (%@)\n", title ?: @"", subtitle ?: @"", icon ?: @"none"];
-    } else if ([cleanCmd isEqualToString:@"queuealbum"]) {
+    } else if ([cleanCmd isEqualToString:@"queuealbum"] || [cleanCmd isEqualToString:@"queue album"]) {
         // Signal AudioReceiver app to queue the album of the currently playing song
         [@"queuealbum" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -5345,7 +5345,7 @@ static NSString *handle_command(NSString *cmd) {
         notify_post("com.saihgupr.audiostream.queuealbum");
         rc_show_hud_toast(@"Album Queued", @"Queuing album of current song", @"music.note.list");
         return @"Queue album command sent to AudioReceiver\n";
-    } else if ([cleanCmd isEqualToString:@"queueartist"]) {
+    } else if ([cleanCmd isEqualToString:@"queueartist"] || [cleanCmd isEqualToString:@"queue artist"]) {
         // Signal AudioReceiver app to queue the artist of the currently playing song
         [@"queueartist" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
         dispatch_async(dispatch_get_main_queue(), ^{

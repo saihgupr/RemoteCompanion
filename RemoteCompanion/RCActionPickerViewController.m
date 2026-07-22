@@ -77,8 +77,8 @@
             @{ @"name": @"Set Volume...", @"command": @"__SET_VOLUME__", @"icon": @"speaker.wave.3.fill" },
             @{ @"name": @"Set Brightness...", @"command": @"__SET_BRIGHTNESS__", @"icon": @"sun.max.fill" },
             @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" },
-            @{ @"name": @"Queue Current Album", @"command": @"queuealbum", @"icon": @"music.note.list" },
-            @{ @"name": @"Queue Artist", @"command": @"queueartist", @"icon": @"music.mic" },
+            @{ @"name": @"Queue Current Album", @"command": @"queue album", @"icon": @"music.note.list" },
+            @{ @"name": @"Queue Artist", @"command": @"queue artist", @"icon": @"music.mic" },
             @{ @"name": @"Shuffle All Songs", @"command": @"shuffle all songs", @"icon": @"shuffle" }
         ],
         // Device Controls

@@ -5355,7 +5355,7 @@ static NSString *handle_command(NSString *cmd) {
         notify_post("com.saihgupr.audiostream.queueartist");
         rc_show_hud_toast(@"Artist Queued", @"Queuing artist of current song", @"music.mic");
         return @"Queue artist command sent to AudioReceiver\n";
-    } else if ([cleanCmd isEqualToString:@"shuffleall"]) {
+    } else if ([cleanCmd isEqualToString:@"shuffleall"] || [cleanCmd isEqualToString:@"shuffle all songs"] || [cleanCmd isEqualToString:@"suffle all songs"]) {
         // Signal AudioReceiver app to shuffle all songs and play
         [@"shuffleall" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -5365,6 +5365,32 @@ static NSString *handle_command(NSString *cmd) {
         notify_post("com.saihgupr.audiostream.shuffleall");
         rc_show_hud_toast(@"Shuffle All Songs", @"Shuffling all songs and playing", @"shuffle");
         return @"Shuffle all command sent to AudioReceiver\n";
+    } else if ([cleanCmd hasPrefix:@"playlist "] || [cleanCmd hasPrefix:@"play playlist "] || [cleanCmd hasPrefix:@"shuffle playlist "] || [cleanCmd hasPrefix:@"suffle playlist "]) {
+        NSString *playlistName = @"";
+        if ([cleanCmd hasPrefix:@"play playlist "]) {
+            playlistName = [[cleanCmd substringFromIndex:14] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"shuffle playlist "]) {
+            playlistName = [[cleanCmd substringFromIndex:17] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"suffle playlist "]) {
+            playlistName = [[cleanCmd substringFromIndex:16] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"playlist "]) {
+            playlistName = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        }
+        playlistName = [playlistName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        playlistName = [playlistName stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\"'"]];
+        
+        if (playlistName.length > 0) {
+            NSString *cmdStr = [NSString stringWithFormat:@"playlist:%@", playlistName];
+            [cmdStr writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            [playlistName writeToFile:@"/tmp/audiostream_pending_playlist" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                 FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
+                 [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
+            });
+            notify_post("com.saihgupr.audiostream.playplaylist");
+            rc_show_hud_toast(@"Playlist Queued", [NSString stringWithFormat:@"Shuffling '%@'", playlistName], @"music.note.list");
+            return [NSString stringWithFormat:@"Play playlist '%@' command sent to AudioReceiver\n", playlistName];
+        }
     } else if ([cleanCmd hasPrefix:@"dnd "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if ([subCmd isEqualToString:@"on"]) {

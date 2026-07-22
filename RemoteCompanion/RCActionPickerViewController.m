@@ -79,7 +79,7 @@
             @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" },
             @{ @"name": @"Queue Current Album", @"command": @"queuealbum", @"icon": @"music.note.list" },
             @{ @"name": @"Queue Artist", @"command": @"queueartist", @"icon": @"music.mic" },
-            @{ @"name": @"Shuffle All Songs", @"command": @"shuffleall", @"icon": @"shuffle" }
+            @{ @"name": @"Shuffle All Songs", @"command": @"shuffle all songs", @"icon": @"shuffle" }
         ],
         // Device Controls
         @[

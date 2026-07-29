@@ -289,15 +289,17 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         [triggers removeObjectForKey:triggerKey];
     }
     
-    // Also clean up from notificationTriggers metadata if it's a notification trigger
-    if ([triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"]) {
-        NSMutableArray *notifTriggers = [[self notificationTriggers] mutableCopy];
-        for (NSInteger i = notifTriggers.count - 1; i >= 0; i--) {
-            NSDictionary *notif = notifTriggers[i];
-            if ([notif[@"triggerKey"] isEqualToString:triggerKey]) {
-                [notifTriggers removeObjectAtIndex:i];
-            }
+    // Also clean up from notificationTriggers metadata if associated entry exists
+    NSMutableArray *notifTriggers = [[self notificationTriggers] mutableCopy];
+    BOOL changed = NO;
+    for (NSInteger i = notifTriggers.count - 1; i >= 0; i--) {
+        NSDictionary *notif = notifTriggers[i];
+        if ([notif[@"triggerKey"] isEqualToString:triggerKey]) {
+            [notifTriggers removeObjectAtIndex:i];
+            changed = YES;
         }
+    }
+    if (changed) {
         [self setNotificationTriggers:notifTriggers];
     }
     
@@ -470,9 +472,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     // Serialize config to plist data
     NSError *error = nil;
     NSData *data = [NSPropertyListSerialization dataWithPropertyList:_config 
-                                                              format:NSPropertyListXMLFormat_v1_0 
-                                                             options:0 
-                                                               error:&error];
+                                                               format:NSPropertyListXMLFormat_v1_0 
+                                                              options:0 
+                                                                error:&error];
     if (error) {
         NSLog(@"[RCConfigManager] ERROR serializing config: %@", error);
         return;

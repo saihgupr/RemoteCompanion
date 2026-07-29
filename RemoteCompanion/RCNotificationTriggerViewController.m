@@ -5,6 +5,7 @@
 
 @interface RCNotificationTriggerViewController () <UITextFieldDelegate>
 @property (nonatomic, strong) UITextField *textMatchField;
+@property (nonatomic, strong) UITextField *overrideBundleIdField;
 @property (nonatomic, copy) NSString *selectedBundleId;
 @property (nonatomic, copy) NSString *selectedAppName;
 @property (nonatomic, strong) NSString *triggerKey;
@@ -41,6 +42,11 @@
                     self.selectedAppName = [cm nameForBundleId:self.selectedBundleId] ?: self.selectedBundleId;
                 }
                 
+                if (!self.overrideBundleIdField) {
+                    self.overrideBundleIdField = [[UITextField alloc] init];
+                }
+                self.overrideBundleIdField.text = entry[@"overrideBundleId"] ?: @"";
+
                 if (!self.textMatchField) {
                     self.textMatchField = [[UITextField alloc] init];
                 }
@@ -82,7 +88,7 @@
 #pragma mark - Table View Data Source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 2;
+    return 3;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -91,13 +97,15 @@
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     if (section == 0) return @"Target App";
-    if (section == 1) return @"Text Match (Optional)";
+    if (section == 1) return @"Notification Bundle ID Override (Optional)";
+    if (section == 2) return @"Text Match (Optional)";
     return nil;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (section == 0) return @"Choose which app's notifications to listen for, or leave as 'Any App' to match all incoming notifications.";
-    if (section == 1) return @"Matches text in the title, subtitle, or body (case-insensitive).";
+    if (section == 1) return @"Manually specify a custom notification bundle ID if iOS delivers notifications under a different identifier (e.g. com.apple.ShazamNotifications).";
+    if (section == 2) return @"Matches text in the title, subtitle, or body (case-insensitive).";
     return nil;
 }
 
@@ -109,6 +117,26 @@
         cell.textLabel.text = @"App";
         cell.detailTextLabel.text = self.selectedAppName;
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else if (indexPath.section == 1) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"OverrideCell"];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        
+        if (!self.overrideBundleIdField) {
+            UITextField *field = [[UITextField alloc] initWithFrame:CGRectMake(20, 0, tableView.bounds.size.width - 40, 44)];
+            field.delegate = self;
+            field.autocorrectionType = UITextAutocorrectionTypeNo;
+            field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+            field.clearButtonMode = UITextFieldViewModeWhileEditing;
+            field.placeholder = @"e.g. com.apple.ShazamNotifications";
+            self.overrideBundleIdField = field;
+        }
+        
+        self.overrideBundleIdField.frame = CGRectMake(16, 0, cell.contentView.bounds.size.width - 32, 44);
+        self.overrideBundleIdField.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        
+        if (!self.overrideBundleIdField.superview) {
+            [cell.contentView addSubview:self.overrideBundleIdField];
+        }
     } else {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"TextCell"];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
@@ -141,13 +169,6 @@
     if (indexPath.section == 0) {
         RCAppPickerViewController *picker = [[RCAppPickerViewController alloc] init];
         
-        // Add "Any App" as a custom selection option?
-        // Since the user can't clear a selection easily if RCAppPickerViewController only lists apps,
-        // we might want a way to reset to "Any App". Let's handle it by adding a custom app row or just 
-        // using the standard behavior of the app picker. RCAppPickerViewController doesn't support "Any App".
-        // Let's add an option inside RCAppPickerViewController or handle it gracefully.
-        // Actually, we can add a way to clear it in a separate button, or just pass a completion block.
-        
         __weak typeof(self) weakSelf = self;
         picker.onAppSelected = ^(NSString *name, NSString *bundleId) {
             weakSelf.selectedAppName = name;
@@ -159,8 +180,6 @@
     }
 }
 
-// Add a context menu or trailing swipe to easy clear "Any App"?
-// Let's add a trailing swipe action to clear the selected app back to "Any App"
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == 0) {
         UIContextualAction *clearAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:@"Clear" handler:^(UIContextualAction *action, UIView *sourceView, void (^completionHandler)(BOOL)) {
@@ -178,6 +197,7 @@
 
 - (void)saveTrigger {
     NSString *bundleId = [self.selectedBundleId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *overrideBundleId = [self.overrideBundleIdField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSString *textMatch = [self.textMatchField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     
     NSString *name;
@@ -187,6 +207,12 @@
         } else {
             name = [NSString stringWithFormat:@"Any Notification from %@", self.selectedAppName];
         }
+    } else if (overrideBundleId.length > 0) {
+        if (textMatch.length > 0) {
+            name = [NSString stringWithFormat:@"Notification from %@ containing '%@'", overrideBundleId, textMatch];
+        } else {
+            name = [NSString stringWithFormat:@"Any Notification from %@", overrideBundleId];
+        }
     } else {
         if (textMatch.length > 0) {
             name = [NSString stringWithFormat:@"Any Notification containing '%@'", textMatch];
@@ -194,7 +220,6 @@
             name = @"Any Notification";
         }
     }
-    
     
     RCConfigManager *config = [RCConfigManager sharedManager];
     NSString *triggerKey = self.triggerKey;
@@ -204,13 +229,16 @@
         triggerKey = [NSString stringWithFormat:@"notif_%@", uniqueId];
     }
     
-    NSDictionary *notificationEntry = @{
+    NSMutableDictionary *notificationEntry = [@{
         @"triggerKey": triggerKey,
         @"bundleId": bundleId ?: @"",
         @"textMatch": textMatch ?: @"",
         @"enabled": @YES,
         @"name": name
-    };
+    } mutableCopy];
+    if (overrideBundleId.length > 0) {
+        notificationEntry[@"overrideBundleId"] = overrideBundleId;
+    }
     
     NSMutableArray *notifTriggers = [[config notificationTriggers] mutableCopy];
     // Remove existing if editing

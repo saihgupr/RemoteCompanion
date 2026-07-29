@@ -1465,9 +1465,9 @@ static void save_trigger_config() {
     NSString *sharedPath = @"/var/mobile/Documents/rc_triggers.plist";
     NSError *error = nil;
     NSData *data = [NSPropertyListSerialization dataWithPropertyList:g_triggerConfig
-                                                              format:NSPropertyListXMLFormat_v1_0
-                                                             options:0
-                                                               error:&error];
+                                                               format:NSPropertyListXMLFormat_v1_0
+                                                              options:0
+                                                                error:&error];
     if (data && !error) {
         // 1. Try atomic write to shared path
         BOOL success = [data writeToFile:sharedPath atomically:YES];
@@ -2398,6497 +2398,895 @@ static void register_system_event_observers() {
 // ── Touch / Digitizer helper ──────────────────────────────────────────────────
 // Dedicated serial queue for touch HID events (must NOT run on main thread).
 static dispatch_queue_t rc_touch_queue(void) {
-    static dispatch_queue_t q;
-    static dispatch_once_t qt;
-    dispatch_once(&qt, ^{
+    static dispatch_queue_t q = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
         q = dispatch_queue_create("com.pizzaman.remotecommand.touch", DISPATCH_QUEUE_SERIAL);
     });
     return q;
 }
 
-// Ensures all IOHIDKit symbols needed for touch are loaded.
-static void rc_load_touch_symbols(void) {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        void *handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW | RTLD_NOLOAD);
-        if (!handle) handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
-        if (!handle) {
-            SRLog(@"[Touch] Failed to open IOKit framework");
-            return;
-        }
-        if (!_IOHIDEventSystemClientCreate)
-            _IOHIDEventSystemClientCreate = (IOHIDEventSystemClientRef (*)(CFAllocatorRef))dlsym(handle, "IOHIDEventSystemClientCreate");
-        if (!_IOHIDEventSystemClientDispatchEvent)
-            _IOHIDEventSystemClientDispatchEvent = (void (*)(IOHIDEventSystemClientRef, IOHIDEventRef))dlsym(handle, "IOHIDEventSystemClientDispatchEvent");
-        if (!_IOHIDEventCreateDigitizerEvent)
-            _IOHIDEventCreateDigitizerEvent = (IOHIDEventRef (*)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, double, double, double, double, double, boolean_t, boolean_t, IOHIDEventOptionBits))dlsym(handle, "IOHIDEventCreateDigitizerEvent");
-        if (!_IOHIDEventCreateDigitizerFingerEvent)
-            _IOHIDEventCreateDigitizerFingerEvent = (IOHIDEventRef (*)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t, double, double, double, double, double, boolean_t, boolean_t, IOHIDEventOptionBits))dlsym(handle, "IOHIDEventCreateDigitizerFingerEvent");
-        if (!_IOHIDEventAppendEvent)
-            _IOHIDEventAppendEvent = (void (*)(IOHIDEventRef, IOHIDEventRef, IOHIDEventOptionBits))dlsym(handle, "IOHIDEventAppendEvent");
-        if (!_IOHIDEventSetIntegerValue)
-            _IOHIDEventSetIntegerValue = (void (*)(IOHIDEventRef, uint32_t, int32_t))dlsym(handle, "IOHIDEventSetIntegerValue");
-        if (!_IOHIDEventSetIntegerValueWithOptions)
-            _IOHIDEventSetIntegerValueWithOptions = (void (*)(IOHIDEventRef, uint32_t, int32_t, uint32_t))dlsym(handle, "IOHIDEventSetIntegerValueWithOptions");
-        if (!_IOHIDEventSetSenderID)
-            _IOHIDEventSetSenderID = (void (*)(IOHIDEventRef, uint64_t))dlsym(handle, "IOHIDEventSetSenderID");
-        SRLog(@"[Touch] IOHIDKit symbols loaded: create=%p dispatch=%p",
-              _IOHIDEventCreateDigitizerEvent, _IOHIDEventSystemClientDispatchEvent);
-    });
-}
-
-static void rc_dispatch_sync_main_safe(dispatch_block_t block);
-
-static BOOL rc_is_springboard_context(uint32_t cid) {
-    if (cid == 0) return NO;
-    __block BOOL isSB = NO;
-    rc_dispatch_sync_main_safe(^{
-        if (g_rcTapTestWindow && !g_rcTapTestWindow.hidden) {
-            if ([g_rcTapTestWindow _contextId] == cid) {
-                isSB = YES;
-                return;
-            }
-        }
-        if (g_rcTapRecordWindow && !g_rcTapRecordWindow.hidden) {
-            if ([g_rcTapRecordWindow _contextId] == cid) {
-                isSB = YES;
-                return;
-            }
-        }
-        Class windowClass = NSClassFromString(@"UIWindow");
-        if (windowClass && [windowClass respondsToSelector:@selector(allWindowsIncludingInternalWindows:onlyVisibleWindows:)]) {
-            NSArray *allWindows = [windowClass allWindowsIncludingInternalWindows:YES onlyVisibleWindows:YES];
-            for (UIWindow *window in allWindows) {
-                if ([window respondsToSelector:@selector(_contextId)]) {
-                    if ([window _contextId] == cid) {
-                        isSB = YES;
-                        break;
-                    }
-                }
-            }
-        }
-    });
-    return isSB;
-}
-
-static uint64_t rc_get_digitizer_sender_id(void) {
-    static uint64_t savedSenderID = 0;
-    if (savedSenderID != 0) return savedSenderID;
-
-    void *ioKit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
-    if (!ioKit) return 0xDEFACEDBEEFFECE5ULL;
-
-    CFArrayRef (*copyServices)(IOHIDEventSystemClientRef) = (CFArrayRef (*)(IOHIDEventSystemClientRef))dlsym(ioKit, "IOHIDEventSystemClientCopyServices");
-    CFTypeRef (*copyProperty)(id, CFStringRef) = (CFTypeRef (*)(id, CFStringRef))dlsym(ioKit, "IOHIDServiceClientCopyProperty");
-    uint64_t (*getRegistryID)(id) = (uint64_t (*)(id))dlsym(ioKit, "IOHIDServiceClientGetRegistryID");
-
-    if (!copyServices || !copyProperty || !getRegistryID) {
-        return 0xDEFACEDBEEFFECE5ULL;
-    }
-
-    IOHIDEventSystemClientRef client = _IOHIDEventSystemClientCreate(kCFAllocatorDefault);
-    if (!client) return 0xDEFACEDBEEFFECE5ULL;
-
-    CFArrayRef services = copyServices(client);
-    if (services) {
-        CFIndex count = CFArrayGetCount(services);
-        for (CFIndex i = 0; i < count; i++) {
-            id service = (__bridge id)CFArrayGetValueAtIndex(services, i);
-            CFTypeRef usagePageRef = copyProperty(service, CFSTR("PrimaryUsagePage"));
-            CFTypeRef usageRef = copyProperty(service, CFSTR("PrimaryUsage"));
-
-            if (usagePageRef && usageRef) {
-                int usagePage = 0;
-                int usage = 0;
-                CFNumberGetValue((CFNumberRef)usagePageRef, kCFNumberIntType, &usagePage);
-                CFNumberGetValue((CFNumberRef)usageRef, kCFNumberIntType, &usage);
-
-                CFRelease(usagePageRef);
-                CFRelease(usageRef);
-
-                // Digitizer Usage Page = 0x0D (13), Touch Screen Usage = 0x04 (4)
-                if (usagePage == 13 && usage == 4) {
-                    uint64_t regID = getRegistryID(service);
-                    if (regID != 0) {
-                        savedSenderID = regID;
-                        SRLog(@"[Touch] Dynamically resolved digitizer senderID: 0x%llX", regID);
-                        break;
-                    }
-                }
-            }
-        }
-        CFRelease(services);
-    }
-    CFRelease(client);
-
-    if (savedSenderID == 0) {
-        savedSenderID = 0xDEFACEDBEEFFECE5ULL; // Fallback
-        SRLog(@"[Touch] Could not resolve digitizer senderID dynamically, using fallback: 0x%llX", savedSenderID);
-    }
-    return savedSenderID;
-}
-
-static uint32_t rc_resolve_target_context(double x, double y) {
+static uint32_t rc_get_target_context_id(void) {
     __block uint32_t contextID = 0;
-    __block uint32_t testWindowContextID = 0;
-    __block uint32_t recordWindowContextID = 0;
-    rc_dispatch_sync_main_safe(^{
-        if (g_rcTapTestWindow && !g_rcTapTestWindow.hidden) {
-            testWindowContextID = [g_rcTapTestWindow _contextId];
-            contextID = testWindowContextID;
-        } else if (g_rcTapRecordWindow && !g_rcTapRecordWindow.hidden) {
-            recordWindowContextID = [g_rcTapRecordWindow _contextId];
-            contextID = recordWindowContextID;
-        } else {
-            // Resolve contextID via FBSceneManager from the frontmost application scene
-            NSString *frontBundleID = nil;
-            SpringBoard *sb = (SpringBoard *)[UIApplication sharedApplication];
-            if (sb && [sb respondsToSelector:@selector(_accessibilityFrontMostApplication)]) {
-                id frontApp = [sb _accessibilityFrontMostApplication];
-                if (frontApp && [frontApp respondsToSelector:@selector(bundleIdentifier)]) {
-                    frontBundleID = [frontApp bundleIdentifier];
-                }
-            }
-            
-            if (frontBundleID) {
-                Class managerClass = NSClassFromString(@"FBSceneManager");
-                id manager = nil;
-                if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
-                    manager = [managerClass performSelector:@selector(sharedInstance)];
-                }
-                
-                if (manager) {
-                    id workspace = nil;
-                    @try {
-                        workspace = [manager valueForKey:@"_workspace"];
-                    } @catch (NSException *e) {}
-                    
-                    if (workspace) {
-                        id scenes = nil;
-                        if ([workspace respondsToSelector:@selector(scenes)]) {
-                            scenes = [workspace performSelector:@selector(scenes)];
-                        }
-                        if (!scenes) {
-                            @try { scenes = [workspace valueForKey:@"_scenes"]; } @catch (NSException *e) {}
-                        }
-                        if (!scenes) {
-                            @try { scenes = [workspace valueForKey:@"_scenesByID"]; } @catch (NSException *e) {}
-                        }
-                        if (!scenes) {
-                            @try { scenes = [workspace valueForKey:@"allScenes"]; } @catch (NSException *e) {}
-                        }
-                        
-                        NSArray *sceneArray = nil;
-                        if ([scenes isKindOfClass:[NSDictionary class]]) {
-                            sceneArray = [scenes allValues];
-                        } else if ([scenes isKindOfClass:[NSSet class]]) {
-                            sceneArray = [scenes allObjects];
-                        } else if ([scenes isKindOfClass:[NSArray class]]) {
-                            sceneArray = scenes;
-                        }
-                        
-                        for (id scene in sceneArray) {
-                            @try {
-                                id sceneID = nil;
-                                if ([scene respondsToSelector:@selector(identifier)]) {
-                                    sceneID = [scene performSelector:@selector(identifier)];
-                                }
-                                if (![sceneID isKindOfClass:[NSString class]]) {
-                                    continue;
-                                }
-                                
-                                // Check if the scene identifier contains the frontBundleID
-                                if ([sceneID rangeOfString:frontBundleID options:NSCaseInsensitiveSearch].location != NSNotFound) {
-                                    id layerManager = nil;
-                                    if ([scene respondsToSelector:@selector(layerManager)]) {
-                                        layerManager = [scene performSelector:@selector(layerManager)];
-                                    }
-                                    if (!layerManager) {
-                                        @try { layerManager = [scene valueForKey:@"_layerManager"]; } @catch (NSException *e) {}
-                                    }
-                                    
-                                    id layers = nil;
-                                    if (layerManager && [layerManager respondsToSelector:@selector(layers)]) {
-                                        layers = [layerManager performSelector:@selector(layers)];
-                                    }
-                                    if (!layers && layerManager) {
-                                        @try { layers = [layerManager valueForKey:@"_layers"]; } @catch (NSException *e) {}
-                                    }
-                                    
-                                    NSArray *layerArray = nil;
-                                    if ([layers isKindOfClass:[NSSet class]]) {
-                                        layerArray = [layers allObjects];
-                                    } else if ([layers isKindOfClass:[NSArray class]]) {
-                                        layerArray = layers;
-                                    } else if ([layers isKindOfClass:[NSOrderedSet class]]) {
-                                        layerArray = [layers array];
-                                    }
-                                    
-                                    for (id layer in layerArray) {
-                                        if ([layer respondsToSelector:@selector(contextID)]) {
-                                            NSMethodSignature *sig = [layer methodSignatureForSelector:@selector(contextID)];
-                                            if (sig) {
-                                                NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-                                                [inv setSelector:@selector(contextID)];
-                                                [inv setTarget:layer];
-                                                [inv invoke];
-                                                uint32_t cid = 0;
-                                                [inv getReturnValue:&cid];
-                                                if (cid > 0) {
-                                                    contextID = cid;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } @catch (NSException *e) {}
-                        }
-                    }
-                }
-            }
-            
-            // Fallback 1: Local SpringBoard Windows
-            if (contextID == 0) {
-                Class windowClass = NSClassFromString(@"UIWindow");
-                if (windowClass && [windowClass respondsToSelector:@selector(allWindowsIncludingInternalWindows:onlyVisibleWindows:)]) {
-                    NSArray *allWindows = [windowClass allWindowsIncludingInternalWindows:YES onlyVisibleWindows:YES];
-                    for (UIWindow *window in [allWindows reverseObjectEnumerator]) {
-                        if (window.userInteractionEnabled && !window.hidden) {
-                            CGPoint localPt = [window convertPoint:CGPointMake(x, y) fromWindow:nil];
-                            if ([window pointInside:localPt withEvent:nil]) {
-                                uint32_t cid = 0;
-                                if ([window respondsToSelector:@selector(_contextId)]) {
-                                    cid = [window _contextId];
-                                }
-                                if (cid > 0) {
-                                    contextID = cid;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Fallback 2: Any active foreground scene
-            if (contextID == 0) {
-                Class managerClass = NSClassFromString(@"FBSceneManager");
-                id manager = nil;
-                if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
-                    manager = [managerClass performSelector:@selector(sharedInstance)];
-                }
-                if (manager) {
-                    id workspace = nil;
-                    @try { workspace = [manager valueForKey:@"_workspace"]; } @catch (NSException *e) {}
-                    if (workspace) {
-                        id scenes = nil;
-                        if ([workspace respondsToSelector:@selector(scenes)]) {
-                            scenes = [workspace performSelector:@selector(scenes)];
-                        }
-                        if (!scenes) {
-                            @try { scenes = [workspace valueForKey:@"_scenes"]; } @catch (NSException *e) {}
-                        }
-                        if (!scenes) {
-                            @try { scenes = [workspace valueForKey:@"allScenes"]; } @catch (NSException *e) {}
-                        }
-                        NSArray *sceneArray = nil;
-                        if ([scenes isKindOfClass:[NSDictionary class]]) {
-                            sceneArray = [scenes allValues];
-                        } else if ([scenes isKindOfClass:[NSSet class]]) {
-                            sceneArray = [scenes allObjects];
-                        } else if ([scenes isKindOfClass:[NSArray class]]) {
-                            sceneArray = scenes;
-                        }
-                        
-                        for (id scene in sceneArray) {
-                            @try {
-                                id settings = nil;
-                                if ([scene respondsToSelector:@selector(settings)]) {
-                                    settings = [scene performSelector:@selector(settings)];
-                                }
-                                BOOL isForeground = NO;
-                                if (settings && [settings respondsToSelector:NSSelectorFromString(@"isForeground")]) {
-                                    SEL isFgSel = NSSelectorFromString(@"isForeground");
-                                    NSMethodSignature *fgSig = [settings methodSignatureForSelector:isFgSel];
-                                    if (fgSig) {
-                                        NSInvocation *fgInv = [NSInvocation invocationWithMethodSignature:fgSig];
-                                        [fgInv setSelector:isFgSel];
-                                        [fgInv setTarget:settings];
-                                        [fgInv invoke];
-                                        [fgInv getReturnValue:&isForeground];
-                                    }
-                                }
-                                if (isForeground) {
-                                    id layerManager = nil;
-                                    if ([scene respondsToSelector:@selector(layerManager)]) {
-                                        layerManager = [scene performSelector:@selector(layerManager)];
-                                    }
-                                    if (!layerManager) {
-                                        @try { layerManager = [scene valueForKey:@"_layerManager"]; } @catch (NSException *e) {}
-                                    }
-                                    id layers = nil;
-                                    if (layerManager && [layerManager respondsToSelector:@selector(layers)]) {
-                                        layers = [layerManager performSelector:@selector(layers)];
-                                    }
-                                    if (!layers && layerManager) {
-                                        @try { layers = [layerManager valueForKey:@"_layers"]; } @catch (NSException *e) {}
-                                    }
-                                    NSArray *layerArray = nil;
-                                    if ([layers isKindOfClass:[NSSet class]]) {
-                                        layerArray = [layers allObjects];
-                                    } else if ([layers isKindOfClass:[NSArray class]]) {
-                                        layerArray = layers;
-                                    }
-                                    for (id layer in layerArray) {
-                                        if ([layer respondsToSelector:@selector(contextID)]) {
-                                            NSMethodSignature *sig = [layer methodSignatureForSelector:@selector(contextID)];
-                                            if (sig) {
-                                                NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-                                                [inv setSelector:@selector(contextID)];
-                                                [inv setTarget:layer];
-                                                [inv invoke];
-                                                uint32_t cid = 0;
-                                                [inv getReturnValue:&cid];
-                                                if (cid > 0) {
-                                                    contextID = cid;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if (contextID > 0) break;
-                                }
-                            } @catch (NSException *e) {}
-                        }
-                    }
-                }
-            }
+    void (^blk)(void) = ^{
+        UIWindow *win = nil;
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        win = [UIApplication sharedApplication].keyWindow;
+        #pragma clang diagnostic pop
+        if (!win && [UIWindow respondsToSelector:@selector(allWindowsIncludingInternalWindows:onlyVisibleWindows:)]) {
+            NSArray *wins = [UIWindow allWindowsIncludingInternalWindows:YES onlyVisibleWindows:YES];
+            win = [wins firstObject];
         }
-    });
+        if (win && [win respondsToSelector:@selector(_contextId)]) {
+            contextID = [win _contextId];
+        }
+    };
+
+    if ([NSThread isMainThread]) {
+        blk();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), blk);
+    }
     return contextID;
 }
 
-#include <spawn.h>
-#include <sys/wait.h>
+static void rc_inject_touch(double x, double y, uint32_t eventMask, uint32_t phase) {
+    if (!_IOHIDEventSystemClientCreate || !_IOHIDEventCreateDigitizerEvent ||
+        !_IOHIDEventCreateDigitizerFingerEvent || !_IOHIDEventAppendEvent ||
+        !_IOHIDEventSystemClientDispatchEvent) {
+        void *handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+        if (handle) {
+            _IOHIDEventSystemClientCreate = (IOHIDEventSystemClientRef (*)(CFAllocatorRef))dlsym(handle, "IOHIDEventSystemClientCreate");
+            _IOHIDEventCreateKeyboardEvent = (IOHIDEventRef (*)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, boolean_t, IOHIDEventOptionBits))dlsym(handle, "IOHIDEventCreateKeyboardEvent");
+            _IOHIDEventSystemClientDispatchEvent = (void (*)(IOHIDEventSystemClientRef, IOHIDEventRef))dlsym(handle, "IOHIDEventSystemClientDispatchEvent");
+            _IOHIDEventCreateDigitizerEvent = (IOHIDEventRef (*)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, double, double, double, double, double, boolean_t, boolean_t, IOHIDEventOptionBits))dlsym(handle, "IOHIDEventCreateDigitizerEvent");
+            _IOHIDEventCreateDigitizerFingerEvent = (IOHIDEventRef (*)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t, double, double, double, double, double, boolean_t, boolean_t, IOHIDEventOptionBits))dlsym(handle, "IOHIDEventCreateDigitizerFingerEvent");
+            _IOHIDEventAppendEvent = (void (*)(IOHIDEventRef, IOHIDEventRef, IOHIDEventOptionBits))dlsym(handle, "IOHIDEventAppendEvent");
+            _IOHIDEventSetIntegerValue = (void (*)(IOHIDEventRef, uint32_t, int32_t))dlsym(handle, "IOHIDEventSetIntegerValue");
+            _IOHIDEventSetSenderID = (void (*)(IOHIDEventRef, uint64_t))dlsym(handle, "IOHIDEventSetSenderID");
+        }
+    }
 
-static void rc_spawn_root_iohid(NSString *subcommand, NSArray *args) {
-    extern char **environ;
-    NSString *rcRootPath = @"/var/jb/usr/bin/rc-root";
-    if (![[NSFileManager defaultManager] fileExistsAtPath:rcRootPath]) {
-        rcRootPath = @"/usr/bin/rc-root";
-    }
-    
-    int argc = (int)args.count + 3;
-    char **argv = malloc((argc + 1) * sizeof(char *));
-    argv[0] = (char *)[rcRootPath UTF8String];
-    argv[1] = "iohid";
-    argv[2] = (char *)[subcommand UTF8String];
-    for (int i = 0; i < (int)args.count; i++) {
-        argv[3 + i] = (char *)[args[i] UTF8String];
-    }
-    argv[argc] = NULL;
-    
-    pid_t pid;
-    int status = posix_spawn(&pid, [rcRootPath UTF8String], NULL, NULL, argv, environ);
-    if (status == 0) {
-        int exit_status;
-        waitpid(pid, &exit_status, 0);
-    } else {
-        SRLog(@"[Touch] posix_spawn failed for rc-root: %d", status);
-    }
-    free(argv);
-}
-
-static void perform_digitizer_touch(double x, double y, BOOL down) {
-    if (!_IOHIDEventCreateDigitizerEvent || !_IOHIDEventCreateDigitizerFingerEvent ||
-        !_IOHIDEventAppendEvent || !_IOHIDEventSystemClientCreate || !_IOHIDEventSystemClientDispatchEvent) {
-        SRLog(@"[Touch] Digitizer symbols not loaded – cannot simulate touch");
+    if (!_IOHIDEventSystemClientCreate || !_IOHIDEventCreateDigitizerEvent ||
+        !_IOHIDEventCreateDigitizerFingerEvent || !_IOHIDEventAppendEvent ||
+        !_IOHIDEventSystemClientDispatchEvent) {
+        SRLog(@"[RCTouch] ERROR: Digitizer HID functions not available.");
         return;
     }
 
-    __block NSString *loggedBundleID = nil;
-    __block CGSize s = CGSizeZero;
-    __block CGFloat scale = 1.0;
-    rc_dispatch_sync_main_safe(^{
-        s = [UIScreen mainScreen].bounds.size;
-        scale = [UIScreen mainScreen].scale;
-        
-        SpringBoard *sb = (SpringBoard *)[UIApplication sharedApplication];
-        if (sb && [sb respondsToSelector:@selector(_accessibilityFrontMostApplication)]) {
-            id frontApp = [sb _accessibilityFrontMostApplication];
-            if (frontApp && [frontApp respondsToSelector:@selector(bundleIdentifier)]) {
-                loggedBundleID = [frontApp bundleIdentifier];
-            }
+    IOHIDEventSystemClientRef client = _IOHIDEventSystemClientCreate(kCFAllocatorDefault);
+    if (!client) return;
+
+    uint64_t now = mach_absolute_time();
+    double normX = x / [UIScreen mainScreen].bounds.size.width;
+    double normY = y / [UIScreen mainScreen].bounds.size.height;
+    boolean_t isTouch = (phase != 0); // 0 = up (not touching), 1 = down/move
+
+    IOHIDEventRef digitizerEvent = _IOHIDEventCreateDigitizerEvent(
+        kCFAllocatorDefault, now,
+        0, 0, 0,
+        eventMask, 0,
+        0, 0, 0, 0, 0,
+        isTouch, isTouch, 0
+    );
+
+    if (!digitizerEvent) {
+        CFRelease(client);
+        return;
+    }
+
+    IOHIDEventRef fingerEvent = _IOHIDEventCreateDigitizerFingerEvent(
+        kCFAllocatorDefault, now,
+        1, 1, eventMask,
+        normX, normY, 0,
+        isTouch ? 1.0 : 0.0, 0,
+        isTouch, isTouch, 0
+    );
+
+    if (fingerEvent) {
+        if (_IOHIDEventSetIntegerValue) {
+            _IOHIDEventSetIntegerValue(fingerEvent, 0x0B0000 + 3, (int32_t)phase);
         }
-    });
-
-    double screenWidth = MIN(s.width, s.height);
-    double screenHeight = MAX(s.width, s.height);
-    if (screenWidth == 0) screenWidth = 375.0; // Fallback for safety
-    if (screenHeight == 0) screenHeight = 667.0;
-
-    // Normalised coordinates [0.0, 1.0] as expected by Apple's HID Digitizer APIs
-    double rx = x / screenWidth;
-    double ry = y / screenHeight;
-
-    SRLog(@"[Touch] Simulated touch: raw(%.1f, %.1f) screen(%.1f, %.1f) scale=%.1f -> normalized(%.4f, %.4f) down=%d",
-          x, y, screenWidth, screenHeight, scale, rx, ry, down);
-
-    uint32_t contextID = rc_resolve_target_context(x, y);
-    BOOL targetIsLocal = rc_is_springboard_context(contextID);
-
-    uint32_t transducerType = 3;
-    uint32_t parentIndex = 0;
-    uint32_t parentIdentity = 1;
-    uint32_t parentEventMask = 0;
-    uint32_t parentButtonMask = 0;
-    uint64_t ts = mach_absolute_time();
-    uint32_t fingerIndex = 1;
-    uint32_t fingerIdentity = 2;
-    uint32_t fingerEventMask = 0x3; // kIOHIDDigitizerEventRange | kIOHIDDigitizerEventTouch
-    double pressure = down ? 1.0 : 0.0;
-    uint32_t handEventMask = 35;
-    uint32_t handEventTouch = down ? 1 : 0;
-
-    // Path 1: System-wide global event
-    IOHIDEventRef parentGlobal = _IOHIDEventCreateDigitizerEvent(
-        kCFAllocatorDefault, ts,
-        transducerType, parentIndex, parentIdentity, parentEventMask, parentButtonMask,
-        0.0, 0.0, 0.0, 0.0, 0.0,
-        0, 0, 0);
-
-    if (parentGlobal) {
-        // Path 1 system-wide event: BackBoard/IOHIDFamily expects absolute coordinates (x, y) in points.
-        IOHIDEventRef fingerGlobal = _IOHIDEventCreateDigitizerFingerEvent(
-            kCFAllocatorDefault, ts,
-            fingerIndex, fingerIdentity, fingerEventMask,
-            x, y, 0.0, pressure, 0.0,
-            (boolean_t)down, (boolean_t)down, 0);
-
-        if (fingerGlobal) {
-            _IOHIDEventAppendEvent(parentGlobal, fingerGlobal, 0);
-            CFRelease(fingerGlobal);
-        }
-
-        if (_IOHIDEventSetIntegerValueWithOptions) {
-            _IOHIDEventSetIntegerValueWithOptions(parentGlobal, 720921, 1, 0xF0000000);
-            _IOHIDEventSetIntegerValueWithOptions(parentGlobal, 720925, 1, 0xF0000000);
-            _IOHIDEventSetIntegerValueWithOptions(parentGlobal, 4, 1, 0xF0000000);
-            _IOHIDEventSetIntegerValueWithOptions(parentGlobal, 720903, handEventMask, 0xF0000000);
-            _IOHIDEventSetIntegerValueWithOptions(parentGlobal, 720904, handEventTouch, 0xF0000000);
-            _IOHIDEventSetIntegerValueWithOptions(parentGlobal, 720905, handEventTouch, 0xF0000000);
-        } else if (_IOHIDEventSetIntegerValue) {
-            _IOHIDEventSetIntegerValue(parentGlobal, 720921, 1);
-            _IOHIDEventSetIntegerValue(parentGlobal, 720925, 1);
-            _IOHIDEventSetIntegerValue(parentGlobal, 4, 1);
-            _IOHIDEventSetIntegerValue(parentGlobal, 720903, handEventMask);
-            _IOHIDEventSetIntegerValue(parentGlobal, 720904, handEventTouch);
-            _IOHIDEventSetIntegerValue(parentGlobal, 720905, handEventTouch);
-        }
-
-        if (_IOHIDEventSetSenderID) {
-            _IOHIDEventSetSenderID(parentGlobal, rc_get_digitizer_sender_id());
-        }
-
-        if (contextID > 0) {
-            BKSHIDEventSetDigitizerInfo(parentGlobal, contextID, false, false, NULL, 0, 0);
-        }
-
-        IOHIDEventSystemClientRef client = _IOHIDEventSystemClientCreate(kCFAllocatorDefault);
-        if (client) {
-            _IOHIDEventSystemClientDispatchEvent(client, parentGlobal);
-            CFRelease(client);
-            SRLog(@"[Touch] Dispatched global system-wide touch event.");
-        }
-        CFRelease(parentGlobal);
+        _IOHIDEventAppendEvent(digitizerEvent, fingerEvent, 0);
+        CFRelease(fingerEvent);
     }
 
-    // Path 2: Local SpringBoard Window enqueue (Absolute Coordinates)
-
-    if (targetIsLocal) {
-        IOHIDEventRef parentLocal = _IOHIDEventCreateDigitizerEvent(
-            kCFAllocatorDefault, ts,
-            transducerType, parentIndex, parentIdentity, parentEventMask, parentButtonMask,
-            0.0, 0.0, 0.0, 0.0, 0.0,
-            0, 0, 0);
-
-        if (parentLocal) {
-            IOHIDEventRef fingerLocal = _IOHIDEventCreateDigitizerFingerEvent(
-                kCFAllocatorDefault, ts,
-                fingerIndex, fingerIdentity, fingerEventMask,
-                x, y, 0.0, pressure, 0.0,
-                (boolean_t)down, (boolean_t)down, 0);
-
-            if (fingerLocal) {
-                _IOHIDEventAppendEvent(parentLocal, fingerLocal, 0);
-                CFRelease(fingerLocal);
-            }
-
-            if (_IOHIDEventSetIntegerValueWithOptions) {
-                _IOHIDEventSetIntegerValueWithOptions(parentLocal, 720921, 1, 0xF0000000);
-                _IOHIDEventSetIntegerValueWithOptions(parentLocal, 720925, 1, 0xF0000000);
-                _IOHIDEventSetIntegerValueWithOptions(parentLocal, 4, 1, 0xF0000000);
-                _IOHIDEventSetIntegerValueWithOptions(parentLocal, 720903, handEventMask, 0xF0000000);
-                _IOHIDEventSetIntegerValueWithOptions(parentLocal, 720904, handEventTouch, 0xF0000000);
-                _IOHIDEventSetIntegerValueWithOptions(parentLocal, 720905, handEventTouch, 0xF0000000);
-            } else if (_IOHIDEventSetIntegerValue) {
-                _IOHIDEventSetIntegerValue(parentLocal, 720921, 1);
-                _IOHIDEventSetIntegerValue(parentLocal, 720925, 1);
-                _IOHIDEventSetIntegerValue(parentLocal, 4, 1);
-                _IOHIDEventSetIntegerValue(parentLocal, 720903, handEventMask);
-                _IOHIDEventSetIntegerValue(parentLocal, 720904, handEventTouch);
-                _IOHIDEventSetIntegerValue(parentLocal, 720905, handEventTouch);
-            }
-
-            if (_IOHIDEventSetSenderID) {
-                _IOHIDEventSetSenderID(parentLocal, 0xDEFACEDBEEFFECE5ULL);
-            }
-
-            BKSHIDEventSetDigitizerInfo(parentLocal, contextID, false, false, NULL, 0, 0);
-
-            rc_dispatch_sync_main_safe(^{
-                [[UIApplication sharedApplication] _enqueueHIDEvent:parentLocal];
-                SRLog(@"[Touch] Enqueued local touch event to UIApplication (absolute coords).");
-            });
-            CFRelease(parentLocal);
-        }
+    if (_IOHIDEventSetSenderID) {
+        _IOHIDEventSetSenderID(digitizerEvent, 0xdefec80000000001ULL);
     }
-    
-    SRLog(@"[Touch] Dispatched touch event (down=%d) to contextID=%u (frontApp: %@) at (%.1f, %.1f)", down, contextID, loggedBundleID, x, y);
-}
 
-// Simulate a tap at absolute pixel coordinates (x, y).
-// MUST be called from rc_touch_queue.
-static void rc_simulate_tap(double px, double py) {
-    uint32_t contextID = rc_resolve_target_context(px, py);
-    BOOL targetIsLocal = rc_is_springboard_context(contextID);
-    SRLog(@"[Touch] tap at pixel (%.0f,%.0f) contextID=%u targetIsLocal=%d", px, py, contextID, targetIsLocal);
-    
-    if (targetIsLocal) {
-        perform_digitizer_touch(px, py, YES);   // finger down
-        usleep(80000);                          // 80 ms contact
-        perform_digitizer_touch(px, py, NO);    // finger up
-    } else {
-        __block CGSize s = CGSizeZero;
-        rc_dispatch_sync_main_safe(^{
-            s = [UIScreen mainScreen].bounds.size;
-        });
-        double screenWidth = MIN(s.width, s.height);
-        double screenHeight = MAX(s.width, s.height);
-        if (screenWidth == 0) screenWidth = 375.0;
-        if (screenHeight == 0) screenHeight = 667.0;
-
-        SRLog(@"[Touch] non-local tap -> spawning rc-root iohid tap (%.1f, %.1f) contextID=%u screen=%.0fx%.0f", px, py, contextID, screenWidth, screenHeight);
-        rc_spawn_root_iohid(@"tap", @[
-            [NSString stringWithFormat:@"%.1f", px],
-            [NSString stringWithFormat:@"%.1f", py],
-            [NSString stringWithFormat:@"%u", contextID],
-            [NSString stringWithFormat:@"%.1f", screenWidth],
-            [NSString stringWithFormat:@"%.1f", screenHeight]
-        ]);
+    uint32_t contextID = rc_get_target_context_id();
+    if (contextID != 0 && dlsym(RTLD_DEFAULT, "BKSHIDEventSetDigitizerInfo")) {
+        BKSHIDEventSetDigitizerInfo(digitizerEvent, contextID, 0, 0, NULL, 0, 0);
     }
+
+    _IOHIDEventSystemClientDispatchEvent(client, digitizerEvent);
+    CFRelease(digitizerEvent);
+    CFRelease(client);
 }
 
-// Simulate a hold at absolute pixel coordinates for `durationMs` milliseconds.
-// MUST be called from rc_touch_queue.
-static void rc_simulate_hold(double px, double py, int durationMs) {
-    uint32_t contextID = rc_resolve_target_context(px, py);
-    BOOL targetIsLocal = rc_is_springboard_context(contextID);
-    int clampedMs = MAX(50, MIN(durationMs, 10000));
-    SRLog(@"[Touch] hold at pixel (%.0f,%.0f) for %d ms contextID=%u targetIsLocal=%d", px, py, clampedMs, contextID, targetIsLocal);
-
-    if (targetIsLocal) {
-        perform_digitizer_touch(px, py, YES);
-        usleep((useconds_t)(clampedMs * 1000));
-        perform_digitizer_touch(px, py, NO);
-    } else {
-        __block CGSize s = CGSizeZero;
-        rc_dispatch_sync_main_safe(^{
-            s = [UIScreen mainScreen].bounds.size;
-        });
-        double screenWidth = MIN(s.width, s.height);
-        double screenHeight = MAX(s.width, s.height);
-        if (screenWidth == 0) screenWidth = 375.0;
-        if (screenHeight == 0) screenHeight = 667.0;
-
-        SRLog(@"[Touch] non-local hold -> spawning rc-root iohid hold (%.1f, %.1f, %d) contextID=%u screen=%.0fx%.0f", px, py, clampedMs, contextID, screenWidth, screenHeight);
-        rc_spawn_root_iohid(@"hold", @[
-            [NSString stringWithFormat:@"%.1f", px],
-            [NSString stringWithFormat:@"%.1f", py],
-            [NSString stringWithFormat:@"%d", clampedMs],
-            [NSString stringWithFormat:@"%u", contextID],
-            [NSString stringWithFormat:@"%.1f", screenWidth],
-            [NSString stringWithFormat:@"%.1f", screenHeight]
-        ]);
-    }
-}
-
-// Simulate a swipe from (x1,y1) to (x2,y2) over ~600ms with smooth interpolation.
-// MUST be called from rc_touch_queue.
-static void rc_simulate_swipe(double x1, double y1, double x2, double y2) {
-    uint32_t contextID = rc_resolve_target_context(x1, y1);
-    BOOL targetIsLocal = rc_is_springboard_context(contextID);
-    SRLog(@"[Touch] swipe (%.0f,%.0f)→(%.0f,%.0f) contextID=%u targetIsLocal=%d", x1, y1, x2, y2, contextID, targetIsLocal);
-
-    if (targetIsLocal) {
-        const int steps = 40;
-        const int stepDelayUs = 15000; // 15 ms per step → ~600 ms total
-
-        perform_digitizer_touch(x1, y1, YES); // touch down
-        usleep(16000); // brief settle
-
-        for (int i = 1; i <= steps; i++) {
-            double t = (double)i / steps;
-            double cx = x1 + (x2 - x1) * t;
-            double cy = y1 + (y2 - y1) * t;
-            perform_digitizer_touch(cx, cy, YES); // move
-            usleep((useconds_t)stepDelayUs);
-        }
-
-        usleep(16000);
-        perform_digitizer_touch(x2, y2, NO); // touch up
-    } else {
-        __block CGSize s = CGSizeZero;
-        rc_dispatch_sync_main_safe(^{
-            s = [UIScreen mainScreen].bounds.size;
-        });
-        double screenWidth = MIN(s.width, s.height);
-        double screenHeight = MAX(s.width, s.height);
-        if (screenWidth == 0) screenWidth = 375.0;
-        if (screenHeight == 0) screenHeight = 667.0;
-
-        SRLog(@"[Touch] non-local swipe -> spawning rc-root iohid swipe (%.1f, %.1f)→(%.1f, %.1f) contextID=%u screen=%.0fx%.0f", x1, y1, x2, y2, contextID, screenWidth, screenHeight);
-        rc_spawn_root_iohid(@"swipe", @[
-            [NSString stringWithFormat:@"%.1f", x1],
-            [NSString stringWithFormat:@"%.1f", y1],
-            [NSString stringWithFormat:@"%.1f", x2],
-            [NSString stringWithFormat:@"%.1f", y2],
-            [NSString stringWithFormat:@"%u", contextID],
-            [NSString stringWithFormat:@"%.1f", screenWidth],
-            [NSString stringWithFormat:@"%.1f", screenHeight]
-        ]);
-    }
-}
-
-// ── Tap Recording Overlay ───────────────────────────────────────────────────
-static NSString *g_tapRecordStatus = @"idle";
-static int g_tapRecordCountdown = 0;
-static CGPoint g_tapRecordPoint = {0, 0};
-static UIViewController *g_rcTapRecordViewController = nil;
-static UILabel *g_rcTapRecordLabel = nil;
-static NSTimer *g_tapRecordTimeoutTimer = nil;
-
-static void rc_taprecord_cleanup(void);
-
-@interface RCTapRecordViewController : UIViewController
-@end
-
-@implementation RCTapRecordViewController
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    if (![g_tapRecordStatus isEqualToString:@"waiting"]) return;
-    UITouch *touch = [touches anyObject];
-    if (touch && g_rcTapRecordWindow) {
-        CGPoint pt = [touch locationInView:self.view];
-        g_tapRecordPoint = pt;
-        g_tapRecordStatus = @"recorded";
-        SRLog(@"[TapRecord] Touch captured at: %.1f, %.1f", pt.x, pt.y);
-        
-        // Play success haptic
-        AudioServicesPlaySystemSound(1519); // Peak/Actuation haptic
-        
-        rc_taprecord_cleanup();
-        
-        // Open/Foreground the RemoteCompanion app
-        dispatch_async(dispatch_get_main_queue(), ^{
-            @try {
-                Class FBSOpenApplicationServiceClass = objc_getClass("FBSOpenApplicationService");
-                if (FBSOpenApplicationServiceClass) {
-                    FBSOpenApplicationService *service = [FBSOpenApplicationServiceClass serviceWithDefaultShellEndpoint];
-                    [service openApplication:@"com.saihgupr.remotecompanion" withOptions:nil completion:nil];
-                }
-            } @catch (NSException *e) {
-                SRLog(@"[TapRecord] Error relaunching app: %@", e);
-            }
-        });
-    }
-}
-
-- (BOOL)shouldAutorotate {
-    return NO;
-}
-- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
-    return UIInterfaceOrientationMaskPortrait;
-}
-@end
-
-static void rc_taprecord_cleanup(void) {
-    if (g_tapRecordTimeoutTimer) {
-        [g_tapRecordTimeoutTimer invalidate];
-        g_tapRecordTimeoutTimer = nil;
-    }
-    if (g_rcTapRecordWindow) {
-        g_rcTapRecordWindow.hidden = YES;
-        g_rcTapRecordWindow = nil;
-        g_rcTapRecordViewController = nil;
-        g_rcTapRecordLabel = nil;
-    }
-}
-
-static void rc_taprecord_timeout(void) {
-    if ([g_tapRecordStatus isEqualToString:@"waiting"]) {
-        g_tapRecordStatus = @"timeout";
-        SRLog(@"[TapRecord] Timeout reached, no touch received.");
-        rc_taprecord_cleanup();
-    }
-}
-
-static void rc_taprecord_update_countdown(int secondsLeft) {
-    g_tapRecordCountdown = secondsLeft;
-    if (secondsLeft > 0) {
-        g_tapRecordStatus = @"counting";
-        rc_dispatch_sync_main_safe(^{
-            if (g_rcTapRecordLabel) {
-                g_rcTapRecordLabel.text = [NSString stringWithFormat:@"Recording tap in %d...", secondsLeft];
-            }
-        });
-        
-        // Play click sound / haptic
-        AudioServicesPlaySystemSound(1104);
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if ([g_tapRecordStatus isEqualToString:@"counting"]) {
-                rc_taprecord_update_countdown(secondsLeft - 1);
-            }
-        });
-    } else {
-        g_tapRecordStatus = @"waiting";
-        rc_dispatch_sync_main_safe(^{
-            if (g_rcTapRecordWindow) {
-                g_rcTapRecordWindow.userInteractionEnabled = YES;
-                g_rcTapRecordViewController.view.backgroundColor = [UIColor colorWithRed:0.0 green:1.0 blue:0.0 alpha:0.12];
-                g_rcTapRecordViewController.view.layer.borderColor = [UIColor colorWithRed:0.0 green:0.8 blue:0.0 alpha:1.0].CGColor;
-                g_rcTapRecordViewController.view.layer.borderWidth = 4.0;
-            }
-            if (g_rcTapRecordLabel) {
-                g_rcTapRecordLabel.text = @"TAP SCREEN NOW\nto record coordinates";
-                g_rcTapRecordLabel.backgroundColor = [UIColor colorWithRed:0.0 green:0.5 blue:0.0 alpha:0.85];
-            }
-        });
-        
-        // Start 10 seconds timeout timer
-        g_tapRecordTimeoutTimer = [NSTimer scheduledTimerWithTimeInterval:10.0 repeats:NO block:^(NSTimer *timer) {
-            rc_taprecord_timeout();
-        }];
-    }
-}
-
-static void rc_taprecord_start(void) {
-    rc_dispatch_sync_main_safe(^{
-        rc_taprecord_cleanup();
-        
-        g_tapRecordStatus = @"counting";
-        g_tapRecordCountdown = 3;
-        g_tapRecordPoint = CGPointZero;
-        
-        CGRect bounds = [UIScreen mainScreen].bounds;
-        g_rcTapRecordWindow = [[UIWindow alloc] initWithFrame:bounds];
-        g_rcTapRecordWindow.windowLevel = UIWindowLevelAlert + 2590.0;
-        g_rcTapRecordWindow.backgroundColor = [UIColor clearColor];
-        g_rcTapRecordWindow.userInteractionEnabled = NO;
-        
-        g_rcTapRecordViewController = [[RCTapRecordViewController alloc] init];
-        g_rcTapRecordViewController.view.frame = bounds;
-        g_rcTapRecordViewController.view.backgroundColor = [UIColor clearColor];
-        g_rcTapRecordWindow.rootViewController = g_rcTapRecordViewController;
-        
-        CGFloat labelWidth = bounds.size.width - 64.0;
-        CGFloat labelHeight = 100.0;
-        CGFloat labelX = (bounds.size.width - labelWidth) / 2.0;
-        CGFloat labelY = (bounds.size.height - labelHeight) / 2.0;
-        
-        g_rcTapRecordLabel = [[UILabel alloc] initWithFrame:CGRectMake(labelX, labelY, labelWidth, labelHeight)];
-        g_rcTapRecordLabel.textAlignment = NSTextAlignmentCenter;
-        g_rcTapRecordLabel.numberOfLines = 0;
-        g_rcTapRecordLabel.font = [UIFont boldSystemFontOfSize:20.0];
-        g_rcTapRecordLabel.textColor = [UIColor whiteColor];
-        g_rcTapRecordLabel.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.75];
-        g_rcTapRecordLabel.layer.cornerRadius = 16.0;
-        g_rcTapRecordLabel.layer.masksToBounds = YES;
-        g_rcTapRecordLabel.text = @"Recording tap in 3...";
-        
-        [g_rcTapRecordViewController.view addSubview:g_rcTapRecordLabel];
-        
-        g_rcTapRecordWindow.hidden = NO;
-        [g_rcTapRecordWindow makeKeyAndVisible];
-        
-        SRLog(@"[TapRecord] Countdown started");
-        
-        rc_taprecord_update_countdown(3);
+static void perform_tap(double x, double y) {
+    dispatch_async(rc_touch_queue(), ^{
+        rc_inject_touch(x, y, 1 | 4, 1);
+        usleep(40000);
+        rc_inject_touch(x, y, 2, 0);
     });
 }
 
-// -- GraphicsServices tap beta -------------------------------------------------
-// New candidate path for iOS 15 tap testing. This intentionally does not call
-// the older IOHID digitizer helpers above.
-
-static UIWindow *g_rcTapTestWindow = nil;
-static UIViewController *g_rcTapTestViewController = nil;
-static UIButton *g_rcTapTestButton = nil;
-static UILabel *g_rcTapTestLabel = nil;
-static id g_rcTapTestTarget = nil;
-static NSInteger g_rcTapTestHitCount = 0;
-static CGPoint g_rcTapTestLastHitPoint = {0, 0};
-static CFAbsoluteTime g_rcTapTestLastHitTime = 0;
-static CGRect g_rcTapTestButtonFrame = {{0, 0}, {0, 0}};
-
-static void rc_taptest_update_label(void);
-
-@interface RCTapTestButtonTarget : NSObject
-- (void)buttonTapped:(UIButton *)sender forEvent:(UIEvent *)event;
-@end
-
-@implementation RCTapTestButtonTarget
-- (void)buttonTapped:(UIButton *)sender forEvent:(UIEvent *)event {
-    (void)sender;
-    UITouch *touch = [[event allTouches] anyObject];
-    if (touch && g_rcTapTestWindow) {
-        g_rcTapTestLastHitPoint = [touch locationInView:g_rcTapTestWindow];
-    } else {
-        g_rcTapTestLastHitPoint = CGPointMake(CGRectGetMidX(g_rcTapTestButtonFrame),
-                                              CGRectGetMidY(g_rcTapTestButtonFrame));
-    }
-    g_rcTapTestHitCount++;
-    g_rcTapTestLastHitTime = CFAbsoluteTimeGetCurrent();
-    SRLog(@"[TapTest] target received tap #%ld at %.1f, %.1f",
-          (long)g_rcTapTestHitCount, g_rcTapTestLastHitPoint.x, g_rcTapTestLastHitPoint.y);
-    rc_taptest_update_label();
-}
-@end
-
-typedef mach_port_t (*RCGSGetPortFn)(void);
-typedef void (*RCGSSendEventFn)(const GSEventRecord *record, mach_port_t port);
-typedef void (*RCGSSendSystemEventFn)(const GSEventRecord *record);
-
-static RCGSSendEventFn g_rcGSSendEvent = NULL;
-static RCGSSendSystemEventFn g_rcGSSendSystemEvent = NULL;
-static RCGSGetPortFn g_rcGSGetSystemEventPort = NULL;
-static RCGSGetPortFn g_rcGSGetApplicationPort = NULL;
-static NSString *g_rcGraphicsServicesLoadError = nil;
-
-static dispatch_queue_t rc_gs_tap_queue(void) {
-    static dispatch_queue_t q;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        q = dispatch_queue_create("com.pizzaman.remotecommand.gstap", DISPATCH_QUEUE_SERIAL);
+static void perform_hold(double x, double y, uint32_t durationMs) {
+    dispatch_async(rc_touch_queue(), ^{
+        rc_inject_touch(x, y, 1 | 4, 1);
+        usleep(durationMs * 1000);
+        rc_inject_touch(x, y, 2, 0);
     });
-    return q;
 }
 
-static NSArray<NSString *> *rc_split_whitespace(NSString *input) {
-    NSMutableArray<NSString *> *parts = [NSMutableArray array];
-    for (NSString *part in [input componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]) {
-        if (part.length > 0) [parts addObject:part];
-    }
-    return parts;
-}
+static void perform_swipe(double startX, double startY, double endX, double endY, uint32_t steps, uint32_t durationMs) {
+    dispatch_async(rc_touch_queue(), ^{
+        if (steps == 0) steps = 20;
+        uint32_t stepDelayUs = (durationMs * 1000) / steps;
 
-static void rc_dispatch_sync_main_safe(dispatch_block_t block) {
-    if ([NSThread isMainThread]) {
-        block();
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), block);
-    }
-}
+        rc_inject_touch(startX, startY, 1 | 4, 1);
+        usleep(stepDelayUs);
 
-static BOOL rc_load_graphics_services_symbols(NSString **errorOut) {
-    static BOOL loaded = NO;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        void *handle = dlopen("/System/Library/PrivateFrameworks/GraphicsServices.framework/GraphicsServices", RTLD_NOW | RTLD_NOLOAD);
-        if (!handle) {
-            handle = dlopen("/System/Library/PrivateFrameworks/GraphicsServices.framework/GraphicsServices", RTLD_NOW);
-        }
-        if (!handle) {
-            const char *err = dlerror();
-            g_rcGraphicsServicesLoadError = [NSString stringWithFormat:@"dlopen GraphicsServices failed: %s", err ? err : "unknown"];
-            SRLog(@"[GSTap] %@", g_rcGraphicsServicesLoadError);
-            return;
+        for (uint32_t i = 1; i < steps; i++) {
+            double curX = startX + (endX - startX) * ((double)i / steps);
+            double curY = startY + (endY - startY) * ((double)i / steps);
+            rc_inject_touch(curX, curY, 4, 1);
+            usleep(stepDelayUs);
         }
 
-        g_rcGSSendEvent = (RCGSSendEventFn)dlsym(handle, "GSSendEvent");
-        g_rcGSSendSystemEvent = (RCGSSendSystemEventFn)dlsym(handle, "GSSendSystemEvent");
-        g_rcGSGetSystemEventPort = (RCGSGetPortFn)dlsym(handle, "GSGetPurpleSystemEventPort");
-        g_rcGSGetApplicationPort = (RCGSGetPortFn)dlsym(handle, "GSGetPurpleApplicationPort");
-
-        if ((!g_rcGSSendEvent && !g_rcGSSendSystemEvent) ||
-            (!g_rcGSGetSystemEventPort && !g_rcGSGetApplicationPort)) {
-            g_rcGraphicsServicesLoadError = [NSString stringWithFormat:
-                @"missing symbols send=%p systemSend=%p systemPort=%p appPort=%p",
-                g_rcGSSendEvent, g_rcGSSendSystemEvent,
-                g_rcGSGetSystemEventPort, g_rcGSGetApplicationPort];
-            SRLog(@"[GSTap] %@", g_rcGraphicsServicesLoadError);
-            return;
-        }
-
-        loaded = YES;
-        SRLog(@"[GSTap] GraphicsServices loaded send=%p systemSend=%p systemPort=%p appPort=%p",
-              g_rcGSSendEvent, g_rcGSSendSystemEvent,
-              g_rcGSGetSystemEventPort, g_rcGSGetApplicationPort);
+        rc_inject_touch(endX, endY, 2, 0);
     });
-
-    if (!loaded && errorOut) *errorOut = g_rcGraphicsServicesLoadError ?: @"GraphicsServices unavailable";
-    return loaded;
 }
 
-typedef struct {
-    GSEventRecord record;
-    GSHandInfo handInfo;
-    GSPathInfo pathInfo;
-} RCGSTouchEvent;
-
-static BOOL rc_gs_send_hand_event(CGPoint point, GSHandInfoType type, NSString *mode, NSString **errorOut) {
-    NSString *loadError = nil;
-    if (!rc_load_graphics_services_symbols(&loadError)) {
-        if (errorOut) *errorOut = loadError;
-        return NO;
-    }
-
-    RCGSTouchEvent event;
-    memset(&event, 0, sizeof(event));
-
-    event.record.type = kGSEventHand;
-    event.record.subtype = kGSEventSubTypeUnknown;
-    event.record.location = point;
-    event.record.windowLocation = point;
-    event.record.windowContextId = 0;
-    event.record.timestamp = mach_absolute_time();
-    event.record.window = NULL;
-    event.record.flags = 0;
-    event.record.senderPID = (unsigned)getpid();
-    event.record.infoSize = sizeof(GSHandInfo) + sizeof(GSPathInfo);
-
-    event.handInfo.type = type;
-    event.handInfo.deltaX = 0;
-    event.handInfo.deltaY = 0;
-    event.handInfo.width = 1.0f;
-    event.handInfo.height = 1.0f;
-    event.handInfo.pathInfosCount = 1;
-
-    event.pathInfo.pathIndex = 1;
-    event.pathInfo.pathIdentity = 2;
-    event.pathInfo.pathProximity = (type == kGSHandInfoTypeTouchUp) ? 0 : 1;
-    event.pathInfo.pathPressure = (type == kGSHandInfoTypeTouchUp) ? 0.0 : 1.0;
-    event.pathInfo.pathMajorRadius = 4.0;
-    event.pathInfo.pathLocation = point;
-    event.pathInfo.pathWindow = NULL;
-
-    BOOL useApplicationPort = [mode isEqualToString:@"app"] || [mode isEqualToString:@"springboard"];
-    mach_port_t port = MACH_PORT_NULL;
-    if (useApplicationPort && g_rcGSGetApplicationPort) {
-        port = g_rcGSGetApplicationPort();
-    } else if (g_rcGSGetSystemEventPort) {
-        port = g_rcGSGetSystemEventPort();
-    }
-
-    if (g_rcGSSendEvent && port != MACH_PORT_NULL) {
-        g_rcGSSendEvent(&event.record, port);
-        return YES;
-    }
-
-    if (g_rcGSSendSystemEvent) {
-        g_rcGSSendSystemEvent(&event.record);
-        return YES;
-    }
-
-    if (errorOut) *errorOut = @"no GraphicsServices send port available";
-    return NO;
+// Global hook to support native touch injection fallback in SpringBoard
+%hook UIApplication
+- (void)_enqueueHIDEvent:(IOHIDEventRef)event {
+    %orig;
 }
+%end
 
-static BOOL rc_gs_send_tap(CGPoint point, NSString *mode, NSString **errorOut) {
-    NSString *downError = nil;
-    if (!rc_gs_send_hand_event(point, kGSHandInfoTypeTouchDown, mode, &downError)) {
-        if (errorOut) *errorOut = downError;
-        return NO;
-    }
-
-    usleep(90000);
-
-    NSString *upError = nil;
-    if (!rc_gs_send_hand_event(point, kGSHandInfoTypeTouchUp, mode, &upError)) {
-        if (errorOut) *errorOut = upError;
-        return NO;
-    }
-
-    return YES;
-}
-
-static void rc_taptest_layout_locked(void) {
-    if (!g_rcTapTestWindow || !g_rcTapTestButton || !g_rcTapTestLabel) return;
-
-    CGRect bounds = [UIScreen mainScreen].bounds;
-    g_rcTapTestWindow.frame = bounds;
-    g_rcTapTestViewController.view.frame = bounds;
-
-    CGFloat buttonWidth = MIN(220.0, MAX(160.0, bounds.size.width - 64.0));
-    CGFloat buttonHeight = 84.0;
-    CGFloat buttonX = round((bounds.size.width - buttonWidth) * 0.5);
-    CGFloat buttonY = round((bounds.size.height - buttonHeight) * 0.5);
-    g_rcTapTestButton.frame = CGRectMake(buttonX, buttonY, buttonWidth, buttonHeight);
-    g_rcTapTestButtonFrame = g_rcTapTestButton.frame;
-
-    g_rcTapTestLabel.frame = CGRectMake(18.0,
-                                        CGRectGetMinY(g_rcTapTestButton.frame) - 112.0,
-                                        bounds.size.width - 36.0,
-                                        86.0);
-}
-
-static void rc_taptest_update_label(void) {
-    if (!g_rcTapTestLabel || !g_rcTapTestButton) return;
-
-    NSString *last = g_rcTapTestLastHitTime > 0
-        ? [NSString stringWithFormat:@"last %.0f, %.0f", g_rcTapTestLastHitPoint.x, g_rcTapTestLastHitPoint.y]
-        : @"last none";
-
-    g_rcTapTestLabel.text = [NSString stringWithFormat:
-        @"RemoteCompanion Tap Test\nhits %ld\n%@",
-        (long)g_rcTapTestHitCount,
-        last];
-    [g_rcTapTestButton setTitle:[NSString stringWithFormat:@"Tap Target (%ld)", (long)g_rcTapTestHitCount]
-                       forState:UIControlStateNormal];
-}
-
-static void rc_taptest_show_locked(BOOL reset) {
-    if (reset) {
-        g_rcTapTestHitCount = 0;
-        g_rcTapTestLastHitPoint = CGPointZero;
-        g_rcTapTestLastHitTime = 0;
-    }
-
-    if (!g_rcTapTestTarget) {
-        g_rcTapTestTarget = [[RCTapTestButtonTarget alloc] init];
-    }
-
-    if (!g_rcTapTestWindow) {
-        CGRect bounds = [UIScreen mainScreen].bounds;
-        g_rcTapTestWindow = [[UIWindow alloc] initWithFrame:bounds];
-        g_rcTapTestWindow.windowLevel = UIWindowLevelAlert + 2500.0;
-        g_rcTapTestWindow.backgroundColor = [UIColor clearColor];
-        g_rcTapTestWindow.userInteractionEnabled = YES;
-
-        g_rcTapTestViewController = [[UIViewController alloc] init];
-        g_rcTapTestViewController.view.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.18];
-        g_rcTapTestWindow.rootViewController = g_rcTapTestViewController;
-
-        g_rcTapTestLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        g_rcTapTestLabel.textAlignment = NSTextAlignmentCenter;
-        g_rcTapTestLabel.numberOfLines = 0;
-        g_rcTapTestLabel.font = [UIFont monospacedSystemFontOfSize:16.0 weight:UIFontWeightSemibold];
-        g_rcTapTestLabel.textColor = [UIColor whiteColor];
-        g_rcTapTestLabel.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.68];
-        g_rcTapTestLabel.layer.cornerRadius = 12.0;
-        g_rcTapTestLabel.layer.masksToBounds = YES;
-        [g_rcTapTestViewController.view addSubview:g_rcTapTestLabel];
-
-        g_rcTapTestButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        g_rcTapTestButton.backgroundColor = [UIColor colorWithRed:0.10 green:0.72 blue:0.38 alpha:1.0];
-        g_rcTapTestButton.tintColor = [UIColor whiteColor];
-        g_rcTapTestButton.titleLabel.font = [UIFont boldSystemFontOfSize:22.0];
-        g_rcTapTestButton.layer.cornerRadius = 12.0;
-        g_rcTapTestButton.layer.borderColor = [UIColor whiteColor].CGColor;
-        g_rcTapTestButton.layer.borderWidth = 2.0;
-        g_rcTapTestButton.accessibilityIdentifier = @"remotecompanion.taptest.target";
-        [g_rcTapTestButton addTarget:g_rcTapTestTarget
-                              action:@selector(buttonTapped:forEvent:)
-                    forControlEvents:UIControlEventTouchUpInside];
-        [g_rcTapTestViewController.view addSubview:g_rcTapTestButton];
-    }
-
-    rc_taptest_layout_locked();
-    rc_taptest_update_label();
-    g_rcTapTestWindow.hidden = NO;
-    [g_rcTapTestWindow makeKeyAndVisible];
-    SRLog(@"[TapTest] shown target frame %.0f %.0f %.0f %.0f",
-          g_rcTapTestButtonFrame.origin.x, g_rcTapTestButtonFrame.origin.y,
-          g_rcTapTestButtonFrame.size.width, g_rcTapTestButtonFrame.size.height);
-}
-
-static void rc_taptest_hide_locked(void) {
-    if (g_rcTapTestWindow) {
-        g_rcTapTestWindow.hidden = YES;
-        SRLog(@"[TapTest] hidden");
-    }
-}
-
-static NSString *rc_taptest_status_string(void) {
-    __block NSString *status = nil;
-    rc_dispatch_sync_main_safe(^{
-        BOOL visible = g_rcTapTestWindow && !g_rcTapTestWindow.hidden;
-        CGPoint center = CGPointMake(CGRectGetMidX(g_rcTapTestButtonFrame), CGRectGetMidY(g_rcTapTestButtonFrame));
-        NSString *last = g_rcTapTestLastHitTime > 0
-            ? [NSString stringWithFormat:@"%.0f %.0f", g_rcTapTestLastHitPoint.x, g_rcTapTestLastHitPoint.y]
-            : @"none";
-        status = [NSString stringWithFormat:
-            @"taptest visible=%@ hits=%ld button=%.0f %.0f %.0f %.0f center=%.0f %.0f last=%@ backend=IOHIDEvent\n",
-            visible ? @"yes" : @"no",
-            (long)g_rcTapTestHitCount,
-            g_rcTapTestButtonFrame.origin.x,
-            g_rcTapTestButtonFrame.origin.y,
-            g_rcTapTestButtonFrame.size.width,
-            g_rcTapTestButtonFrame.size.height,
-            center.x,
-            center.y,
-            last];
-    });
-    return status ?: @"taptest unavailable\n";
-}
-
-static NSString *rc_handle_taptest_command(NSString *cleanCmd) {
-    NSArray<NSString *> *parts = rc_split_whitespace(cleanCmd);
-    NSString *subcommand = parts.count >= 2 ? [parts[1] lowercaseString] : @"status";
-
-    if ([subcommand isEqualToString:@"show"]) {
-        rc_dispatch_sync_main_safe(^{ rc_taptest_show_locked(NO); });
-        return rc_taptest_status_string();
-    }
-
-    if ([subcommand isEqualToString:@"reset"]) {
-        rc_dispatch_sync_main_safe(^{ rc_taptest_show_locked(YES); });
-        return rc_taptest_status_string();
-    }
-
-    if ([subcommand isEqualToString:@"hide"]) {
-        rc_dispatch_sync_main_safe(^{ rc_taptest_hide_locked(); });
-        return @"taptest hidden\n";
-    }
-
-    if ([subcommand isEqualToString:@"status"]) {
-        return rc_taptest_status_string();
-    }
-
-    if ([subcommand isEqualToString:@"run"]) {
-        NSString *backend = @"iohid";
-        NSString *mode = @"system";
-
-        if (parts.count >= 3) {
-            NSString *p2 = [parts[2] lowercaseString];
-            if ([p2 isEqualToString:@"iohid"] || [p2 isEqualToString:@"gsevent"]) {
-                backend = p2;
-                if (parts.count >= 4) {
-                    mode = [parts[3] lowercaseString];
-                }
-            } else {
-                mode = p2;
-            }
-        }
-
-        if (!([mode isEqualToString:@"system"] ||
-              [mode isEqualToString:@"app"] ||
-              [mode isEqualToString:@"springboard"])) {
-            return @"Usage: taptest run [iohid|gsevent] [system|app]\n";
-        }
-
-        __block CGPoint center = CGPointZero;
-        __block NSInteger startCount = 0;
-        rc_dispatch_sync_main_safe(^{
-            rc_taptest_show_locked(YES);
-            center = CGPointMake(CGRectGetMidX(g_rcTapTestButtonFrame), CGRectGetMidY(g_rcTapTestButtonFrame));
-            startCount = g_rcTapTestHitCount;
-        });
-
-        usleep(180000);
-
-        __block BOOL sent = NO;
-        __block NSString *sendError = nil;
-
-        if ([backend isEqualToString:@"gsevent"]) {
-            dispatch_sync(rc_gs_tap_queue(), ^{
-                sent = rc_gs_send_tap(center, mode, &sendError);
-            });
-        } else {
-            // IOHIDEvent backend
-            rc_load_touch_symbols();
-            dispatch_sync(rc_touch_queue(), ^{
-                perform_digitizer_touch(center.x, center.y, YES);
-                usleep(80000);
-                perform_digitizer_touch(center.x, center.y, NO);
-                sent = YES;
-            });
-        }
-
-        if (!sent) {
-            return [NSString stringWithFormat:@"taptest FAIL send-error=%@ backend=%@ mode=%@\n",
-                    sendError ?: @"unknown", backend, mode];
-        }
-
-        BOOL passed = NO;
-        for (int i = 0; i < 24; i++) {
-            __block NSInteger count = 0;
-            rc_dispatch_sync_main_safe(^{ count = g_rcTapTestHitCount; });
-            if (count > startCount) {
-                passed = YES;
-                break;
-            }
-            usleep(50000);
-        }
-
-        NSString *status = rc_taptest_status_string();
-        return [NSString stringWithFormat:@"taptest %@ backend=%@ mode=%@ target=%.0f %.0f\n%@",
-                passed ? @"PASS" : @"FAIL",
-                backend,
-                mode,
-                center.x,
-                center.y,
-                status];
-    }
-
-    return @"Usage: taptest show|hide|reset|status|run [iohid|gsevent] [system|app]\n";
-}
-
-// ── Lua-callable touch functions ──────────────────────────────────────────────
-
-// tap(x, y)  — pixel coords, 0,0 = top-left
-static int lua_tap_fn(lua_State *L) {
+static int lua_api_tap(lua_State *L) {
     double x = luaL_checknumber(L, 1);
     double y = luaL_checknumber(L, 2);
-    rc_load_touch_symbols();
-    dispatch_async(rc_touch_queue(), ^{
-        rc_simulate_tap(x, y);
-    });
+    perform_tap(x, y);
     return 0;
 }
 
-// hold(x, y, ms)  — hold finger at (x,y) for ms milliseconds (default 500)
-static int lua_hold_fn(lua_State *L) {
+static int lua_api_hold(lua_State *L) {
     double x = luaL_checknumber(L, 1);
     double y = luaL_checknumber(L, 2);
-    int ms = (int)luaL_optinteger(L, 3, 500);
-    rc_load_touch_symbols();
-    dispatch_async(rc_touch_queue(), ^{
-        rc_simulate_hold(x, y, ms);
-    });
+    uint32_t durationMs = (uint32_t)luaL_optinteger(L, 3, 500);
+    perform_hold(x, y, durationMs);
     return 0;
 }
 
-// swipe(x1, y1, x2, y2)  — swipe between two pixel coords
-static int lua_swipe_fn(lua_State *L) {
-    double x1 = luaL_checknumber(L, 1);
-    double y1 = luaL_checknumber(L, 2);
-    double x2 = luaL_checknumber(L, 3);
-    double y2 = luaL_checknumber(L, 4);
-    rc_load_touch_symbols();
-    dispatch_async(rc_touch_queue(), ^{
-        rc_simulate_swipe(x1, y1, x2, y2);
-    });
+static int lua_api_swipe(lua_State *L) {
+    double startX = luaL_checknumber(L, 1);
+    double startY = luaL_checknumber(L, 2);
+    double endX = luaL_checknumber(L, 3);
+    double endY = luaL_checknumber(L, 4);
+    uint32_t durationMs = (uint32_t)luaL_optinteger(L, 5, 300);
+    perform_swipe(startX, startY, endX, endY, 20, durationMs);
     return 0;
 }
 
-// swipeUp()  — swipe upward from near bottom edge toward center-top
-static int lua_swipe_up(lua_State *L) {
-    (void)L;
-    rc_load_touch_symbols();
-    dispatch_async(rc_touch_queue(), ^{
-        __block CGSize s;
-        dispatch_sync(dispatch_get_main_queue(), ^{ s = [UIScreen mainScreen].bounds.size; });
-        rc_simulate_swipe(s.width * 0.5, s.height * 0.92, s.width * 0.5, s.height * 0.15);
-    });
+static int lua_api_toast(lua_State *L) {
+    const char *title = luaL_checkstring(L, 1);
+    const char *sub = luaL_optstring(L, 2, NULL);
+    const char *icon = luaL_optstring(L, 3, NULL);
+    rc_show_hud_toast(
+        [NSString stringWithUTF8String:title],
+        sub ? [NSString stringWithUTF8String:sub] : nil,
+        icon ? [NSString stringWithUTF8String:icon] : nil
+    );
     return 0;
 }
 
-// swipeDown()
-static int lua_swipe_down(lua_State *L) {
-    (void)L;
-    rc_load_touch_symbols();
-    dispatch_async(rc_touch_queue(), ^{
-        __block CGSize s;
-        dispatch_sync(dispatch_get_main_queue(), ^{ s = [UIScreen mainScreen].bounds.size; });
-        rc_simulate_swipe(s.width * 0.5, s.height * 0.08, s.width * 0.5, s.height * 0.85);
-    });
+static int lua_api_exec(lua_State *L) {
+    const char *cmd = luaL_checkstring(L, 1);
+    NSString *output = handle_command([NSString stringWithFormat:@"exec %s", cmd]);
+    lua_pushstring(L, [output UTF8String] ?: "");
+    return 1;
+}
+
+static int lua_api_delay(lua_State *L) {
+    double secs = luaL_checknumber(L, 1);
+    usleep((useconds_t)(secs * 1000000.0));
     return 0;
 }
 
-// swipeLeft()
-static int lua_swipe_left(lua_State *L) {
-    (void)L;
-    rc_load_touch_symbols();
-    dispatch_async(rc_touch_queue(), ^{
-        __block CGSize s;
-        dispatch_sync(dispatch_get_main_queue(), ^{ s = [UIScreen mainScreen].bounds.size; });
-        rc_simulate_swipe(s.width * 0.9, s.height * 0.5, s.width * 0.1, s.height * 0.5);
-    });
-    return 0;
-}
-
-// swipeRight()
-static int lua_swipe_right(lua_State *L) {
-    (void)L;
-    rc_load_touch_symbols();
-    dispatch_async(rc_touch_queue(), ^{
-        __block CGSize s;
-        dispatch_sync(dispatch_get_main_queue(), ^{ s = [UIScreen mainScreen].bounds.size; });
-        rc_simulate_swipe(s.width * 0.1, s.height * 0.5, s.width * 0.9, s.height * 0.5);
-    });
-    return 0;
-}
-
-
-
-// Lua binding: openURL(urlString)
-static int lua_openURL(lua_State *L) {
-    const char *urlStr = luaL_checkstring(L, 1);
-    NSString *urlString = [NSString stringWithUTF8String:urlStr];
-    
-    SRLog(@"Lua openURL: %@", urlString);
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSURL *url = [NSURL URLWithString:urlString];
-        if (url) {
-            [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
-        }
-    });
-    
-    return 0;
-}
-
-// Lua binding: curl(urlString) - synchronous HTTP GET
-static int lua_curl(lua_State *L) {
-    const char *urlStr = luaL_checkstring(L, 1);
-    NSString *urlString = [NSString stringWithUTF8String:urlStr];
-    
-    SRLog(@"Lua curl: %@", urlString);
-    
-    // Use native curl implementation
-    NSString *curlCmd = [NSString stringWithFormat:@"curl %@", urlString];
-    perform_native_curl(curlCmd);
-    
-    return 0;
-}
-
-// Lua binding: delay(seconds)
-static int lua_delay(lua_State *L) {
-    double seconds = luaL_checknumber(L, 1);
-    SRLog(@"Lua delay: %.2f seconds", seconds);
-    usleep((useconds_t)(seconds * 1000000));
-    return 0;
-}
-
-// Lua binding: haptic()
-static int lua_haptic(lua_State *L) {
-    trigger_haptic();
-    return 0;
-}
-
-// Lua binding: log(message)
-static int lua_log(lua_State *L) {
-    const char *msg = luaL_checkstring(L, 1);
-    SRLog(@"[Lua] %s", msg);
-    return 0;
-}
-
-// Lua binding: dlopen(path)
-static int lua_dlopen(lua_State *L) {
-    const char *path = luaL_checkstring(L, 1);
-    void *handle = dlopen(path, RTLD_NOW);
-    if (handle) {
-        lua_pushboolean(L, 1);
-        return 1;
-    } else {
-        lua_pushnil(L);
-        lua_pushstring(L, dlerror());
-        return 2;
-    }
-}
-
-// Helper to convert Lua arg to ObjC object
-static id lua_to_id(lua_State *L, int index) {
-    int type = lua_type(L, index);
-    if (type == LUA_TSTRING) {
-        return [NSString stringWithUTF8String:lua_tostring(L, index)];
-    } else if (type == LUA_TNUMBER) {
-        return @(lua_tonumber(L, index));
-    } else if (type == LUA_TBOOLEAN) {
-        return @(lua_toboolean(L, index));
-    } else if (type == LUA_TLIGHTUSERDATA || type == LUA_TUSERDATA) {
-        return (__bridge id)lua_touserdata(L, index);
-    } else if (type == LUA_TNIL) {
-        return nil;
-    }
-    return nil;
-}
-
-// Lua binding: objc_call(className, selector, args...)
-static int lua_objc_call(lua_State *L) {
-    int top = lua_gettop(L);
-    if (top < 2) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Usage: objc_call(className, selector, ...)");
-        return 2;
-    }
-
-    // 1. Target Class or Instance
-    id target = nil;
-    if (lua_type(L, 1) == LUA_TSTRING) {
-        const char *clsName = lua_tostring(L, 1);
-        target = objc_getClass(clsName);
-        if (!target) {
-             lua_pushnil(L);
-             lua_pushstring(L, "Class not found");
-             return 2;
-        }
-    } else if (lua_type(L, 1) == LUA_TLIGHTUSERDATA || lua_type(L, 1) == LUA_TUSERDATA) {
-        target = (__bridge id)lua_touserdata(L, 1);
-    } else {
-        lua_pushnil(L);
-        lua_pushstring(L, "Target must be class name (string) or object (userdata)");
-        return 2;
-    }
-
-    // 2. Selector
-    const char *selName = luaL_checkstring(L, 2);
-    SEL selector = sel_registerName(selName);
-    
-    // 3. Signature
-    NSMethodSignature *sig = [target methodSignatureForSelector:selector];
-    if (!sig) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Method signature not found");
-        return 2;
-    }
-    
-    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-    [inv setTarget:target];
-    [inv setSelector:selector];
-    
-    // 4. Arguments
-    NSUInteger numArgs = [sig numberOfArguments];
-    // arg 0 is self, 1 is _cmd. Lua args start at index 3 (mapped to ObjC arg 2)
-    for (NSUInteger i = 2; i < numArgs; i++) {
-        int luaIdx = (int)i + 1; 
-        if (luaIdx > top) break;
-        
-        const char *type = [sig getArgumentTypeAtIndex:i];
-        // Basic type handling
-        if (strcmp(type, "@") == 0 || strcmp(type, "#") == 0) { // Object or Class
-            id obj = lua_to_id(L, luaIdx);
-            [inv setArgument:&obj atIndex:i];
-        } else if (type[0] == '^') { // Pointer
-            void *ptr = NULL;
-            if (lua_type(L, luaIdx) == LUA_TLIGHTUSERDATA || lua_type(L, luaIdx) == LUA_TUSERDATA) {
-                ptr = lua_touserdata(L, luaIdx);
-            }
-            [inv setArgument:&ptr atIndex:i];
-        } else if (strcmp(type, "i") == 0 || strcmp(type, "s") == 0 || strcmp(type, "l") == 0 || strcmp(type, "q") == 0 || strcmp(type, "Q") == 0 || strcmp(type, "I") == 0 || strcmp(type, "S") == 0 || strcmp(type, "L") == 0) { // Integers
-             long long val = (long long)lua_tonumber(L, luaIdx);
-             [inv setArgument:&val atIndex:i];
-        } else if (strcmp(type, "f") == 0 || strcmp(type, "d") == 0) { // Floats
-             double val = lua_tonumber(L, luaIdx);
-             [inv setArgument:&val atIndex:i];
-        } else if (strcmp(type, "B") == 0 || strcmp(type, "c") == 0) { // BOOL / char
-             BOOL val = lua_toboolean(L, luaIdx);
-             [inv setArgument:&val atIndex:i];
-        } else if (strcmp(type, ":") == 0) { // Selector
-             const char *s = lua_tostring(L, luaIdx);
-             SEL sel = sel_registerName(s);
-             [inv setArgument:&sel atIndex:i];
-        }
-    }
-    
-    [inv invoke];
-    
-    // 5. Return Value
-    const char *retType = [sig methodReturnType];
-    if (strcmp(retType, "@") == 0) {
-        __unsafe_unretained id retVal;
-        [inv getReturnValue:&retVal];
-        if (retVal == nil) {
-            lua_pushnil(L);
-        } else if ([retVal isKindOfClass:[NSString class]]) {
-            lua_pushstring(L, [retVal UTF8String]);
-        } else if ([retVal isKindOfClass:[NSNumber class]]) {
-            lua_pushnumber(L, [retVal doubleValue]);
-        } else {
-             lua_pushlightuserdata(L, (__bridge void *)retVal);
-        }
-        return 1;
-    } else if (strcmp(retType, "v") == 0) {
-        return 0;
-    } else if (strcmp(retType, "B") == 0 || strcmp(retType, "c") == 0) {
-        BOOL val;
-        [inv getReturnValue:&val];
-        lua_pushboolean(L, val);
-        return 1;
-    } else if (strcmp(retType, "i") == 0 || strcmp(retType, "s") == 0 || strcmp(retType, "l") == 0 || strcmp(retType, "q") == 0 || strcmp(retType, "Q") == 0) {
-        long long val;
-        [inv getReturnValue:&val];
-        lua_pushnumber(L, (double)val);
-        return 1;
-    } else {
-        // Unknown return type, return nil
-        return 0;
-    }
-}
-
-// Execute a Lua script file
-static lua_State *setup_lua_environment() {
-    lua_State *L = luaL_newstate();
-    if (!L) return NULL;
-    
-    luaL_openlibs(L);
-    lua_pushcfunction(L, lua_openURL);
-    lua_setglobal(L, "openURL");
-    lua_pushcfunction(L, lua_curl);
-    lua_setglobal(L, "curl");
-    lua_pushcfunction(L, lua_delay);
-    lua_setglobal(L, "delay");
-    lua_pushcfunction(L, lua_haptic);
-    lua_setglobal(L, "haptic");
-    lua_pushcfunction(L, lua_log);
-    lua_setglobal(L, "log");
-    lua_pushcfunction(L, lua_dlopen);
-    lua_setglobal(L, "dlopen");
-    lua_pushcfunction(L, lua_objc_call);
-    lua_setglobal(L, "objc_call");
-    
-    // Touch gesture functions
-    lua_pushcfunction(L, lua_tap_fn);
-    lua_setglobal(L, "tap");
-    lua_pushcfunction(L, lua_hold_fn);
-    lua_setglobal(L, "hold");
-    lua_pushcfunction(L, lua_swipe_fn);
-    lua_setglobal(L, "swipe");
-    lua_pushcfunction(L, lua_swipe_up);
-    lua_setglobal(L, "swipeU");
-    lua_pushcfunction(L, lua_swipe_up);
-    lua_setglobal(L, "swipeUp");
-    lua_pushcfunction(L, lua_swipe_down);
-    lua_setglobal(L, "swipeD");
-    lua_pushcfunction(L, lua_swipe_down);
-    lua_setglobal(L, "swipeDown");
-    lua_pushcfunction(L, lua_swipe_left);
-    lua_setglobal(L, "swipeL");
-    lua_pushcfunction(L, lua_swipe_left);
-    lua_setglobal(L, "swipeLeft");
-    lua_pushcfunction(L, lua_swipe_right);
-    lua_setglobal(L, "swipeR");
-    lua_pushcfunction(L, lua_swipe_right);
-    lua_setglobal(L, "swipeRight");
-    
-    return L;
-}
-
-static NSString *execute_lua_script(NSString *scriptPath) {
-    lua_State *L = setup_lua_environment();
-    if (!L) return @"Error: Could not create Lua state";
-    
-    SRLog(@"Executing Lua script: %@", scriptPath);
-    
-    int result = luaL_dofile(L, [scriptPath UTF8String]);
-    NSString *output = nil;
-    
-    if (result != LUA_OK) {
-        const char *error = lua_tostring(L, -1);
-        SRLog(@"Lua error: %s", error);
-        output = [NSString stringWithFormat:@"Lua Error: %s", error];
-        lua_pop(L, 1);
-    } else {
-        SRLog(@"Lua script completed successfully");
-    }
-    
-    lua_close(L);
-    return output;
-}
-
-static NSString *evaluate_lua_code(NSString *code) {
-    lua_State *L = setup_lua_environment();
-    if (!L) return @"Error: Could not create Lua state";
-    
-    int result = luaL_dostring(L, [code UTF8String]);
-    NSString *output = nil;
-    
-    if (result != LUA_OK) {
-        const char *error = lua_tostring(L, -1);
-        output = [NSString stringWithFormat:@"Lua Error: %s", error];
-        lua_pop(L, 1);
-    }
-    
-    lua_close(L);
-    return output;
-}
-
-static NSArray* RCFetchAirPlayDeviceNames() {
-    __block NSArray *deviceNames = nil;
-    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        MPAVRoutingController *ctrl = [[objc_getClass("MPAVRoutingController") alloc] init];
-        ctrl.discoveryMode = 3; // Detailed discovery
-        
-        __block int attempts = 0;
-        __block void (^fetch)(void) = nil;
-        
-        fetch = ^void(void) {
-            [ctrl fetchAvailableRoutesWithCompletionHandler:^(NSArray<MPAVRoute *> *routes) {
-                attempts++;
-                
-                // If we only found 1 device (local), try again up to 3 seconds for network devices
-                if (routes.count <= 1 && attempts < 6) {
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        if (fetch) fetch();
-                    });
-                    return;
-                }
-                
-                NSMutableArray *names = [NSMutableArray array];
-                for (MPAVRoute *route in routes) {
-                    NSString *name = route.routeName;
-                    if (name && name.length > 0) {
-                        [names addObject:name];
-                    }
-                }
-                deviceNames = [names copy];
-                dispatch_semaphore_signal(sema);
-                fetch = nil;
-            }];
-        };
-        fetch();
-    });
-    
-    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
-    return deviceNames ?: @[];
-}
-
-static NSString *formatIvarValue(id obj, Ivar ivar) {
-    ptrdiff_t offset = ivar_getOffset(ivar);
-    const char *type = ivar_getTypeEncoding(ivar);
-    void *ptr = (void *)((uintptr_t)obj + offset);
-    
-    if (type == NULL) return @"nil";
-    
-    if (type[0] == '@') {
-        // Object
-        __unsafe_unretained id val = *(__unsafe_unretained id *)ptr;
-        return val ? [val description] : @"nil";
-    } else if (strcmp(type, "B") == 0 || strcmp(type, "c") == 0) {
-        // BOOL or char
-        BOOL val = *(BOOL *)ptr;
-        return val ? @"YES" : @"NO";
-    } else if (strcmp(type, "i") == 0) {
-        int val = *(int *)ptr;
-        return [NSString stringWithFormat:@"%d", val];
-    } else if (strcmp(type, "I") == 0) {
-        unsigned int val = *(unsigned int *)ptr;
-        return [NSString stringWithFormat:@"%u", val];
-    } else if (strcmp(type, "q") == 0) {
-        long long val = *(long long *)ptr;
-        return [NSString stringWithFormat:@"%lld", val];
-    } else if (strcmp(type, "Q") == 0) {
-        unsigned long long val = *(unsigned long long *)ptr;
-        return [NSString stringWithFormat:@"%llu", val];
-    } else if (strcmp(type, "f") == 0) {
-        float val = *(float *)ptr;
-        return [NSString stringWithFormat:@"%f", val];
-    } else if (strcmp(type, "d") == 0) {
-        double val = *(double *)ptr;
-        return [NSString stringWithFormat:@"%f", val];
-    }
-    return [NSString stringWithFormat:@"<type %s at offset %td>", type, offset];
-}
-
-static NSString *handle_command(NSString *cmd) {
-    if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
-        SRLog(@"ERROR: handle_command received nil or invalid command string");
-        return @"Error: Invalid command\n";
-    }
-    NSString *cleanCmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (cleanCmd.length == 0) return @"Error: Empty command\n";
-    SRLog(@"Received command: %@", cleanCmd);
-    
-    // Debug hex dump of command
-    NSMutableString *hex = [NSMutableString string];
-    const char *utf = [cleanCmd UTF8String];
-    for (size_t i = 0; i < strlen(utf); i++) {
-        [hex appendFormat:@"%02X ", (unsigned char)utf[i]];
-    }
-    SRLog(@"Command HEX: %@", hex);
-    
-    // Log file retrieval command
-    if ([cleanCmd isEqualToString:@"log"]) {
-        SRLog(@"Log request");
-        return nil;
-    } else if ([cleanCmd isEqualToString:@"proximity"] || [cleanCmd hasPrefix:@"proximity "]) {
-        NSString *sub = nil;
-        if ([cleanCmd hasPrefix:@"proximity "]) {
-            sub = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        }
-        
-        id manager = g_proximitySensorManager;
-        if (!manager) {
-            Class cls = objc_getClass("SBProximitySensorManager");
-            if (cls && [cls respondsToSelector:@selector(sharedInstance)]) {
-                manager = [cls performSelector:@selector(sharedInstance)];
-            }
-        }
-        
-        __block NSString *response = nil;
-        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if ([sub isEqualToString:@"on"] || [sub isEqualToString:@"enable"]) {
-                g_forceProximityDetection = YES;
-                if (manager) {
-                    if ([manager respondsToSelector:@selector(_enableProx)]) {
-                        [manager _enableProx];
-                    } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
-                        [manager _setProximityDetectionEnabled:YES];
-                    }
-                }
-                [UIDevice currentDevice].proximityMonitoringEnabled = YES;
-                response = @"Proximity sensor enabled permanently (for testing)\n";
-                dispatch_semaphore_signal(sema);
-            } else if ([sub isEqualToString:@"off"] || [sub isEqualToString:@"disable"]) {
-                g_forceProximityDetection = NO;
-                if (manager) {
-                    if ([manager respondsToSelector:@selector(_disableProx)]) {
-                        [manager _disableProx];
-                    } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
-                        [manager _setProximityDetectionEnabled:NO];
-                    }
-                }
-                [UIDevice currentDevice].proximityMonitoringEnabled = NO;
-                response = @"Proximity sensor disabled\n";
-                dispatch_semaphore_signal(sema);
-            } else if ([sub isEqualToString:@"debug"] || [sub isEqualToString:@"inspect"]) {
-                NSMutableString *debugInfo = [NSMutableString string];
-                [debugInfo appendFormat:@"--- Proximity Debug Info ---\n"];
-                [debugInfo appendFormat:@"g_proximitySensorManager: %@\n", g_proximitySensorManager];
-                
-                // 1. Find all classes with "Proximity" in their name
-                [debugInfo appendString:@"\nRelated Classes:\n"];
-                int numClasses = objc_getClassList(NULL, 0);
-                if (numClasses > 0) {
-                    Class *classes = (Class *)malloc(sizeof(Class) * numClasses);
-                    numClasses = objc_getClassList(classes, numClasses);
-                    for (int i = 0; i < numClasses; i++) {
-                        NSString *className = NSStringFromClass(classes[i]);
-                        if ([className rangeOfString:@"Proximity" options:NSCaseInsensitiveSearch].location != NSNotFound) {
-                            [debugInfo appendFormat:@"  %@\n", className];
-                        }
-                    }
-                    free(classes);
-                }
-                
-                id targetObj = manager;
-                if (targetObj) {
-                    Class cls = [targetObj class];
-                    [debugInfo appendFormat:@"\nClass: %@\n", NSStringFromClass(cls)];
-                    
-                    // 2. Instance Variables
-                    [debugInfo appendString:@"\nIvars:\n"];
-                    unsigned int ivarCount = 0;
-                    Ivar *ivars = class_copyIvarList(cls, &ivarCount);
-                    for (unsigned int i = 0; i < ivarCount; i++) {
-                        [debugInfo appendFormat:@"  %s (%s) = %@\n", ivar_getName(ivars[i]), ivar_getTypeEncoding(ivars[i]), formatIvarValue(targetObj, ivars[i])];
-                    }
-                    if (ivars) free(ivars);
-                    
-                    // 3. Properties
-                    [debugInfo appendString:@"\nProperties:\n"];
-                    unsigned int propCount = 0;
-                    objc_property_t *properties = class_copyPropertyList(cls, &propCount);
-                    for (unsigned int i = 0; i < propCount; i++) {
-                        const char *name = property_getName(properties[i]);
-                        NSString *nameStr = [NSString stringWithUTF8String:name];
-                        id val = nil;
-                        @try {
-                            val = [targetObj valueForKey:nameStr];
-                        } @catch (NSException *e) {
-                            val = [NSString stringWithFormat:@"<KVC Error: %@>", e.reason];
-                        }
-                        [debugInfo appendFormat:@"  %s = %@\n", name, val];
-                    }
-                    if (properties) free(properties);
-                    
-                    // 4. Methods
-                    [debugInfo appendString:@"\nMethods:\n"];
-                    unsigned int methodCount = 0;
-                    Method *methods = class_copyMethodList(cls, &methodCount);
-                    for (unsigned int i = 0; i < methodCount; i++) {
-                        SEL selector = method_getName(methods[i]);
-                        NSString *methodName = NSStringFromSelector(selector);
-                        [debugInfo appendFormat:@"  %@\n", methodName];
-                    }
-                    if (methods) free(methods);
-                } else {
-                    [debugInfo appendString:@"\nNo manager found to inspect.\n"];
-                }
-                response = debugInfo;
-                dispatch_semaphore_signal(sema);
-            } else {
-                // Just query status
-                BOOL isNearPrivate = NO;
-                if (manager) {
-                    if ([manager respondsToSelector:@selector(isObjectInProximity)]) {
-                        isNearPrivate = [manager isObjectInProximity];
-                    }
-                }
-                
-                BOOL isNearPublic = [UIDevice currentDevice].proximityState;
-                BOOL isNear = isNearPrivate || isNearPublic;
-                
-                if (g_latestHIDProximityState != -1) {
-                    isNear = (g_latestHIDProximityState == 1);
-                }
-                
-                // Both `rc proximity` (sub == nil/empty) and `rc proximity status` run the exact same logic.
-                // We keep 'status' support purely as an undocumented legacy/fallback alias to avoid breaking scripts.
-                if ([sub isEqualToString:@"status"] || sub == nil || sub.length == 0) {
-                    response = isNear ? @"near\n" : @"far\n";
-                } else {
-                    BOOL isDetectionEnabled = NO;
-                    if (manager && [manager respondsToSelector:@selector(isProximityDetectionEnabled)]) {
-                        isDetectionEnabled = [manager isProximityDetectionEnabled];
-                    }
-                    BOOL isPublicEnabled = [UIDevice currentDevice].proximityMonitoringEnabled;
-                    response = [NSString stringWithFormat:@"SBProximitySensorManager: objectInProximity=%d, detectionEnabled=%d\nUIDevice: proximityState=%d, monitoringEnabled=%d\n",
-                                isNearPrivate, isDetectionEnabled, isNearPublic, isPublicEnabled];
-                }
-                dispatch_semaphore_signal(sema);
-            }
-        });
-        
-        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC));
-        return response ?: @"Error: Timeout querying proximity sensor\n";
-    }
-
-    // Media commands - these work reliably via MediaRemote
-    if ([cleanCmd isEqualToString:@"pause"]) {
-        // Only pause if currently playing (prevents toggle behavior)
-        MRMediaRemoteGetNowPlayingApplicationIsPlaying(dispatch_get_main_queue(), ^(Boolean isPlaying) {
-            if (isPlaying) {
-                MRMediaRemoteSendCommand(kMRPause, nil);
-            }
-        });
-        return @"Pause sent\n";
-    } else if ([cleanCmd isEqualToString:@"play"]) {
-        // Only play if currently paused (prevents toggle behavior)
-        MRMediaRemoteGetNowPlayingApplicationIsPlaying(dispatch_get_main_queue(), ^(Boolean isPlaying) {
-            if (!isPlaying) {
-                MRMediaRemoteSendCommand(kMRPlay, nil);
-            }
-        });
-        return @"Play sent\n";
-    } else if ([cleanCmd isEqualToString:@"playpause"] || [cleanCmd isEqualToString:@"toggle"]) {
-        MRMediaRemoteGetNowPlayingApplicationIsPlaying(dispatch_get_main_queue(), ^(Boolean isPlaying) {
-            if (isPlaying) {
-                MRMediaRemoteSendCommand(kMRPause, nil);
-            } else {
-                MRMediaRemoteSendCommand(kMRPlay, nil);
-            }
-        });
-        return @"Play/Pause toggled\n";
-    } else if ([cleanCmd isEqualToString:@"debug-media"]) {
-        // Introspect Media State
-        MRMediaRemoteGetNowPlayingApplicationPID(dispatch_get_main_queue(), ^(int pid) {
-            SRLog(@"DEBUG: Now Playing PID: %d", pid);
-            if (pid > 0) {
-                 // Try to get process name?
-                 // Simple check if it's Spotify (we don't have proc_name here easily without more headers)
-                 SRLog(@"DEBUG: System thinks an app is Now Playing (PID %d)", pid);
-            } else {
-                 SRLog(@"DEBUG: No Now Playing Application detected (PID 0)");
-            }
-        });
-        
-        MRMediaRemoteGetNowPlayingApplicationIsPlaying(dispatch_get_main_queue(), ^(Boolean isPlaying) {
-             SRLog(@"DEBUG: Is Playing Status: %@", isPlaying ? @"YES" : @"NO");
-        });
-        
-        return @"Dumping generic media state to logs...\n";
-    } else if ([cleanCmd hasPrefix:@"blacklist"]) {
-        NSArray *parts = [cleanCmd componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (parts.count >= 2) {
-            NSString *sub = parts[1];
-            if (!g_blacklist) load_blacklist();
-            
-            if ([sub isEqualToString:@"list"]) {
-                return [NSString stringWithFormat:@"Blacklisted Apps:\n%@\n", [g_blacklist componentsJoinedByString:@"\n"]];
-            } else if ([sub isEqualToString:@"add"] && parts.count >= 3) {
-                NSString *newID = parts[2];
-                NSMutableArray *mList = [g_blacklist mutableCopy];
-                if (![mList containsObject:newID]) {
-                    [mList addObject:newID];
-                    if (save_blacklist(mList)) return [NSString stringWithFormat:@"Added %@ to blacklist\n", newID];
-                    return @"Error: Failed to save blacklist\n";
-                }
-                return [NSString stringWithFormat:@"%@ is already blacklisted\n", newID];
-            } else if ([sub isEqualToString:@"remove"] && parts.count >= 3) {
-                NSString *remID = parts[2];
-                NSMutableArray *mList = [g_blacklist mutableCopy];
-                if ([mList containsObject:remID]) {
-                    [mList removeObject:remID];
-                    if (save_blacklist(mList)) return [NSString stringWithFormat:@"Removed %@ from blacklist\n", remID];
-                    return @"Error: Failed to save blacklist\n";
-                }
-                return [NSString stringWithFormat:@"%@ was not in blacklist\n", remID];
-            } else if ([sub isEqualToString:@"reset"]) {
-                [[NSFileManager defaultManager] removeItemAtPath:@"/var/mobile/Library/Preferences/com.saihgupr.remotecompanion.blacklist.plist" error:nil];
-                load_blacklist();
-                return @"Blacklist reset to factory defaults\n";
-            }
-        }
-        return @"Usage: rc blacklist <list|add|remove|reset> [bundleID]\n";
-    } else if ([cleanCmd isEqualToString:@"is-playing"] || [cleanCmd isEqualToString:@"player status"]) {
-        __block NSString *status = @"Unknown";
-        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-        
-        MRMediaRemoteGetNowPlayingApplicationPlaybackState(dispatch_get_main_queue(), ^(unsigned int state) {
-            switch (state) {
-                case 0: status = @"Unknown"; break;
-                case 1: status = @"Playing"; break;
-                case 2: status = @"Paused"; break;
-                case 3: status = @"Stopped"; break;
-                case 4: status = @"Interrupted"; break;
-                case 5: status = @"Seeking Forward"; break;
-                case 6: status = @"Seeking Backward"; break;
-                default: status = [NSString stringWithFormat:@"Other (%u)", state]; break;
-            }
-            dispatch_semaphore_signal(sema);
-        });
-        
-        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
-        
-        if ([cleanCmd isEqualToString:@"is-playing"]) {
-            return [status isEqualToString:@"Playing"] ? @"YES\n" : @"NO\n";
-        }
-        return [NSString stringWithFormat:@"%@\n", status];
-    } else if ([cleanCmd isEqualToString:@"next"]) {
-        MRMediaRemoteSendCommand(kMRNextTrack, nil);
-        return @"Next track\n";
-    } else if ([cleanCmd isEqualToString:@"prev"]) {
-        MRMediaRemoteSendCommand(kMRPreviousTrack, nil);
-        return @"Previous track\n";
-    } else if ([cleanCmd isEqualToString:@"flashlight"] || [cleanCmd isEqualToString:@"torch"] || [cleanCmd isEqualToString:@"flashlight toggle"]) {
-        SRLog(@"Toggling flashlight");
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch]) {
-            [device lockForConfiguration:nil];
-            if (device.torchMode == AVCaptureTorchModeOn) {
-                [device setTorchMode:AVCaptureTorchModeOff];
-            } else {
-                float level = get_flash_brightness();
-                [device setTorchModeOnWithLevel:level error:nil];
-            }
-            [device unlockForConfiguration];
-        }
-        return @"Flashlight toggled\n";
-    } else if ([cleanCmd hasPrefix:@"flashlight on"] || [cleanCmd hasPrefix:@"flash on"]) {
-        float level = get_flash_brightness();
-        NSArray *parts = [cleanCmd componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (parts.count >= 3) {
-            float customLevel = [parts[2] floatValue];
-            if (customLevel > 0) level = customLevel;
-            if (level > 1.0f) level /= 100.0f; // Handle percentage
-        }
-        
-        SRLog(@"Flashlight ON at level: %f", level);
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch]) {
-            [device lockForConfiguration:nil];
-            if (level < 0.01f) level = 0.01f;
-            if (level > 1.0f) level = 1.0f;
-            [device setTorchModeOnWithLevel:level error:nil];
-            [device unlockForConfiguration];
-        }
-        return [NSString stringWithFormat:@"Flashlight ON (%.0f%%)\n", level * 100];
-    } else if ([cleanCmd hasPrefix:@"flashlight "] || [cleanCmd hasPrefix:@"flash "]) {
-        // Handle "flashlight 0.5" or "flashlight 50"
-        NSString *valStr = [cleanCmd substringFromIndex:([cleanCmd hasPrefix:@"flashlight "] ? 11 : 6)];
-        float level = [valStr floatValue];
-        if (level > 1.0f) level /= 100.0f;
-        
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch]) {
-            [device lockForConfiguration:nil];
-            if (level <= 0) {
-                [device setTorchMode:AVCaptureTorchModeOff];
-                [device unlockForConfiguration];
-                return @"Flashlight OFF\n";
-            }
-            if (level < 0.01f) level = 0.01f;
-            if (level > 1.0f) level = 1.0f;
-            [device setTorchModeOnWithLevel:level error:nil];
-            [device unlockForConfiguration];
-            return [NSString stringWithFormat:@"Flashlight set to %.0f%%\n", level * 100];
-        }
-        return @"Error: Flashlight not available\n";
-    } else if ([cleanCmd isEqualToString:@"flashlight off"] || [cleanCmd isEqualToString:@"torch off"]) {
-    } else if ([cleanCmd hasPrefix:@"notify "]) {
-        // notify "Title" "Body" [--urgent]
-        // Parse: notify "Title" "Message" OR notify Title Message
-        NSString *args = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        NSString *title = @"RemoteCommand";
-        NSString *body = @"";
-        BOOL urgent = NO;
-        
-        // Check for --urgent flag
-        if ([args hasSuffix:@" --urgent"]) {
-            urgent = YES;
-            args = [[args substringToIndex:args.length - 9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        }
-        
-        // Parse quoted strings: "Title" "Body"
-        if ([args hasPrefix:@"\""]) {
-            NSRange endTitle = [args rangeOfString:@"\"" options:0 range:NSMakeRange(1, args.length - 1)];
-            if (endTitle.location != NSNotFound) {
-                title = [args substringWithRange:NSMakeRange(1, endTitle.location - 1)];
-                NSString *rest = [[args substringFromIndex:endTitle.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if ([rest hasPrefix:@"\""]) {
-                    NSRange endBody = [rest rangeOfString:@"\"" options:0 range:NSMakeRange(1, rest.length - 1)];
-                    if (endBody.location != NSNotFound) {
-                        body = [rest substringWithRange:NSMakeRange(1, endBody.location - 1)];
-                    } else {
-                        body = [rest substringFromIndex:1];
-                    }
-                } else {
-                    body = rest;
-                }
-            }
-        } else {
-            // Simple split: notify Title Body
-            NSArray *parts = [args componentsSeparatedByString:@" "];
-            if (parts.count >= 1) title = parts[0];
-            if (parts.count >= 2) body = [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] componentsJoinedByString:@" "];
-        }
-        
-        send_notification(title, body, urgent);
-        return @"OK\n";
-    } else if ([cleanCmd hasPrefix:@"shortcut-direct "] || [cleanCmd hasPrefix:@"sd "]) {
-        // Direct posix_spawn of springcuts binary for fastest execution
-        NSString *argsString;
-        if ([cleanCmd hasPrefix:@"sd "]) {
-            argsString = [[cleanCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else {
-            argsString = [[cleanCmd substringFromIndex:16] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        }
-        
-        // Build arguments: springcuts -r "ShortcutName" [-p "Input"]
-        NSMutableArray *args = [NSMutableArray array];
-        [args addObject:@"-r"];
-        
-        // Parse the shortcut name (may be quoted)
-        if ([argsString hasPrefix:@"\""]) {
-            NSRange endQuote = [argsString rangeOfString:@"\"" options:0 range:NSMakeRange(1, argsString.length - 1)];
-            if (endQuote.location != NSNotFound) {
-                NSString *name = [argsString substringWithRange:NSMakeRange(1, endQuote.location - 1)];
-                [args addObject:name];
-                
-                // Check for -p parameter
-                NSString *remaining = [argsString substringFromIndex:endQuote.location + 1];
-                remaining = [remaining stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if ([remaining hasPrefix:@"-p "]) {
-                    [args addObject:@"-p"];
-                    NSString *input = [remaining substringFromIndex:3];
-                    input = [input stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                    if ([input hasPrefix:@"\""]) {
-                        NSRange inputEnd = [input rangeOfString:@"\"" options:0 range:NSMakeRange(1, input.length - 1)];
-                        if (inputEnd.location != NSNotFound) {
-                            [args addObject:[input substringWithRange:NSMakeRange(1, inputEnd.location - 1)]];
-                        } else {
-                            [args addObject:[input substringFromIndex:1]];
-                        }
-                    } else {
-                        [args addObject:input];
-                    }
-                }
-            } else {
-                [args addObject:[argsString substringFromIndex:1]];
-            }
-        } else {
-            // No quotes - find -p if present
-            NSRange pRange = [argsString rangeOfString:@" -p "];
-            if (pRange.location != NSNotFound) {
-                // Split at -p
-                NSString *name = [[argsString substringToIndex:pRange.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                [args addObject:name];
-                [args addObject:@"-p"];
-                
-                NSString *input = [[argsString substringFromIndex:pRange.location + 4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                // Remove quotes if present
-                if ([input hasPrefix:@"\""] && [input hasSuffix:@"\""]) {
-                    input = [input substringWithRange:NSMakeRange(1, input.length - 2)];
-                } else if ([input hasPrefix:@"\""]) {
-                    NSRange endQuote = [input rangeOfString:@"\"" options:0 range:NSMakeRange(1, input.length - 1)];
-                    if (endQuote.location != NSNotFound) {
-                        input = [input substringWithRange:NSMakeRange(1, endQuote.location - 1)];
-                    }
-                }
-                [args addObject:input];
-            } else {
-                // Just the shortcut name
-                [args addObject:argsString];
-            }
-        }
-        
-        SRLog(@"Direct spawn springcuts with: %@", args);
-        
-        const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
-        if (access(springcutsPath, X_OK) != 0) {
-            springcutsPath = "/usr/bin/springcuts";
-        }
-        
-        // Check if binary exists
-        if (access(springcutsPath, X_OK) != 0) {
-            SRLog(@"ERROR: springcuts binary not found");
-            send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-            return @"Error: SpringCuts not installed\n";
-        }
-        SRLog(@"springcuts binary found, preparing spawn...");
-        
-        char **argv = (char **)malloc((args.count + 2) * sizeof(char *));
-        argv[0] = (char *)springcutsPath;
-        for (NSUInteger i = 0; i < args.count; i++) {
-            argv[i + 1] = (char *)[args[i] UTF8String];
-        }
-        argv[args.count + 1] = NULL;
-        
-        // Log the full command
-        NSMutableString *cmdStr = [NSMutableString stringWithString:@"spawning:"];
-        for (int i = 0; argv[i] != NULL; i++) {
-            [cmdStr appendFormat:@" %s", argv[i]];
-        }
-        SRLog(@"%@", cmdStr);
-        
-        pid_t pid;
-        extern char **environ;
-        int result = posix_spawn(&pid, springcutsPath, NULL, NULL, argv, environ);
-        free(argv);
-        
-        if (result == 0) {
-            SRLog(@"Spawned springcuts pid=%d", pid);
-        } else {
-            SRLog(@"posix_spawn failed with error: %d (%s)", result, strerror(result));
-        }
-    } else if ([cleanCmd hasPrefix:@"shortcut "] || [cleanCmd hasPrefix:@"springcut "]) {
-        // Parse the shortcut name (and arguments if any) from the full command
-        NSString *argsString;
-        if ([cleanCmd hasPrefix:@"springcut "]) {
-            argsString = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else {
-            argsString = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        }
-        
-        // Very basic parse to extract name (assumes first quoted term is name, ignores inputs for the native implementation for now, or just passes the full string if no quotes)
-        NSString *shortcutName = argsString;
-        if ([argsString hasPrefix:@"\""]) {
-            NSRange endQuote = [argsString rangeOfString:@"\"" options:0 range:NSMakeRange(1, argsString.length - 1)];
-            if (endQuote.location != NSNotFound) {
-                shortcutName = [argsString substringWithRange:NSMakeRange(1, endQuote.location - 1)];
-            }
-        }
-        
-        SRLog(@"Attempting native shortcut spawn for: %@", shortcutName);
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            @try {
-                 // Try native WorkflowKit execution first
-                 void *wfHandle = dlopen("/System/Library/PrivateFrameworks/WorkflowKit.framework/WorkflowKit", RTLD_NOW);
-                 if (wfHandle) {
-                     Class WFWorkflowDescriptorClass = objc_getClass("WFWorkflowDescriptor");
-                     Class WFWorkflowRunnerClientClass = objc_getClass("WFWorkflowRunnerClient");
-                     
-                     if (WFWorkflowDescriptorClass && WFWorkflowRunnerClientClass) {
-                         SRLog(@"WorkflowKit loaded, preparing to run shortcut: %@", shortcutName);
-                         id descriptor = [WFWorkflowDescriptorClass alloc];
-                         if ([descriptor respondsToSelector:@selector(initWithName:)]) {
-                             descriptor = [descriptor initWithName:shortcutName];
-                         } else {
-                             SRLog(@"[RemoteCommand] WFWorkflowDescriptor missing initWithName:, attempting identifier fallback");
-                             SEL sel = NSSelectorFromString(@"initWithIdentifier:");
-                             if ([descriptor respondsToSelector:sel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                                 descriptor = [descriptor performSelector:sel withObject:shortcutName];
-#pragma clang diagnostic pop
-                             } else {
-                                 descriptor = nil;
-                             }
-                         }
-
-                         if (descriptor) {
-                             WFWorkflowRunnerClient *client = (WFWorkflowRunnerClient *)[[WFWorkflowRunnerClientClass alloc] initWithWorkflowDescriptor:descriptor 
-                                                                                                   input:nil 
-                                                                                              parseInput:NO 
-                                                                                                  output:nil 
-                                                                                              completion:^(id output, NSError *error) {
-                                 if (error) {
-                                     SRLog(@"Shortcut '%@' failed: %@", shortcutName, error);
-                                 } else {
-                                     SRLog(@"Shortcut '%@' completed successfully", shortcutName);
-                                 }
-                             }];
-                             
-                             if (client) {
-                                 [client start];
-                                 SRLog(@"Started WFWorkflowRunnerClient for '%@'", shortcutName);
-                                 return; // Success, exit block!
-                             }
-                         } else {
-                             SRLog(@"[RemoteCommand] Failed to create descriptor for shortcut: %@", shortcutName);
-                         }
-                      }
-                  }
-                  
-                  // Fallback to springcuts CLI if WorkflowKit approach fails
-                 SRLog(@"WorkflowKit execution unavailable, falling back to springcuts...");
-                 NSMutableArray *args = [NSMutableArray array];
-                 
-                 // Simple parsing: split by spaces but respect quotes
-                 NSScanner *scanner = [NSScanner scannerWithString:argsString];
-                 scanner.charactersToBeSkipped = nil;
-                 
-                 while (![scanner isAtEnd]) {
-                     [scanner scanCharactersFromSet:[NSCharacterSet whitespaceCharacterSet] intoString:nil];
-                     if ([scanner isAtEnd]) break;
-                     
-                     NSString *arg = nil;
-                     if ([argsString characterAtIndex:scanner.scanLocation] == '"') {
-                         scanner.scanLocation++;
-                         [scanner scanUpToString:@"\"" intoString:&arg];
-                         if (![scanner isAtEnd]) scanner.scanLocation++;
-                     } else {
-                         [scanner scanUpToCharactersFromSet:[NSCharacterSet whitespaceCharacterSet] intoString:&arg];
-                     }
-                     if (arg) [args addObject:arg];
-                 }
-                 
-                 const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
-                 if (access(springcutsPath, X_OK) != 0) {
-                     springcutsPath = "/usr/bin/springcuts";
-                 }
-                 
-                 if (access(springcutsPath, X_OK) != 0) {
-                     SRLog(@"ERROR: springcuts not found");
-                     send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-                     return;
-                 }
-                 
-                 char **argv = (char **)malloc((args.count + 2) * sizeof(char *));
-                 argv[0] = (char *)springcutsPath;
-                 for (NSUInteger i = 0; i < args.count; i++) {
-                     argv[i + 1] = (char *)[args[i] UTF8String];
-                 }
-                 argv[args.count + 1] = NULL;
-                 
-                 pid_t pid;
-                 extern char **environ;
-                 int result = posix_spawn(&pid, springcutsPath, NULL, NULL, argv, environ);
-                 free(argv);
-                 
-                 if (result == 0) {
-                     SRLog(@"Spawned springcuts pid=%d", pid);
-                 } else {
-                     SRLog(@"posix_spawn failed: %d (%s)", result, strerror(result));
-                 }
-            } @catch (NSException *e) {
-                SRLog(@"Crash launching shortcut fallback: %@", e);
-            }
-        });
-        
-        return [NSString stringWithFormat:@"Triggered shortcut: %@\n", shortcutName];
-        // ANC control - triggers Sonitus hooks
-        NSString *mode = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        NSString *listeningMode = nil;
-        
-        if ([mode isEqualToString:@"on"] || [mode isEqualToString:@"nc"]) {
-            listeningMode = @"AVOutputDeviceBluetoothListeningModeActiveNoiseCancellation";
-        } else if ([mode isEqualToString:@"off"]) {
-            listeningMode = @"AVOutputDeviceBluetoothListeningModeNormal";
-        } else if ([mode isEqualToString:@"transparency"] || [mode isEqualToString:@"ambient"]) {
-            listeningMode = @"AVOutputDeviceBluetoothListeningModeAudioTransparency";
-        } else {
-            SRLog(@"Unknown ANC mode: %@. Use: on, off, transparency", mode);
-            return nil;
-        }
-        
-        SRLog(@"Setting ANC mode: %@ -> %@", mode, listeningMode);
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            Class AVOutputContextClass = objc_getClass("AVOutputContext");
-            if (!AVOutputContextClass) {
-                SRLog(@"ERROR: AVOutputContext class not found");
-                return;
-            }
-            
-            AVOutputContext *context = [AVOutputContextClass sharedSystemAudioContext];
-            NSArray *devices = [context outputDevices];
-            SRLog(@"Found %lu output devices", (unsigned long)devices.count);
-            
-            for (AVOutputDevice *device in devices) {
-                NSArray *modes = [device availableBluetoothListeningModes];
-                if (modes.count > 0) {
-                    SRLog(@"Device '%@' supports listening modes: %@", device.name, modes);
-                    NSError *error = nil;
-                    BOOL success = [device setCurrentBluetoothListeningMode:listeningMode error:&error];
-                    if (success) {
-                        SRLog(@"ANC mode set successfully on %@", device.name);
-                    } else {
-                        SRLog(@"Failed to set ANC mode: %@", error);
-                    }
-                    return;
-                }
-            }
-            SRLog(@"No device with ANC support found");
-        });
-    } else if ([cleanCmd hasPrefix:@"button "]) {
-        // Hardware button simulation
-        NSString *btn = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        if ([btn isEqualToString:@"power"] || [btn isEqualToString:@"lock"]) {
-            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
-        } else if ([btn isEqualToString:@"home"]) {
-            simulate_home_press();
-        } else if ([btn isEqualToString:@"volup"]) {
-            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement, 0, 0);
-        } else if ([btn isEqualToString:@"voldown"]) {
-            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeDecrement, 0, 0);
-        } else if ([btn isEqualToString:@"mute"]) {
-            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Mute, 0, 0);
-        } else if ([btn isEqualToString:@"siri"]) {
-
-            
-            // Use HID Voice Command (0xCF) - Acts like a headset button, typically no "Home" side-effects
-            inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VoiceCommand, 600000000, 0); // 0.6s hold
-            
-            // Fallback: Bundle Launch (Reliable but loses context)
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                Class SBAssistantControllerClass = objc_getClass("SBAssistantController");
-                id assistant = [SBAssistantControllerClass sharedInstance];
-                if ([assistant respondsToSelector:@selector(isVisible)] && ![assistant isVisible]) {
-
-                    Class LSWorkspace = objc_getClass("LSApplicationWorkspace");
-                    if (LSWorkspace) {
-                        [[LSWorkspace defaultWorkspace] openApplicationWithBundleID:@"com.apple.SiriViewService"];
-                    }
-                }
-            });
-        } else {
-            SRLog(@"Unknown button: %@. Supported: power, home, volup, voldown, mute, siri", btn);
-        }
-    } else if ([cleanCmd isEqualToString:@"siri"]) {
-        return handle_command(@"button siri");
-    } else if ([cleanCmd isEqualToString:@"open control center"] ||
-               [cleanCmd isEqualToString:@"control center"] ||
-               [cleanCmd isEqualToString:@"open-control-center"] ||
-               [cleanCmd isEqualToString:@"control-center"]) {
-        __block BOOL opened = NO;
-        void (^ccBlock)(void) = ^{
-            Class ccClass = objc_getClass("SBControlCenterController");
-            if (!ccClass) {
-                SRLog(@"Control Center class unavailable");
-                return;
-            }
-
-            id controller = nil;
-            if ([ccClass respondsToSelector:@selector(sharedInstanceIfExists)]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                controller = [ccClass performSelector:@selector(sharedInstanceIfExists)];
-#pragma clang diagnostic pop
-            }
-
-            if (controller && [controller respondsToSelector:@selector(isVisible)]) {
-                if ([controller isVisible]) {
-                    [controller dismissAnimated:YES];
-                    opened = YES;
-                } else {
-                    [controller presentAnimated:YES];
-                    opened = YES;
-                }
-            } else if (controller && [controller respondsToSelector:@selector(_presentControlCenterGestureBeganWithReason:)]) {
-                 [controller performSelector:@selector(_presentControlCenterGestureBeganWithReason:) withObject:@"RemoteCompanion"];
-                 opened = YES;
-            }
-        };
-
-        if ([NSThread isMainThread]) {
-            ccBlock();
-        } else {
-            dispatch_sync(dispatch_get_main_queue(), ccBlock);
-        }
-        return opened ? @"Control Center opened\n" : @"Failed to open Control Center\n";
-    } else if ([cleanCmd isEqualToString:@"previous app"] || [cleanCmd isEqualToString:@"last app"]) {
-        if (g_previousAppBundleId) {
-            SRLog(@"[RemoteCommand] Returning to previous app: %@", g_previousAppBundleId);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                Class fbsClass = objc_getClass("FBSOpenApplicationService");
-                if (fbsClass) {
-                    id service = [fbsClass serviceWithDefaultShellEndpoint];
-                    [service openApplication:g_previousAppBundleId withOptions:nil completion:nil];
-                }
-            });
-            return [NSString stringWithFormat:@"Switched to previous app: %@", g_previousAppBundleId];
-        } else {
-            return @"No previous app available.";
-        }
-    } else if ([cleanCmd isEqualToString:@"switcher"] || [cleanCmd isEqualToString:@"app switcher"]) {
-        __block BOOL success = NO;
-        SRLog(@"Attempting to toggle App Switcher...");
-        void (^switcherBlock)(void) = ^{
-            Class SBClass = objc_getClass("SpringBoard");
-            id sb = [SBClass sharedApplication];
-            
-            // Method 1: SBMainSwitcherViewController (iOS 15/16 discovered methods)
-            Class viewCtrlClass = objc_getClass("SBMainSwitcherViewController");
-            if (viewCtrlClass) {
-                id switcher = nil;
-                if ([viewCtrlClass respondsToSelector:@selector(sharedInstance)]) {
-                    switcher = [viewCtrlClass sharedInstance];
-                }
-                if (switcher && [switcher respondsToSelector:@selector(toggleSwitcher)]) {
-                    [switcher performSelector:@selector(toggleSwitcher)];
-                    success = YES;
-                }
-            }
-            
-            // Method 2: SBLockScreenManager (if on lockscreen)
-            if (!success) {
-                Class LSMClass = objc_getClass("SBLockScreenManager");
-                if (LSMClass) {
-                    id manager = [LSMClass sharedInstance];
-                    if (manager && [manager respondsToSelector:@selector(isUILocked)] && [manager isUILocked]) {
-                        SRLog(@"Device locked, cannot toggle switcher");
-                    }
-                }
-            }
-
-            // Method 3: Standard springboard toggle if available
-            if (!success && [sb respondsToSelector:@selector(_toggleAppSwitcher)]) {
-                [sb performSelector:@selector(_toggleAppSwitcher)];
-                success = YES;
-            }
-            
-            // Method 4: Accessibility
-            if (!success && [sb respondsToSelector:@selector(_accessibilityHandleAppSwitcherEvent)]) {
-                SRLog(@"Using Method 4: _accessibilityHandleAppSwitcherEvent");
-                [sb _accessibilityHandleAppSwitcherEvent];
-                success = YES;
-            }
-        };
-
-        if ([NSThread isMainThread]) {
-            switcherBlock();
-        } else {
-            dispatch_sync(dispatch_get_main_queue(), switcherBlock);
-        }
-        SRLog(@"App Switcher toggle final success: %d", success);
-        return success ? @"Switcher toggled\n" : @"Failed to toggle switcher\n";
-    } else if ([cleanCmd hasPrefix:@"unlock "]) {
-        NSString *passcode = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            SBLockScreenManager *manager = [objc_getClass("SBLockScreenManager") sharedInstance];
-            if (manager && [manager isUILocked]) {
-                simulate_home_press(); // Wake device
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    [manager attemptUnlockWithPasscode:passcode];
-                });
-            }
-        });
-        return [NSString stringWithFormat:@"Attempting unlock with passcode: %@\n", passcode];
-    } else if ([cleanCmd hasPrefix:@"debug-class "]) {
-        NSString *className = [[cleanCmd substringFromIndex:12] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        SRLog(@"Debugging class: %@", className);
-        Class cls = objc_getClass([className UTF8String]);
-        if (!cls) {
-            SRLog(@"Class not found: %@", className);
-            return @"Class not found\n";
-        }
-        
-        unsigned int count = 0;
-        Method *methods = class_copyMethodList(cls, &count);
-        SRLog(@"Class %@ has %u methods:", className, count);
-        for (unsigned int i = 0; i < count; i++) {
-            SEL sel = method_getName(methods[i]);
-            SRLog(@"  - %@", NSStringFromSelector(sel));
-        }
-        free(methods);
-        return [NSString stringWithFormat:@"Found %u methods for %@. Check logs.\n", count, className];
-    } else if ([cleanCmd hasPrefix:@"debug-classes "]) {
-        NSString *search = [[cleanCmd substringFromIndex:14] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        SRLog(@"Searching for classes containing: %@", search);
-        
-        int numClasses = objc_getClassList(NULL, 0);
-        if (numClasses > 0) {
-            Class *classes = (Class *)malloc(sizeof(Class) * numClasses);
-            numClasses = objc_getClassList(classes, numClasses);
-            SRLog(@"Found %d total classes. Filtering...", numClasses);
-            for (int i = 0; i < numClasses; i++) {
-                NSString *className = NSStringFromClass(classes[i]);
-                if ([className rangeOfString:search options:NSCaseInsensitiveSearch].location != NSNotFound) {
-                    SRLog(@"  * %@", className);
-                }
-            }
-            free(classes);
-        }
-        return @"Search complete. Check logs.\n";
-    } else if ([cleanCmd hasPrefix:@"debug-call "]) {
-        // debug-call ClassName selectorName
-        NSString *args = [cleanCmd substringFromIndex:11];
-        NSArray *parts = [args componentsSeparatedByString:@" "];
-        if (parts.count >= 2) {
-            NSString *className = parts[0];
-            NSString *selName = parts[1];
-            Class cls = objc_getClass([className UTF8String]);
-            if (cls) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    id target = nil;
-                    if ([cls respondsToSelector:@selector(sharedInstance)]) {
-                        target = [cls performSelector:@selector(sharedInstance)];
-                    } else if ([cls respondsToSelector:@selector(sharedController)]) {
-                        target = [cls performSelector:@selector(sharedController)];
-                    }
-                    
-                    if (target) {
-                        SEL sel = NSSelectorFromString(selName);
-                        if ([target respondsToSelector:sel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                            id result = [target performSelector:sel];
-#pragma clang diagnostic pop
-                            SRLog(@"debug-call [%@ %@] returned: %@", className, selName, result);
-                        } else {
-                            SRLog(@"debug-call: Target does not respond to %@", selName);
-                        }
-                    } else {
-                        SRLog(@"debug-call: Could not get instance for %@", className);
-                    }
-                });
-            }
-        }
-        return @"Call initiated. Check logs.\n";
-    } else if ([cleanCmd isEqualToString:@"lock"]) {
-        // Smart lock: Only lock if currently unlocked
-        // ensure we run on main thread for UI/SB checks
-        dispatch_async(dispatch_get_main_queue(), ^{
-            Class SBLockScreenManagerClass = objc_getClass("SBLockScreenManager");
-            SBLockScreenManager *manager = nil;
-            if (SBLockScreenManagerClass) {
-                manager = [SBLockScreenManagerClass sharedInstance];
-            }
-            
-            SRLog(@"[SmartLock] Debug: Manager=%@, Checking isUILocked...", manager);
-
-            if (manager && [manager respondsToSelector:@selector(isUILocked)]) {
-                 BOOL locked = [manager isUILocked];
-                 SRLog(@"[SmartLock] isUILocked returned: %@", locked ? @"YES" : @"NO");
-                 
-                 if (locked) {
-                     SRLog(@"[SmartLock] Device already locked. Skipping power button.");
-                 } else {
-                     SRLog(@"[SmartLock] Device unlocked. Sending power button event...");
-                     inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
-                 }
-            } else {
-                SRLog(@"[SmartLock] ERROR: manager is nil or does not respond to isUILocked. Forcing lock.");
-                 inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
-            }
-        });
-        return @"Lock command sent\n";
-    } else if ([cleanCmd isEqualToString:@"lock status"] || [cleanCmd isEqualToString:@"is-locked"]) {
-        __block NSString *status = nil;
-        void (^lockStatusBlock)(void) = ^{
-            Class SBLockScreenManagerClass = objc_getClass("SBLockScreenManager");
-            SBLockScreenManager *manager = SBLockScreenManagerClass ? [SBLockScreenManagerClass sharedInstance] : nil;
-            if (manager && [manager respondsToSelector:@selector(isUILocked)]) {
-                status = [manager isUILocked] ? @"locked\n" : @"unlocked\n";
-            } else {
-                status = @"unlocked\n";
-            }
-        };
-        if ([NSThread isMainThread]) lockStatusBlock();
-        else dispatch_sync(dispatch_get_main_queue(), lockStatusBlock);
-        return status;
-    } else if ([cleanCmd isEqualToString:@"unlock"] || [cleanCmd hasPrefix:@"unlock "]) {
-        // Unlock phone: Only if currently locked!
-        
-        NSString *pin = @"2569";
-        if ([cleanCmd hasPrefix:@"unlock "]) {
-            pin = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        }
-        
-        SRLog(@"[SmartUnlock] Unlock command received for PIN: %@", pin);
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            Class SBLockScreenManagerClass = objc_getClass("SBLockScreenManager");
-            SBLockScreenManager *manager = (SBLockScreenManagerClass) ? [SBLockScreenManagerClass sharedInstance] : nil;
-            
-            BOOL isLocked = NO;
-            if (manager && [manager respondsToSelector:@selector(isUILocked)]) {
-                 isLocked = [manager isUILocked];
-            }
-            
-            if (!isLocked) {
-                 SRLog(@"[SmartUnlock] Device already unlocked. Doing nothing.");
-                 return;
-            }
-            
-            SRLog(@"[SmartUnlock] Device is locked. Checking screen state...");
-
-            // Check if screen is on before waking
-            BOOL needsWake = YES;
-            Class SBBacklightControllerClass = objc_getClass("SBBacklightController");
-            if (SBBacklightControllerClass) {
-                SBBacklightController *blController = [SBBacklightControllerClass sharedInstance];
-                if (blController) {
-                    if ([blController respondsToSelector:@selector(screenIsOn)]) {
-                        needsWake = ![blController screenIsOn];
-                        SRLog(@"[SmartUnlock] screenIsOn: %d", !needsWake);
-                    } else if ([blController respondsToSelector:@selector(backlightLevel)]) {
-                        float level = [blController backlightLevel];
-                        needsWake = (level == 0);
-                        SRLog(@"[SmartUnlock] backlightLevel: %f", level);
-                    }
-                }
-            }
-
-            if (needsWake) {
-                SRLog(@"[SmartUnlock] Screen is OFF. Sending wake (power button)...");
-                inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
-            } else {
-                SRLog(@"[SmartUnlock] Screen is already ON. Skipping wake.");
-            }
-            
-            // Wait for screen to wake/process (0.5s delay for more reliability)
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                if (!manager) {
-                    SRLog(@"[SmartUnlock] ERROR: Manager became nil!");
-                    return;
-                }
-                
-                // Try the direct unlock method
-                if ([manager respondsToSelector:@selector(attemptUnlockWithPasscode:)]) {
-                    SRLog(@"[SmartUnlock] Calling attemptUnlockWithPasscode...");
-                    BOOL success = [manager attemptUnlockWithPasscode:pin];
-                    SRLog(@"[SmartUnlock] attemptUnlockWithPasscode returned: %d", success);
-                } else if ([manager respondsToSelector:@selector(unlockUIFromSource:withOptions:)]) {
-                    SRLog(@"[SmartUnlock] Falling back to unlockUIFromSource...");
-                    [manager unlockUIFromSource:0 withOptions:nil];
-                    SRLog(@"[SmartUnlock] unlockUIFromSource called");
-                } else {
-                    SRLog(@"[SmartUnlock] ERROR: No supported unlock method found on manager!");
-                }
-            });
-        });
-        return @"unlocking_started\n";
-    }
-
-    else if ([cleanCmd hasPrefix:@"key "]) {
-        // Keyboard event simulation
-        // Usage: key <usage_in_hex_or_dec>
-        NSString *usageStr = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        unsigned int usage = 0;
-        NSScanner *scanner = [NSScanner scannerWithString:usageStr];
-        if ([usageStr hasPrefix:@"0x"]) {
-            [scanner scanHexInt:&usage];
-        } else {
-            int val = 0;
-            if ([scanner scanInt:&val]) usage = (unsigned int)val;
-        }
-        
-        if (usage > 0) {
-            inject_hid_event(kHIDPage_KeyboardOrKeypad, usage, 0, 0);
-        } else {
-            SRLog(@"Invalid key usage: %@", usageStr);
-        }
-
-    } else if ([cleanCmd isEqualToString:@"lock-toggle"] || [cleanCmd isEqualToString:@"lock toggle"]) {
-        // Toggle Lock State
-        dispatch_async(dispatch_get_main_queue(), ^{
-            Class SBLockScreenManagerClass = objc_getClass("SBLockScreenManager");
-            SBLockScreenManager *manager = nil;
-            if (SBLockScreenManagerClass) {
-                manager = [SBLockScreenManagerClass sharedInstance];
-            }
-            BOOL isLocked = NO;
-            if (manager && [manager respondsToSelector:@selector(isUILocked)]) {
-                isLocked = [manager isUILocked];
-            }
-            
-            SRLog(@"[LockToggle] Current State: %@", isLocked ? @"Locked" : @"Unlocked");
-            
-            if (isLocked) {
-                 dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                     handle_command(@"unlock");
-                 });
-            } else {
-                 dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                     handle_command(@"lock");
-                 });
-            }
-        });
-        
-        return @"lock_toggle_initiated\n";
-
-    } else if ([cleanCmd hasPrefix:@"url "]) {
-        NSString *urlString = [cleanCmd substringFromIndex:4];
-        urlString = [urlString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            Class SBLockScreenManagerClass = objc_getClass("SBLockScreenManager");
-            SBLockScreenManager *manager = (SBLockScreenManagerClass) ? [SBLockScreenManagerClass sharedInstance] : nil;
-            
-            BOOL isLocked = NO;
-            if (manager && [manager respondsToSelector:@selector(isUILocked)]) {
-                isLocked = [manager isUILocked];
-            }
-            
-            if (isLocked) {
-                 SRLog(@"[SmartURL] Device locked. Initiating stable unlock sequence before opening URL...");
-                 
-                 // 1. Check Screen State
-                 BOOL needsWake = YES;
-                 Class SBBacklightControllerClass = objc_getClass("SBBacklightController");
-                 if (SBBacklightControllerClass) {
-                     SBBacklightController *blController = [SBBacklightControllerClass sharedInstance];
-                     if (blController) {
-                         if ([blController respondsToSelector:@selector(screenIsOn)]) {
-                             needsWake = ![blController screenIsOn];
-                         } else if ([blController respondsToSelector:@selector(backlightLevel)]) {
-                             needsWake = ([blController backlightLevel] == 0);
-                         }
-                     }
-                 }
-
-                 if (needsWake) {
-                     SRLog(@"[SmartURL] Screen is OFF. Sending wake...");
-                     inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
-                 }
-                 
-                 // 2. Wait 0.5s then Unlock AND Open URL
-                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                     if (manager && [manager respondsToSelector:@selector(attemptUnlockWithPasscode:)]) {
-                          SRLog(@"[SmartURL] Attempting unlock with default PIN...");
-                          [manager attemptUnlockWithPasscode:@"2569"];
-                     }
-                     
-                     // 3. Wait another short moment for unlock animation/transition to finish
-                     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                         NSURL *url = [NSURL URLWithString:urlString];
-                         if (url) {
-                             SRLog(@"[SmartURL] Opening URL after unlock attempt: %@", urlString);
-                             [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
-                         }
-                     });
-                 });
-            } else {
-                 // Device already unlocked, open immediately
-                 NSURL *url = [NSURL URLWithString:urlString];
-                 if (url) {
-                     SRLog(@"[SmartURL] Device already unlocked. Opening URL: %@", urlString);
-                     [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
-                 }
-            }
-        });
-        return @"url_opening_initiated\n";
-    } else if ([cleanCmd hasPrefix:@"spotify playlist "] || 
-               [cleanCmd hasPrefix:@"spotify album "] || 
-               [cleanCmd hasPrefix:@"spotify artist "] || 
-               [cleanCmd hasPrefix:@"spotify play "] || 
-               [cleanCmd hasPrefix:@"spotify "]) {
-        NSString *arg = nil;
-        if ([cleanCmd hasPrefix:@"spotify playlist "]) arg = [cleanCmd substringFromIndex:17];
-        else if ([cleanCmd hasPrefix:@"spotify album "]) arg = [cleanCmd substringFromIndex:14];
-        else if ([cleanCmd hasPrefix:@"spotify artist "]) arg = [cleanCmd substringFromIndex:15];
-        else if ([cleanCmd hasPrefix:@"spotify play "]) arg = [cleanCmd substringFromIndex:13];
-        else arg = [cleanCmd substringFromIndex:8];
-        
-        arg = [arg stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        // Support full URIs or just IDs with intelligent defaulting
-        NSString *spotifyURI = nil;
-        
-        // Check for specific command prefixes to determine URI type
-        if ([cleanCmd hasPrefix:@"spotify album "]) {
-             if ([arg hasPrefix:@"spotify:"]) spotifyURI = arg;
-             else spotifyURI = [NSString stringWithFormat:@"spotify:album:%@", arg];
-        } else if ([cleanCmd hasPrefix:@"spotify artist "]) {
-             if ([arg hasPrefix:@"spotify:"]) spotifyURI = arg;
-             else spotifyURI = [NSString stringWithFormat:@"spotify:artist:%@", arg];
-        } else if ([arg hasPrefix:@"spotify:"]) {
-            spotifyURI = arg;
-        } else {
-            // Default to playlist if it's just an ID and command was generic "spotify" or "spotify playlist"
-            spotifyURI = [NSString stringWithFormat:@"spotify:playlist:%@", arg];
-        }
-        
-        // Append :play suffix to trigger autoplay (Spotify-specific feature)
-        NSString *playableURI = [spotifyURI stringByAppendingString:@":play"];
-        SRLog(@"Spotify Request: %@ (playable: %@)", spotifyURI, playableURI);
-        
-        // Forwarding to main queue for UI/URL operations
-        void (^launchSpotify)(void) = ^{
-            NSURL *url = [NSURL URLWithString:playableURI];
-            [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
-                if (success) {
-                    // Aggressive play trigger with multiple attempts
-                    // Strategy: Use explicit Play command (not toggle) with multiple fallbacks
-                    
-                    NSArray *delays = @[@0.5, @1.0, @1.5, @2.5];
-                    for (NSNumber *delayNum in delays) {
-                        float delay = [delayNum floatValue];
-                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                            SRLog(@"Spotify play attempt at %.1fs", delay);
-                            
-                            // Get MediaRemote handle
-                            void *mrHandle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW);
-                            if (mrHandle) {
-                                Boolean (*SendCommandToApp)(unsigned int, NSDictionary *, id, NSString *, unsigned int, dispatch_queue_t, void (^)(NSError *)) = dlsym(mrHandle, "MRMediaRemoteSendCommandToApp");
-                                if (SendCommandToApp) {
-                                    // Send explicit PLAY command (kMRPlay = 0) to Spotify
-                                    SRLog(@"Sending kMRPlay to com.spotify.client");
-                                    SendCommandToApp(kMRPlay, nil, nil, @"com.spotify.client", 0, dispatch_get_main_queue(), ^(NSError *err){
-                                         if (err) SRLog(@"MR Play Error: %@", err);
-                                         else SRLog(@"MR Play sent successfully");
-                                    });
-                                }
-                            }
-                            
-                            // Also try global Play command as fallback
-                            MRMediaRemoteSendCommand(kMRPlay, nil);
-                            
-                            // And HID Play key (not toggle - use dedicated Play usage if available)
-                            inject_consumer_key(kHIDUsage_Csmr_PlayOrPause);
-                        });
-                    }
-                }
-            }];
-        };
-
-        // Use same logic as 'url' for smart unlock
-        Class SBLockScreenManagerClass = objc_getClass("SBLockScreenManager");
-        SBLockScreenManager *manager = SBLockScreenManagerClass ? [SBLockScreenManagerClass sharedInstance] : nil;
-        
-        if (manager && [manager isUILocked]) {
-            SRLog(@"Device locked, attempting smart unlock for Spotify");
-            dispatch_async(dispatch_get_main_queue(), ^{
-                // Wake screen using HID Power button (simulated)
-                inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_Power, 0, 0);
-                
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    if ([manager respondsToSelector:@selector(attemptUnlockWithPasscode:)]) {
-                        [manager attemptUnlockWithPasscode:@"2569"];
-                    }
-                    
-                    launchSpotify();
-                });
-            });
-            return @"unlocking_and_playing_spotify\n";
-        } else {
-            dispatch_async(dispatch_get_main_queue(), launchSpotify);
-            return @"playing_spotify\n";
-        }
-    } else if ([cleanCmd isEqualToString:@"audiomix"]) {
-        BOOL current = get_audiomix_state();
-        toggle_audiomix(!current);
-        return [NSString stringWithFormat:@"AudioMix %@\n", !current ? @"Enabled" : @"Disabled"];
-    } else if ([cleanCmd hasPrefix:@"audiomix "]) {
-        NSString *subCmd = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if ([subCmd isEqualToString:@"on"]) {
-            toggle_audiomix(YES);
-            return @"AudioMix Enabled\n";
-        } else if ([subCmd isEqualToString:@"off"]) {
-            toggle_audiomix(NO);
-            return @"AudioMix Disabled\n";
-        } else if ([subCmd isEqualToString:@"status"]) {
-            BOOL current = get_audiomix_state();
-            return current ? @"AudioMix ON\n" : @"AudioMix OFF\n";
-        } else if ([subCmd isEqualToString:@"toggle"]) {
-            BOOL current = get_audiomix_state();
-            toggle_audiomix(!current);
-            return [NSString stringWithFormat:@"AudioMix %@\n", !current ? @"Enabled" : @"Disabled"];
-        }
-    } else if ([cleanCmd isEqualToString:@"toast"]) {
-        rc_show_hud_toast(@"Test Toast", nil, nil);
-        return @"Toast displayed\n";
-    } else if ([cleanCmd hasPrefix:@"toast "]) {
-        NSString *argsStr = [[cleanCmd substringFromIndex:6] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        NSArray *arguments = rc_parse_quoted_arguments(argsStr);
-        
-        NSString *title = nil;
-        NSString *subtitle = nil;
-        NSString *icon = nil;
-        
-        if (arguments.count >= 3) {
-            title = arguments[0];
-            subtitle = arguments[1];
-            icon = arguments[2];
-        } else if (arguments.count == 2) {
-            title = arguments[0];
-            // Check if second argument is a valid symbol image
-            if ([UIImage systemImageNamed:arguments[1]]) {
-                icon = arguments[1];
-            } else {
-                subtitle = arguments[1];
-            }
-        } else if (arguments.count == 1) {
-            title = arguments[0];
-        }
-        
-        rc_show_hud_toast(title, subtitle, icon);
-        return [NSString stringWithFormat:@"Toast displayed: '%@' - '%@' (%@)\n", title ?: @"", subtitle ?: @"", icon ?: @"none"];
-    } else if ([cleanCmd isEqualToString:@"queuealbum"] || [cleanCmd isEqualToString:@"queue album"]) {
-        // Signal AudioReceiver app to queue the album of the currently playing song
-        [@"queuealbum" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        dispatch_async(dispatch_get_main_queue(), ^{
-             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
-             [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
-        });
-        notify_post("com.saihgupr.audiostream.queuealbum");
-        rc_show_hud_toast(@"Album Queued", @"Queuing album of current song", @"music.note.list");
-        return @"Queue album command sent to AudioReceiver\n";
-    } else if ([cleanCmd isEqualToString:@"queueartist"] || [cleanCmd isEqualToString:@"queue artist"]) {
-        // Signal AudioReceiver app to queue the artist of the currently playing song
-        [@"queueartist" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        dispatch_async(dispatch_get_main_queue(), ^{
-             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
-             [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
-        });
-        notify_post("com.saihgupr.audiostream.queueartist");
-        rc_show_hud_toast(@"Artist Queued", @"Queuing artist of current song", @"music.mic");
-        return @"Queue artist command sent to AudioReceiver\n";
-    } else if ([cleanCmd isEqualToString:@"shuffleall"] || [cleanCmd isEqualToString:@"shuffle all songs"] || [cleanCmd isEqualToString:@"suffle all songs"]) {
-        // Signal AudioReceiver app to shuffle all songs and play
-        [@"shuffleall" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        dispatch_async(dispatch_get_main_queue(), ^{
-             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
-             [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
-        });
-        notify_post("com.saihgupr.audiostream.shuffleall");
-        rc_show_hud_toast(@"Shuffle All Songs", @"Shuffling all songs and playing", @"shuffle");
-        return @"Shuffle all command sent to AudioReceiver\n";
-    } else if ([cleanCmd hasPrefix:@"playlist "] || [cleanCmd hasPrefix:@"play playlist "] || [cleanCmd hasPrefix:@"shuffle playlist "] || [cleanCmd hasPrefix:@"suffle playlist "]) {
-        NSString *playlistName = @"";
-        if ([cleanCmd hasPrefix:@"play playlist "]) {
-            playlistName = [[cleanCmd substringFromIndex:14] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else if ([cleanCmd hasPrefix:@"shuffle playlist "]) {
-            playlistName = [[cleanCmd substringFromIndex:17] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else if ([cleanCmd hasPrefix:@"suffle playlist "]) {
-            playlistName = [[cleanCmd substringFromIndex:16] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else if ([cleanCmd hasPrefix:@"playlist "]) {
-            playlistName = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        }
-        playlistName = [playlistName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        playlistName = [playlistName stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\"'"]];
-        
-        if (playlistName.length > 0) {
-            NSString *cmdStr = [NSString stringWithFormat:@"playlist:%@", playlistName];
-            [cmdStr writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-            [playlistName writeToFile:@"/tmp/audiostream_pending_playlist" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                 FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
-                 [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
-            });
-            notify_post("com.saihgupr.audiostream.playplaylist");
-            rc_show_hud_toast(@"Playlist Queued", [NSString stringWithFormat:@"Shuffling '%@'", playlistName], @"music.note.list");
-            return [NSString stringWithFormat:@"Play playlist '%@' command sent to AudioReceiver\n", playlistName];
-        }
-    } else if ([cleanCmd hasPrefix:@"dnd "]) {
-        NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if ([subCmd isEqualToString:@"on"]) {
-            toggle_dnd(YES);
-            return @"DND Enabled\n";
-        } else if ([subCmd isEqualToString:@"off"]) {
-            toggle_dnd(NO);
-            return @"DND Disabled\n";
-        } else if ([subCmd isEqualToString:@"status"]) {
-            BOOL current = get_dnd_state();
-            return current ? @"DND ON\n" : @"DND OFF\n";
-        } else if ([subCmd isEqualToString:@"toggle"]) {
-            BOOL current = get_dnd_state();
-            toggle_dnd(!current);
-            return [NSString stringWithFormat:@"DND %@\n", !current ? @"Enabled" : @"Disabled"];
-        }
-    } else if ([cleanCmd hasPrefix:@"lpm "]) {
-        NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if ([subCmd isEqualToString:@"on"]) {
-            toggle_lpm(YES);
-            return @"Low Power Mode Enabled\n";
-        } else if ([subCmd isEqualToString:@"off"]) {
-            toggle_lpm(NO);
-            return @"Low Power Mode Disabled\n";
-        } else if ([subCmd isEqualToString:@"status"]) {
-            BOOL current = get_lpm_state();
-            return current ? @"Low Power Mode ON\n" : @"Low Power Mode OFF\n";
-        } else if ([subCmd isEqualToString:@"toggle"]) {
-            BOOL current = get_lpm_state();
-            toggle_lpm(!current);
-            return [NSString stringWithFormat:@"Low Power Mode %@\n", !current ? @"Enabled" : @"Disabled"];
-        }
-    } else if ([cleanCmd hasPrefix:@"low power mode "]) {
-        NSString *subCmd = [[cleanCmd substringFromIndex:15] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if ([subCmd isEqualToString:@"on"]) {
-            toggle_lpm(YES);
-            return @"Low Power Mode Enabled\n";
-        } else if ([subCmd isEqualToString:@"off"]) {
-            toggle_lpm(NO);
-            return @"Low Power Mode Disabled\n";
-        } else if ([subCmd isEqualToString:@"status"]) {
-            BOOL current = get_lpm_state();
-            return current ? @"Low Power Mode ON\n" : @"Low Power Mode OFF\n";
-        } else if ([subCmd isEqualToString:@"toggle"]) {
-            BOOL current = get_lpm_state();
-            toggle_lpm(!current);
-            return [NSString stringWithFormat:@"Low Power Mode %@\n", !current ? @"Enabled" : @"Disabled"];
-        }
-    } else if ([cleanCmd hasPrefix:@"low power "]) {
-        NSString *subCmd = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if ([subCmd isEqualToString:@"on"]) {
-            toggle_lpm(YES);
-            return @"Low Power Mode Enabled\n";
-        } else if ([subCmd isEqualToString:@"off"]) {
-            toggle_lpm(NO);
-            return @"Low Power Mode Disabled\n";
-        } else if ([subCmd isEqualToString:@"status"]) {
-            BOOL current = get_lpm_state();
-            return current ? @"Low Power Mode ON\n" : @"Low Power Mode OFF\n";
-        } else if ([subCmd isEqualToString:@"toggle"]) {
-            BOOL current = get_lpm_state();
-            toggle_lpm(!current);
-            return [NSString stringWithFormat:@"Low Power Mode %@\n", !current ? @"Enabled" : @"Disabled"];
-        }
-    } else if ([cleanCmd isEqualToString:@"orientation status"]) {
-        __block NSString *result = nil;
-        void (^orientationBlock)(void) = ^{
-            SpringBoard *sb = (SpringBoard *)[UIApplication sharedApplication];
-            UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
-            if ([sb respondsToSelector:@selector(activeInterfaceOrientation)]) {
-                orientation = [sb activeInterfaceOrientation];
-            }
-            
-            if (orientation == UIInterfaceOrientationPortrait || orientation == UIInterfaceOrientationPortraitUpsideDown) {
-                result = @"PORTRAIT\n";
-            } else {
-                result = @"LANDSCAPE\n";
-            }
-        };
-        
-        if ([NSThread isMainThread]) orientationBlock();
-        else dispatch_sync(dispatch_get_main_queue(), orientationBlock);
-        return result;
-    } else if ([cleanCmd isEqualToString:@"orientation lock"] || [cleanCmd isEqualToString:@"orientation"] || [cleanCmd isEqualToString:@"rotation"] || [cleanCmd isEqualToString:@"rotate"]) {
-        return handle_command(@"orientation toggle");
-    } else if ([cleanCmd hasPrefix:@"rotate "]) {
-        NSString *arg = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        __block NSString *result = nil;
-        void (^rotateBlock)(void) = ^{
-            SBOrientationLockManager *manager = [objc_getClass("SBOrientationLockManager") sharedInstance];
-            if ([arg isEqualToString:@"lock"]) {
-                [manager lock];
-                result = @"Orientation Locked\n";
-            } else if ([arg isEqualToString:@"unlock"]) {
-                [manager unlock];
-                result = @"Orientation Unlocked\n";
-            } else if ([arg isEqualToString:@"toggle"]) {
-                if ([manager isUserLocked]) [manager unlock];
-                else [manager lock];
-                result = [NSString stringWithFormat:@"Orientation %@\n", ![manager isUserLocked] ? @"Locked" : @"Unlocked"];
-            } else {
-                BOOL isLocked = [manager isUserLocked];
-                result = [NSString stringWithFormat:@"Orientation Lock Status: %@\n", isLocked ? @"Locked" : @"Unlocked"];
-            }
-        };
-        
-        if ([NSThread isMainThread]) rotateBlock();
-        else dispatch_sync(dispatch_get_main_queue(), rotateBlock);
-        return result;
-    } else if ([cleanCmd isEqualToString:@"rotate"]) {
-         __block NSString *result = nil;
-         void (^statusBlock)(void) = ^{
-             SBOrientationLockManager *manager = [objc_getClass("SBOrientationLockManager") sharedInstance];
-             BOOL isLocked = [manager isUserLocked];
-             result = [NSString stringWithFormat:@"Orientation Lock Status: %@\n", isLocked ? @"Locked" : @"Unlocked"];
-         };
-         
-         if ([NSThread isMainThread]) statusBlock();
-         else dispatch_sync(dispatch_get_main_queue(), statusBlock);
-         return result;
-    } else if ([cleanCmd isEqualToString:@"mute"]) {
-        return @"Usage: rc mute [on|off|status]\n";
-    } else if ([cleanCmd hasPrefix:@"mute "]) {
-        NSString *subCmd = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        // Try AVSystemController first (Media State)
-        void *celestialHandle = dlopen("/System/Library/PrivateFrameworks/Celestial.framework/Celestial", RTLD_NOW);
-        if (celestialHandle) {
-             Class AVSystemControllerClass = objc_getClass("AVSystemController");
-             if (AVSystemControllerClass) {
-                 @try {
-                     id controller = [AVSystemControllerClass sharedAVSystemController];
-                     if (controller) {
-                         if ([subCmd isEqualToString:@"status"]) {
-                             float currentVol = 0;
-                             if ([controller respondsToSelector:@selector(getVolume:forCategory:)]) {
-                                 [controller getVolume:&currentVol forCategory:@"Audio/Video"];
-                             }
-                             
-                             // Also check mute state
-                             BOOL isMuted = NO;
-                             if ([controller respondsToSelector:@selector(getActiveCategoryMuted:)]) {
-                                 [controller getActiveCategoryMuted:&isMuted];
-                             }
-                             
-                             if (isMuted || currentVol == 0.0f) {
-                                 return @"Muted (Media)\n";
-                             } else {
-                                 return [NSString stringWithFormat:@"Unmuted (Media, Vol: %d%%)\n", (int)(currentVol * 100)];
-                             }
-                             
-                         } else if ([subCmd isEqualToString:@"on"]) {
-                             // Save current volume if we haven't already
-                             float currentVol = 0;
-                             if ([controller respondsToSelector:@selector(getVolume:forCategory:)]) {
-                                 [controller getVolume:&currentVol forCategory:@"Audio/Video"];
-                                 if (currentVol > 0) {
-                                     sr_previous_volume = currentVol;
-                                     SRLog(@"Saved previous volume: %f", sr_previous_volume);
-                                 }
-                             }
-                             
-                             // Set volume to 0
-                             if ([controller respondsToSelector:@selector(setActiveCategoryVolumeTo:)]) {
-                                 [controller setActiveCategoryVolumeTo:0.0f];
-                                 return @"Muted (Media)\n";
-                             }
-                             
-                         } else if ([subCmd isEqualToString:@"off"]) {
-                             // Check if already unmuted (vol > 0)
-                             float currentVol = 0;
-                             if ([controller respondsToSelector:@selector(getVolume:forCategory:)]) {
-                                 [controller getVolume:&currentVol forCategory:@"Audio/Video"];
-                             }
-                             
-                             if (currentVol > 0) {
-                                  return @"Already Unmuted\n";
-                             }
-
-                             // Restore volume
-                             float targetVol = (sr_previous_volume > 0) ? sr_previous_volume : 0.5f; // Default 50%
-                             
-                             if ([controller respondsToSelector:@selector(setActiveCategoryVolumeTo:)]) {
-                                 [controller setActiveCategoryVolumeTo:targetVol];
-                                 sr_previous_volume = -1.0f; // Reset
-                                 return @"Unmuted (Media)\n";
-                             }
-                         } else if ([subCmd isEqualToString:@"toggle"]) {
-                             float currentVol = 0;
-                             if ([controller respondsToSelector:@selector(getVolume:forCategory:)]) {
-                                 [controller getVolume:&currentVol forCategory:@"Audio/Video"];
-                             }
-                             BOOL isMuted = NO;
-                             if ([controller respondsToSelector:@selector(getActiveCategoryMuted:)]) {
-                                 [controller getActiveCategoryMuted:&isMuted];
-                             }
-                             
-                             if (isMuted || currentVol == 0.0f) {
-                                 return handle_command(@"mute off");
-                             } else {
-                                 return handle_command(@"mute on");
-                             }
-                         }
-                     }
-                 } @catch (NSException *e) {
-                     SRLog(@"Exception in mute: %@", e);
-                 }
-             }
-        }
-        
-        return @"Error: AVSystemController failed. Cannot control media mute.\n";
-    } else if ([cleanCmd isEqualToString:@"volume up"] || [cleanCmd isEqualToString:@"vol up"]) {
-        inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement, 0, 0);
-        return @"OK\n";
-    } else if ([cleanCmd isEqualToString:@"volume down"] || [cleanCmd isEqualToString:@"vol down"]) {
-        inject_hid_event(kHIDPage_Consumer, kHIDUsage_Csmr_VolumeDecrement, 0, 0);
-        return @"OK\n";
-    } else if ([cleanCmd hasPrefix:@"volume "] || [cleanCmd hasPrefix:@"volume"]) { // Matches "volume" and "volume <N>"
-        NSString *arg = nil;
-        if (cleanCmd.length > 7) {
-             arg = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else if (cleanCmd.length > 6) {
-             arg = [[cleanCmd substringFromIndex:6] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        }
-        
-        void *celestialHandle = dlopen("/System/Library/PrivateFrameworks/Celestial.framework/Celestial", RTLD_NOW);
-        if (celestialHandle) {
-             Class AVSystemControllerClass = objc_getClass("AVSystemController");
-             if (AVSystemControllerClass) {
-                 @try {
-                     id controller = [AVSystemControllerClass sharedAVSystemController];
-                     if (controller) {
-                         // Set Volume
-                         if (arg && arg.length > 0) {
-                             // Safety check: ensure arg starts with a digit before using floatValue
-                             // as floatValue returns 0.0 for non-numeric strings like "up"
-                             if ([[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[arg characterAtIndex:0]]) {
-                                 float target = [arg floatValue] / 100.0f;
-                                 if (target < 0) target = 0;
-                                 if (target > 1) target = 1;
-                                 
-                                 if ([controller respondsToSelector:@selector(setActiveCategoryVolumeTo:)]) {
-                                     [controller setActiveCategoryVolumeTo:target];
-                                     return [NSString stringWithFormat:@"Volume set to %d%%\n", (int)(target * 100)];
-                                 }
-                             } else {
-                                 SRLog(@"Ignored non-numeric volume argument: %@", arg);
-                                 return [NSString stringWithFormat:@"Error: Invalid volume level '%@'\n", arg];
-                             }
-                         }
-                         
-                         // Get Volume (default)
-                         float volume = 0;
-                         if ([controller respondsToSelector:@selector(getVolume:forCategory:)]) {
-                             [controller getVolume:&volume forCategory:@"Audio/Video"];
-                             int volumePercent = (int)(volume * 100);
-                             return [NSString stringWithFormat:@"Volume: %d%%\n", volumePercent];
-                         }
-                     }
-                 } @catch (NSException *e) {
-                     SRLog(@"Exception volume: %@", e);
-                 }
-             }
-        }
-        return @"Error: AVSystemController failed.\n";
-    } else if ([cleanCmd hasPrefix:@"uiopen "]) {
-        NSString *bundleId = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        NSLog(@"[RemoteCommand] UIOPEN Bundle ID: %@", bundleId);
-        dispatch_async(dispatch_get_main_queue(), ^{
-             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
-             [service openApplication:bundleId withOptions:nil completion:nil];
-        });
-        return [NSString stringWithFormat:@"Opened %@", bundleId];
-    } else if ([cleanCmd hasPrefix:@"open "]) {
-        // Open app by name or Bundle ID
-        NSString *appName = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        // If it looks like a Bundle ID (contains dot), use FBSOpenApplicationService (faster)
-        if ([appName containsString:@"."]) {
-             NSLog(@"[RemoteCommand] Opening Bundle ID via FBS: %@", appName);
-             dispatch_async(dispatch_get_main_queue(), ^{
-                 FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
-                 [service openApplication:appName withOptions:nil completion:nil];
-             });
-             return [NSString stringWithFormat:@"Opened %@", appName];
-        }
-
-        NSString *lowerName = [appName lowercaseString];
-        NSString *urlString = nil;
-        
-        // Common app URL schemes
-        if ([lowerName isEqualToString:@"spotify"]) urlString = @"spotify://";
-        else if ([lowerName isEqualToString:@"music"]) urlString = @"music://";
-        else if ([lowerName isEqualToString:@"youtube"]) urlString = @"youtube://";
-        else if ([lowerName isEqualToString:@"safari"]) urlString = @"x-web-search://";
-        else if ([lowerName isEqualToString:@"settings"]) urlString = @"App-prefs://";
-        else if ([lowerName isEqualToString:@"camera"]) urlString = @"camera://";
-        else if ([lowerName isEqualToString:@"photos"]) urlString = @"photos-redirect://";
-        else if ([lowerName isEqualToString:@"maps"]) urlString = @"maps://";
-        else if ([lowerName isEqualToString:@"messages"]) urlString = @"sms://";
-        else if ([lowerName isEqualToString:@"phone"]) urlString = @"tel://";
-        else if ([lowerName isEqualToString:@"mail"]) urlString = @"mailto://";
-        else if ([lowerName isEqualToString:@"notes"]) urlString = @"mobilenotes://";
-        else if ([lowerName isEqualToString:@"reminders"]) urlString = @"x-apple-reminderkit://";
-        else if ([lowerName isEqualToString:@"calendar"]) urlString = @"calshow://";
-        else if ([lowerName isEqualToString:@"clock"]) urlString = @"clock-alarm://";
-        else if ([lowerName isEqualToString:@"weather"]) urlString = @"weather://";
-        else if ([lowerName isEqualToString:@"shortcuts"]) urlString = @"shortcuts://";
-        else urlString = [NSString stringWithFormat:@"%@://", lowerName]; // Try app name as scheme
-        
-        NSLog(@"[RemoteCommand] Opening app: %@ via %@", appName, urlString);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            NSURL *url = [NSURL URLWithString:urlString];
-            if (url) {
-                [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
-            }
-        });
-    } else if ([cleanCmd isEqualToString:@"bluetooth-on"] || [cleanCmd isEqualToString:@"bt-on"] || [cleanCmd isEqualToString:@"bluetooth on"] || [cleanCmd isEqualToString:@"bt on"]) {
-        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
-        if (btHandle) {
-            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
-            if (BluetoothManagerClass) {
-                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
-                [btManager setEnabled:YES];
-                [btManager setPowered:YES];
-                SRLog(@"Bluetooth enabled");
-                return @"Bluetooth Enabled\n";
-            }
-        }
-        return @"Error: BluetoothManager not found\n";
-    } else if ([cleanCmd isEqualToString:@"bluetooth status"] || [cleanCmd isEqualToString:@"bt status"]) {
-        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
-        if (btHandle) {
-            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
-            if (BluetoothManagerClass) {
-                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
-                BOOL isPowered = [btManager powered];
-                return [NSString stringWithFormat:@"Bluetooth %@\n", isPowered ? @"ON" : @"OFF"];
-            }
-        }
-        return @"Error: BluetoothManager not found\n";
-    } else if ([cleanCmd isEqualToString:@"bluetooth-off"] || [cleanCmd isEqualToString:@"bt-off"] || [cleanCmd isEqualToString:@"bluetooth off"] || [cleanCmd isEqualToString:@"bt off"]) {
-        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
-        if (btHandle) {
-            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
-            if (BluetoothManagerClass) {
-                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
-                [btManager setEnabled:NO];
-                [btManager setPowered:NO];
-                SRLog(@"Bluetooth disabled");
-                return @"Bluetooth Disabled\n";
-            }
-        }
-        return @"Error: BluetoothManager not found\n";
-    } else if ([cleanCmd isEqualToString:@"bluetooth list"] || [cleanCmd isEqualToString:@"bt list"]) {
-        NSMutableString *output = [NSMutableString string];
-        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
-        if (btHandle) {
-            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
-            if (BluetoothManagerClass) {
-                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
-                for (BluetoothDevice *device in [btManager pairedDevices]) {
-                    NSString *name = [device name] ?: @"Unknown Device";
-                    [output appendFormat:@"%@\n", name];
-                }
-            }
-        }
-        return output.length > 0 ? output : @"No paired Bluetooth devices found\n";
-    } else if ([cleanCmd hasPrefix:@"bt-connect "] || [cleanCmd hasPrefix:@"bt connect "] || [cleanCmd hasPrefix:@"bluetooth connect "]) {
-        NSString *deviceName;
-        if ([cleanCmd hasPrefix:@"bt connect "]) deviceName = [cleanCmd substringFromIndex:11];
-        else if ([cleanCmd hasPrefix:@"bluetooth connect "]) deviceName = [cleanCmd substringFromIndex:18];
-        else deviceName = [cleanCmd substringFromIndex:11];
-        deviceName = [deviceName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
-        if (btHandle) {
-            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
-            if (BluetoothManagerClass) {
-                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
-                for (BluetoothDevice *device in [btManager pairedDevices]) {
-                    if ([[device name] localizedCaseInsensitiveContainsString:deviceName]) {
-                        [device connect];
-                        SRLog(@"Connecting to BT device: %@", [device name]);
-                        return [NSString stringWithFormat:@"Connecting to %@\n", [device name]];
-                    }
-                }
-            }
-        }
-        return @"Error: Device not found or BluetoothManager failed\n";
-    } else if ([cleanCmd hasPrefix:@"bt-disconnect "] || [cleanCmd hasPrefix:@"bt disconnect "] || [cleanCmd hasPrefix:@"bluetooth disconnect "]) {
-        NSString *deviceName;
-        if ([cleanCmd hasPrefix:@"bt disconnect "]) deviceName = [cleanCmd substringFromIndex:14];
-        else if ([cleanCmd hasPrefix:@"bluetooth disconnect "]) deviceName = [cleanCmd substringFromIndex:21];
-        else deviceName = [cleanCmd substringFromIndex:14];
-        deviceName = [deviceName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
-        if (btHandle) {
-            Class BluetoothManagerClass = objc_getClass("BluetoothManager");
-            if (BluetoothManagerClass) {
-                BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
-                for (BluetoothDevice *device in [btManager pairedDevices]) {
-                    if ([[device name] localizedCaseInsensitiveContainsString:deviceName]) {
-                        [device disconnect];
-                        SRLog(@"Disconnecting BT device: %@", [device name]);
-                        return [NSString stringWithFormat:@"Disconnecting %@\n", [device name]];
-                    }
-                }
-            }
-        }
-        return @"Error: Device not found or BluetoothManager failed\n";
-    } else if ([cleanCmd hasPrefix:@"appearance "]) {
-        NSString *arg = [[cleanCmd substringFromIndex:11] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        void *uikitHandle = dlopen("/System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore", RTLD_NOW);
-        if (uikitHandle) {
-            Class StyleModeClass = objc_getClass("UISUserInterfaceStyleMode");
-            if (StyleModeClass) {
-                id styleMode = [[StyleModeClass alloc] init];
-                if ([arg isEqualToString:@"dark"]) {
-                    [styleMode setModeValue:2];
-                    return @"Appearance set to Dark\n";
-                } else if ([arg isEqualToString:@"light"]) {
-                    [styleMode setModeValue:1];
-                    return @"Appearance set to Light\n";
-                } else if ([arg isEqualToString:@"toggle"]) {
-                    NSInteger current = [styleMode modeValue];
-                    NSInteger next = (current == 2) ? 1 : 2;
-                    [styleMode setModeValue:next];
-                    return [NSString stringWithFormat:@"Appearance toggled to %@\n", next == 2 ? @"Dark" : @"Light"];
-                } else if ([arg isEqualToString:@"status"]) {
-                    NSInteger current = [styleMode modeValue];
-                    return [NSString stringWithFormat:@"Appearance: %@\n", current == 2 ? @"Dark" : @"Light"];
-                }
-            }
-        }
-        return @"Error: UISUserInterfaceStyleMode not found\n";
-    } else if ([cleanCmd isEqualToString:@"wifi-on"] || [cleanCmd isEqualToString:@"wi-on"] || [cleanCmd isEqualToString:@"wifi on"]) {
-        SBWiFiManager *manager = [objc_getClass("SBWiFiManager") sharedInstance];
-        if (manager) {
-            [manager setWiFiEnabled:YES];
-            SRLog(@"WiFi enabled");
-            return @"WiFi Enabled\n";
-        }
-        return @"Error: SBWiFiManager not found\n";
-    } else if ([cleanCmd isEqualToString:@"wifi status"] || [cleanCmd isEqualToString:@"wi status"]) {
-        SBWiFiManager *manager = [objc_getClass("SBWiFiManager") sharedInstance];
-        if (manager) {
-            BOOL isEnabled = [manager wiFiEnabled];
-            return [NSString stringWithFormat:@"WiFi %@\n", isEnabled ? @"ON" : @"OFF"];
-        }
-        return @"Error: SBWiFiManager not found\n";
-    } else if ([cleanCmd isEqualToString:@"wifi-off"] || [cleanCmd isEqualToString:@"wi-off"] || [cleanCmd isEqualToString:@"wifi off"]) {
-        SBWiFiManager *manager = [objc_getClass("SBWiFiManager") sharedInstance];
-        if (manager) {
-            [manager setWiFiEnabled:NO];
-            SRLog(@"WiFi disabled");
-            return @"WiFi Disabled\n";
-        }
-        return @"Error: SBWiFiManager not found\n";
-    } else if ([cleanCmd isEqualToString:@"cellular-on"] || [cleanCmd isEqualToString:@"cell-on"] || [cleanCmd isEqualToString:@"cellular on"] || [cleanCmd isEqualToString:@"cell on"]) {
-        if (set_cellular_state(YES)) {
-            SRLog(@"Cellular data enabled");
-            return @"Cellular Data Enabled\n";
-        }
-        return @"Error: CoreTelephony call failed\n";
-    } else if ([cleanCmd isEqualToString:@"cellular status"] || [cleanCmd isEqualToString:@"cell status"]) {
-        BOOL isEnabled = get_cellular_state();
-        return [NSString stringWithFormat:@"Cellular Data %@\n", isEnabled ? @"ON" : @"OFF"];
-    } else if ([cleanCmd isEqualToString:@"cellular-off"] || [cleanCmd isEqualToString:@"cell-off"] || [cleanCmd isEqualToString:@"cellular off"] || [cleanCmd isEqualToString:@"cell off"]) {
-        if (set_cellular_state(NO)) {
-            SRLog(@"Cellular data disabled");
-            return @"Cellular Data Disabled\n";
-        }
-        return @"Error: CoreTelephony call failed\n";
-    } else if ([cleanCmd isEqualToString:@"cellular-toggle"] || [cleanCmd isEqualToString:@"cell-toggle"] || [cleanCmd isEqualToString:@"cellular toggle"] || [cleanCmd isEqualToString:@"cell toggle"] || [cleanCmd isEqualToString:@"cellular"] || [cleanCmd isEqualToString:@"cell"]) {
-        BOOL current = get_cellular_state();
-        if (set_cellular_state(!current)) {
-            SRLog(@"Cellular data toggled: %d -> %d", current, !current);
-            return [NSString stringWithFormat:@"Cellular Data Toggled: %@\n", !current ? @"ON" : @"OFF"];
-        }
-        return @"Error: CoreTelephony call failed\n";
-    } else if ([cleanCmd isEqualToString:@"airplane on"]) {
-        SRLog(@"Executing airplane ON...");
-        dlopen("/System/Library/PrivateFrameworks/AppSupport.framework/AppSupport", RTLD_NOW);
-        Class RPClass = objc_getClass("RadiosPreferences");
-        if (RPClass) {
-            RadiosPreferences *prefs = [[RPClass alloc] init];
-            [prefs setAirplaneMode:YES];
-            [prefs synchronize];
-            SRLog(@"Airplane Mode ON");
-            return @"Airplane Mode ON\n";
-        }
-        return @"Error: RadiosPreferences not found\n";
-    } else if ([cleanCmd isEqualToString:@"airplane off"]) {
-        SRLog(@"Executing airplane OFF...");
-        dlopen("/System/Library/PrivateFrameworks/AppSupport.framework/AppSupport", RTLD_NOW);
-        Class RPClass = objc_getClass("RadiosPreferences");
-        if (RPClass) {
-            RadiosPreferences *prefs = [[RPClass alloc] init];
-            [prefs setAirplaneMode:NO];
-            [prefs synchronize];
-            SRLog(@"Airplane Mode OFF");
-            return @"Airplane Mode OFF\n";
-        }
-        return @"Error: RadiosPreferences not found\n";
-    } else if ([cleanCmd isEqualToString:@"airplane"] || [cleanCmd isEqualToString:@"airplane toggle"]) {
-        SRLog(@"Executing airplane toggle...");
-        dlopen("/System/Library/PrivateFrameworks/AppSupport.framework/AppSupport", RTLD_NOW);
-        Class RPClass = objc_getClass("RadiosPreferences");
-        if (RPClass) {
-            RadiosPreferences *prefs = [[RPClass alloc] init];
-            BOOL current = [prefs airplaneMode];
-            [prefs setAirplaneMode:!current];
-            [prefs synchronize];
-            SRLog(@"Airplane Mode Toggled: %d -> %d", current, !current);
-            return [NSString stringWithFormat:@"Airplane Mode Toggled: %@\n", !current ? @"ON" : @"OFF"];
-        }
-    } else if ([cleanCmd isEqualToString:@"airplane status"]) {
-        dlopen("/System/Library/PrivateFrameworks/AppSupport.framework/AppSupport", RTLD_NOW);
-        Class RPClass = objc_getClass("RadiosPreferences");
-        if (RPClass) {
-            RadiosPreferences *prefs = [[RPClass alloc] init];
-            BOOL current = [prefs airplaneMode];
-            return [NSString stringWithFormat:@"Airplane Mode %@\n", current ? @"ON" : @"OFF"];
-        }
-        return @"Error: RadiosPreferences not found\n";
-    } else if ([cleanCmd hasPrefix:@"brightness "]) {
-        // Set screen brightness (0-100) using BackBoardServices
-        NSString *valueStr = [[cleanCmd substringFromIndex:11] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        float value = [valueStr floatValue];
-        // Clamp to 0-100 and convert to 0.0-1.0
-        value = fmaxf(0, fminf(100, value)) / 100.0f;
-        
-        void *bbHandle = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_NOW);
-        if (bbHandle) {
-            void (*BKSDisplayBrightnessSet)(float, int) = dlsym(bbHandle, "BKSDisplayBrightnessSet");
-            if (BKSDisplayBrightnessSet) {
-                BKSDisplayBrightnessSet(value, 1);
-                NSLog(@"[RemoteCommand] Brightness set to: %.0f%%", value * 100);
-            }
-        }
-
-    } else if ([cleanCmd hasPrefix:@"set-vol "]) {
-        NSString *valStr = [[cleanCmd substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        float val = [valStr floatValue];
-        // Clamp 0-100 -> 0.0-1.0
-        val = fmaxf(0, fminf(100, val)) / 100.0f;
-        
-        SRLog(@"Setting volume to %.2f", val);
-        
-        // Use AVSystemController
+static int lua_api_volume(lua_State *L) {
+    if (lua_gettop(L) >= 1) {
+        float vol = (float)luaL_checknumber(L, 1);
         AVSystemController *av = [objc_getClass("AVSystemController") sharedAVSystemController];
-        if (av) {
-            [av setVolumeTo:val forCategory:@"Audio/Video"];
-            return [NSString stringWithFormat:@"Volume set to %.0f%%\n", val * 100];
-        } else {
-            return @"Error: AVSystemController not found\n";
-        }    
-    } else if ([cleanCmd hasPrefix:@"vibration "]) {
-        NSString *subcheck = [cleanCmd substringFromIndex:10];
-        
-        // Silent Mode Vibration
-        if ([subcheck isEqualToString:@"silent-on"]) {
-            toggle_system_vibration(YES, YES);
-            return @"Silent Vibrate: ON\n";
-        } else if ([subcheck isEqualToString:@"silent-off"]) {
-            toggle_system_vibration(YES, NO);
-            return @"Silent Vibrate: OFF\n";
-        } else if ([subcheck isEqualToString:@"silent-toggle"]) {
-            BOOL current = get_system_vibration(YES);
-            toggle_system_vibration(YES, !current);
-            return current ? @"Silent Vibrate: OFF\n" : @"Silent Vibrate: ON\n";
-        } else if ([subcheck isEqualToString:@"silent-status"]) {
-             BOOL current = get_system_vibration(YES);
-             return current ? @"Silent Vibrate: ON\n" : @"Silent Vibrate: OFF\n";
-        }
-        
-        // Ring Mode Vibration
-        else if ([subcheck isEqualToString:@"ring-on"]) {
-            toggle_system_vibration(NO, YES);
-            return @"Ring Vibrate: ON\n";
-        } else if ([subcheck isEqualToString:@"ring-off"]) {
-            toggle_system_vibration(NO, NO);
-            return @"Ring Vibrate: OFF\n";
-        } else if ([subcheck isEqualToString:@"ring-toggle"]) {
-            BOOL current = get_system_vibration(NO);
-            toggle_system_vibration(NO, !current);
-            return current ? @"Ring Vibrate: OFF\n" : @"Ring Vibrate: ON\n";
-        } else if ([subcheck isEqualToString:@"ring-status"]) {
-             BOOL current = get_system_vibration(NO);
-             return current ? @"Ring Vibrate: ON\n" : @"Ring Vibrate: OFF\n";
-        }
-    } else if ([cleanCmd isEqualToString:@"haptic"]) {
-        // Haptic feedback using UIImpactFeedbackGenerator
-        dispatch_async(dispatch_get_main_queue(), ^{
-            // Respect global setting for this manual command too? 
-            // The user might want this to FORCE a haptic, but let's respect the setting for consistency unless it's a "test".
-            // Actually, "haptic" command is often used for testing. Let's make it respect the setting via trigger_haptic()
-            trigger_haptic();
-        });
-        NSLog(@"[RemoteCommand] Haptic triggered");
-        return @"Haptic triggered\n";
-    } else if ([cleanCmd isEqualToString:@"ping"]) {
-        AudioServicesPlaySystemSound(1005);
-        NSLog(@"[RemoteCommand] Ping (Alert Sound) played");
-        return @"Ping played\n";
-    } else if ([cleanCmd isEqualToString:@"flash-on"] || [cleanCmd isEqualToString:@"flash on"]) {
-        // Flashlight on using AVCaptureDevice
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch] && [device isTorchAvailable]) {
-            [device lockForConfiguration:nil];
-            [device setTorchMode:AVCaptureTorchModeOn];
-            [device unlockForConfiguration];
-            NSLog(@"[RemoteCommand] Flashlight on");
-        }
-        return @"Flashlight ON\n";
-    } else if ([cleanCmd isEqualToString:@"flash-off"] || [cleanCmd isEqualToString:@"flash off"]) {
-        // Flashlight off
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch]) {
-            [device lockForConfiguration:nil];
-            [device setTorchMode:AVCaptureTorchModeOff];
-            [device unlockForConfiguration];
-            NSLog(@"[RemoteCommand] Flashlight off");
-        }
-    } else if ([cleanCmd isEqualToString:@"flashlight toggle"]) {
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch] && [device isTorchAvailable]) {
-            [device lockForConfiguration:nil];
-            if ([device torchMode] == AVCaptureTorchModeOn) {
-                [device setTorchMode:AVCaptureTorchModeOff];
-                NSLog(@"[RemoteCommand] Flashlight toggled OFF");
-            } else {
-                float level = get_flash_brightness();
-                [device setTorchModeOnWithLevel:level error:nil];
-                NSLog(@"[RemoteCommand] Flashlight toggled ON at level %f", level);
-            }
-            [device unlockForConfiguration];
-        }
-    } else if ([cleanCmd isEqualToString:@"flashlight on"]) {
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch] && [device isTorchAvailable]) {
-            [device lockForConfiguration:nil];
-            float level = get_flash_brightness();
-            [device setTorchModeOnWithLevel:level error:nil];
-            [device unlockForConfiguration];
-        }
-    } else if ([cleanCmd isEqualToString:@"flashlight off"]) {
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch]) {
-            [device lockForConfiguration:nil];
-            [device setTorchMode:AVCaptureTorchModeOff];
-            [device unlockForConfiguration];
-        }
-    } else if ([cleanCmd isEqualToString:@"flashlight status"]) {
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
-        if ([device hasTorch]) {
-            return [NSString stringWithFormat:@"Flashlight %@\n", [device torchMode] == AVCaptureTorchModeOn ? @"ON" : @"OFF"];
-        }
-        return @"Error: Flashlight not found\n";
-    } else if ([cleanCmd hasPrefix:@"kill "]) {
-        NSString *arg = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        NSString *bundleID = resolve_bundle_id(arg);
-        
-        SRLog(@"Killing app: %@ (mapped from %@)", bundleID, arg);
-        // Reason 5 = Quit via App Switcher (clean kill)
-        BKSTerminateApplicationForReasonAndReportWithDescription(bundleID, 5, false, nil);
-        return [NSString stringWithFormat:@"Killed %@\n", bundleID];
-    } else if ([cleanCmd isEqualToString:@"app"]) {
-        __block NSString *pid = nil;
-        void (^getBlock)(void) = ^{
-            SBApplication *frontApp = [(SpringBoard *)[UIApplication sharedApplication] _accessibilityFrontMostApplication];
-            pid = [frontApp bundleIdentifier];
-        };
-        
-        if ([NSThread isMainThread]) getBlock();
-        else dispatch_sync(dispatch_get_main_queue(), getBlock);
-        
-        if (pid) {
-            return [NSString stringWithFormat:@"%@\n", pid];
-        }
-        return @"com.apple.springboard\n"; // Fallback
-    } else if ([cleanCmd hasPrefix:@"rotate "]) {
-        NSString *arg = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        __block NSString *result = nil;
-        void (^rotateBlock)(void) = ^{
-            SBOrientationLockManager *manager = [objc_getClass("SBOrientationLockManager") sharedInstance];
-            if ([arg isEqualToString:@"lock"]) {
-                [manager lock];
-                result = @"Orientation Locked\n";
-            } else if ([arg isEqualToString:@"unlock"]) {
-                [manager unlock];
-                result = @"Orientation Unlocked\n";
-            } else {
-                BOOL isLocked = [manager isUserLocked];
-                result = [NSString stringWithFormat:@"Orientation Lock Status: %@\n", isLocked ? @"Locked" : @"Unlocked"]; // Fallback to status
-            }
-        };
-        
-        if ([NSThread isMainThread]) rotateBlock();
-        else dispatch_sync(dispatch_get_main_queue(), rotateBlock);
-        return result;
-    } else if ([cleanCmd isEqualToString:@"rotate"]) {
-         __block NSString *result = nil;
-         void (^statusBlock)(void) = ^{
-             SBOrientationLockManager *manager = [objc_getClass("SBOrientationLockManager") sharedInstance];
-             BOOL isLocked = [manager isUserLocked];
-             result = [NSString stringWithFormat:@"Orientation Lock Status: %@\n", isLocked ? @"Locked" : @"Unlocked"];
-         };
-         
-         if ([NSThread isMainThread]) statusBlock();
-         else dispatch_sync(dispatch_get_main_queue(), statusBlock);
-         return result;
-    } else if ([cleanCmd hasPrefix:@"paste "]) {
-        NSString *content = [[cleanCmd substringFromIndex:6] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        dispatch_block_t pasteBlock = ^{
-             UIPasteboard *pb = [UIPasteboard generalPasteboard];
-             pb.string = content;
-        };
-        
-        if ([NSThread isMainThread]) pasteBlock();
-        else dispatch_sync(dispatch_get_main_queue(), pasteBlock);
-        return [NSString stringWithFormat:@"Clipboard set to: %@\n", content];
-    } else if ([cleanCmd hasPrefix:@"type "]) {
-        NSString *text = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        SRLog(@"Typing text: %@", text);
-        const char *utf8 = [text UTF8String];
-        size_t len = strlen(utf8);
-        for (size_t i = 0; i < len; i++) {
-            type_character(utf8[i]);
-            usleep(50000); // 50ms delay between keys
-        }
-        return @"Typing completed\n";
-    } else if ([cleanCmd isEqualToString:@"home"]) {
-         simulate_home_press();
-         return @"Home Button Success\n";
-    } else if ([cleanCmd isEqualToString:@"screenshot"]) {
-         dispatch_async(dispatch_get_main_queue(), ^{
-             @try {
-                 SRLog(@"Attempting screenshot via SpringBoard takeScreenshot...");
-                 SpringBoard *sb = (SpringBoard *)[UIApplication sharedApplication];
-                 if ([sb respondsToSelector:@selector(takeScreenshot)]) {
-                     [sb performSelector:@selector(takeScreenshot)];
-                     SRLog(@"Screenshot triggered via [SpringBoard takeScreenshot]");
-                 } else {
-                     SRLog(@"[SpringBoard takeScreenshot] selector missing");
-                     
-                     // Fallback check for new screenshot manager location
-                     if ([sb respondsToSelector:@selector(screenshotManager)]) {
-                         id manager = [sb performSelector:@selector(screenshotManager)];
-                         if (manager && [manager respondsToSelector:@selector(saveScreenshotToCameraRollWithCompletion:)]) {
-                             [manager saveScreenshotToCameraRollWithCompletion:nil];
-                             SRLog(@"Screenshot triggered via [SB screenshotManager]");
-                         }
-                     }
-                 }
-             } @catch (NSException *e) {
-                 SRLog(@"Exception triggering screenshot: %@", e);
-             }
-         });
-         return @"Screenshot triggered\n";
-    } else if ([cleanCmd hasPrefix:@"delay "]) {
-        NSString *delayStr = [cleanCmd substringFromIndex:6];
-        float seconds = [delayStr floatValue];
-        if (seconds > 0) {
-            SRLog(@"Delaying for %.2f seconds...", seconds);
-            usleep((useconds_t)(seconds * 1000000));
-        }
-        return [NSString stringWithFormat:@"Delayed for %.2f seconds\n", seconds];
-    } else if ([cleanCmd hasPrefix:@"root "] || [cleanCmd hasPrefix:@"sudo "]) {
-        // Execute command as root via setuid helper
-        NSString *shellCmd = [cleanCmd hasPrefix:@"root "]
-            ? [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
-            : [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        SRLog(@"Executing as root: %@", shellCmd);
-
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            // Use rc-root setuid helper with posix_spawn
-            pid_t pid;
-            const char *rcRootPath = "/var/jb/usr/bin/rc-root";
-            char *args[] = {(char *)rcRootPath, (char *)[shellCmd UTF8String], NULL};
-
-            extern char **environ;
-            int spawn_result = posix_spawn(&pid, rcRootPath, NULL, NULL, args, environ);
-
-            int result = -1;
-            if (spawn_result == 0) {
-                int status;
-                waitpid(pid, &status, 0);
-                if (WIFEXITED(status)) {
-                    result = WEXITSTATUS(status);
-                }
-            } else {
-                SRLog(@"posix_spawn failed: %d", spawn_result);
-            }
-            SRLog(@"Root command finished with exit code: %d", result);
-        });
-        return [NSString stringWithFormat:@"Executing as root: %@\n", shellCmd];
-    } else if ([cleanCmd hasPrefix:@"exec "]) {
-        NSString *shellCmd = [[cleanCmd substringFromIndex:5] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        SRLog(@"Processing command: %@", shellCmd);
-
-        if ([shellCmd hasPrefix:@"rc "]) {
-             NSString *internalCmd = [shellCmd substringFromIndex:3];
-             SRLog(@"Intercepting 'rc' command, executing internally: %@", internalCmd);
-             return handle_command(internalCmd);
-        } else if ([shellCmd hasPrefix:@"curl "]) {
-            SRLog(@"Detected curl command, using native implementation");
-            perform_native_curl(shellCmd);
-            return [NSString stringWithFormat:@"Executing via native curl: %@\n", shellCmd];
-        } else {
-            // Use posix_spawn with custom PATH
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                NSString *basePath = @"/var/jb/usr/local/bin:/var/jb/usr/bin:/var/jb/bin:/var/jb/usr/sbin:/var/jb/sbin:/usr/bin:/bin:/usr/sbin:/sbin";
-                NSString *fullPath = basePath;
-
-                // Setup environment with custom PATH
-                extern char **environ;
-                NSMutableArray *envArray = [NSMutableArray array];
-                for (char **env = environ; *env != NULL; env++) {
-                    NSString *envStr = [NSString stringWithUTF8String:*env];
-                    if (![envStr hasPrefix:@"PATH="]) {
-                        [envArray addObject:envStr];
-                    }
-                }
-                [envArray addObject:[NSString stringWithFormat:@"PATH=%@", fullPath]];
-
-                // Convert to char**
-                char **newEnviron = malloc(sizeof(char*) * (envArray.count + 1));
-                for (NSUInteger i = 0; i < envArray.count; i++) {
-                    newEnviron[i] = strdup([envArray[i] UTF8String]);
-                }
-                newEnviron[envArray.count] = NULL;
-
-                // Execute with sh -c
-                pid_t pid;
-                char *args[] = {"/bin/sh", "-c", (char*)[shellCmd UTF8String], NULL};
-                int spawn_result = posix_spawn(&pid, "/bin/sh", NULL, NULL, args, newEnviron);
-
-                int result = -1;
-                if (spawn_result == 0) {
-                    int status;
-                    waitpid(pid, &status, 0);
-                    if (WIFEXITED(status)) {
-                        result = WEXITSTATUS(status);
-                    }
-                }
-
-                // Cleanup
-                for (NSUInteger i = 0; i < envArray.count; i++) {
-                    free(newEnviron[i]);
-                }
-                free(newEnviron);
-
-                SRLog(@"Shell command finished with exit code: %d", result);
-            });
-            return [NSString stringWithFormat:@"Executing: %@\n", shellCmd];
-        }
-    } else if ([cleanCmd hasPrefix:@"lua_eval "] || [cleanCmd hasPrefix:@"Lua "]) {
-        NSString *code = [cleanCmd substringFromIndex:([cleanCmd hasPrefix:@"Lua "] ? 4 : 9)];
-        return evaluate_lua_code(code);
-    } else if ([cleanCmd hasPrefix:@"lua "]) {
-        NSString *scriptPath = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        return execute_lua_script(scriptPath);
-
-    // -- Touch gesture commands ------------------------------------------------
-    // taptest show|hide|reset|status|run [system|app]
-    } else if ([cleanCmd isEqualToString:@"taptest"] || [cleanCmd hasPrefix:@"taptest "]) {
-        return rc_handle_taptest_command(cleanCmd);
-
-    // taprecord
-    } else if ([cleanCmd isEqualToString:@"taprecord"]) {
-        rc_taprecord_start();
-        return @"Tap recording started\n";
-
-    // taprecordstatus
-    } else if ([cleanCmd isEqualToString:@"taprecordstatus"]) {
-        __block NSDictionary *resp = nil;
-        rc_dispatch_sync_main_safe(^{
-            NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-            [dict setObject:@YES forKey:@"ok"];
-            [dict setObject:g_tapRecordStatus forKey:@"status"];
-            if ([g_tapRecordStatus isEqualToString:@"counting"]) {
-                [dict setObject:@(g_tapRecordCountdown) forKey:@"seconds"];
-            } else if ([g_tapRecordStatus isEqualToString:@"recorded"]) {
-                [dict setObject:@(g_tapRecordPoint.x) forKey:@"x"];
-                [dict setObject:@(g_tapRecordPoint.y) forKey:@"y"];
-                g_tapRecordStatus = @"idle";
-            }
-            resp = [dict copy];
-        });
-        NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
-        return [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
-
-    // tap x y
-    } else if ([cleanCmd hasPrefix:@"tap "]) {
-        NSArray<NSString *> *parts = rc_split_whitespace([cleanCmd substringFromIndex:4]);
-        if (parts.count >= 2) {
-            double px = [parts[0] doubleValue];
-            double py = [parts[1] doubleValue];
-            rc_load_touch_symbols();
-            dispatch_async(rc_touch_queue(), ^{
-                rc_simulate_tap(px, py);
-            });
-            return @"Tap sent via IOHIDEvent\n";
-        }
-        return @"Usage: tap x y\n";
-
-    // hold x y [ms]
-    } else if ([cleanCmd hasPrefix:@"hold "]) {
-        NSArray *parts = [[cleanCmd substringFromIndex:5] componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (parts.count >= 2) {
-            double px = [parts[0] doubleValue];
-            double py = [parts[1] doubleValue];
-            int ms = (parts.count >= 3) ? (int)[parts[2] integerValue] : 500;
-            rc_load_touch_symbols();
-            dispatch_async(rc_touch_queue(), ^{ rc_simulate_hold(px, py, ms); });
-            return @"Hold sent\n";
-        }
-        return @"Usage: hold x y [ms]\n";
-
-    // swipe x1 y1 x2 y2
-    } else if ([cleanCmd hasPrefix:@"swipe "] &&
-               !([cleanCmd isEqualToString:@"swipeU"] || [cleanCmd isEqualToString:@"swipeD"] ||
-                 [cleanCmd isEqualToString:@"swipeL"] || [cleanCmd isEqualToString:@"swipeR"])) {
-        NSArray *parts = [[cleanCmd substringFromIndex:6] componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (parts.count >= 4) {
-            double x1 = [parts[0] doubleValue];
-            double y1 = [parts[1] doubleValue];
-            double x2 = [parts[2] doubleValue];
-            double y2 = [parts[3] doubleValue];
-            rc_load_touch_symbols();
-            dispatch_async(rc_touch_queue(), ^{ rc_simulate_swipe(x1, y1, x2, y2); });
-            return @"Swipe sent\n";
-        }
-        return @"Usage: swipe x1 y1 x2 y2\n";
-
-    // swipeU / swipeUp
-    } else if ([cleanCmd isEqualToString:@"swipeU"] || [cleanCmd isEqualToString:@"swipeUp"]) {
-        rc_load_touch_symbols();
-        dispatch_async(rc_touch_queue(), ^{
-            __block CGSize s;
-            dispatch_sync(dispatch_get_main_queue(), ^{ s = [UIScreen mainScreen].bounds.size; });
-            rc_simulate_swipe(s.width*0.5, s.height*0.92, s.width*0.5, s.height*0.15);
-        });
-        return @"Swipe Up sent\n";
-
-    // swipeD / swipeDown
-    } else if ([cleanCmd isEqualToString:@"swipeD"] || [cleanCmd isEqualToString:@"swipeDown"]) {
-        rc_load_touch_symbols();
-        dispatch_async(rc_touch_queue(), ^{
-            __block CGSize s;
-            dispatch_sync(dispatch_get_main_queue(), ^{ s = [UIScreen mainScreen].bounds.size; });
-            rc_simulate_swipe(s.width*0.5, s.height*0.08, s.width*0.5, s.height*0.85);
-        });
-        return @"Swipe Down sent\n";
-
-    // swipeL / swipeLeft
-    } else if ([cleanCmd isEqualToString:@"swipeL"] || [cleanCmd isEqualToString:@"swipeLeft"]) {
-        rc_load_touch_symbols();
-        dispatch_async(rc_touch_queue(), ^{
-            __block CGSize s;
-            dispatch_sync(dispatch_get_main_queue(), ^{ s = [UIScreen mainScreen].bounds.size; });
-            rc_simulate_swipe(s.width*0.9, s.height*0.5, s.width*0.1, s.height*0.5);
-        });
-        return @"Swipe Left sent\n";
-
-    // swipeR / swipeRight
-    } else if ([cleanCmd isEqualToString:@"swipeR"] || [cleanCmd isEqualToString:@"swipeRight"]) {
-        rc_load_touch_symbols();
-        dispatch_async(rc_touch_queue(), ^{
-            __block CGSize s;
-            dispatch_sync(dispatch_get_main_queue(), ^{ s = [UIScreen mainScreen].bounds.size; });
-            rc_simulate_swipe(s.width*0.1, s.height*0.5, s.width*0.9, s.height*0.5);
-        });
-        return @"Swipe Right sent\n";
-
-    } else if ([cleanCmd isEqualToString:@"airplay list"]) {
-
-        NSArray *names = RCFetchAirPlayDeviceNames();
-        NSMutableString *output = [NSMutableString string];
-        if (names.count == 0) {
-            [output appendString:@"No AirPlay devices found.\n"];
-        } else {
-            for (NSString *name in names) {
-                [output appendFormat:@"  %@\n", name];
-            }
-        }
-        return output;
-
-    } else if ([cleanCmd hasPrefix:@"airplay connect "]) {
-        NSString *target = [[cleanCmd substringFromIndex:16] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        // Strip outer quotes if present
-        if ([target hasPrefix:@"\""] && [target hasSuffix:@"\""] && target.length >= 2) {
-            target = [target substringWithRange:NSMakeRange(1, target.length - 2)];
-        }
-        
-        // Strip name suffix if present: "UID # Name"
-        if ([target containsString:@" # "]) {
-            target = [target componentsSeparatedByString:@" # "].firstObject;
-        }
-
-        __block NSString *result = nil;
-        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MPAVRoutingController *ctrl = [[objc_getClass("MPAVRoutingController") alloc] init];
-            ctrl.discoveryMode = 3; // Detailed discovery
-            
-            // Recursive block for retrying
-            __block int attempts = 0;
-            __block void (^attemptConnection)(void) = nil;
-            
-            attemptConnection = ^void(void) {
-                [ctrl fetchAvailableRoutesWithCompletionHandler:^(NSArray<MPAVRoute *> *routes) {
-                    MPAVRoute *foundRoute = nil;
-                    for (MPAVRoute *route in routes) {
-                        if ([route.routeUID isEqualToString:target] || [route.routeName localizedCaseInsensitiveContainsString:target]) {
-                            foundRoute = route;
-                            break;
-                        }
-                    }
-                    
-                    if (foundRoute) {
-                        if ([ctrl pickRoute:foundRoute]) {
-                            result = [NSString stringWithFormat:@"Connected to %@\n", foundRoute.routeName];
-                        } else {
-                            result = [NSString stringWithFormat:@"Failed to connect to %@\n", foundRoute.routeName];
-                        }
-                        dispatch_semaphore_signal(sema);
-                        attemptConnection = nil; // Break retain cycle
-                    } else {
-                        attempts++;
-                        if (attempts < 10) { // Try for 5 seconds (10 * 0.5s)
-                            SRLog(@"AirPlay target '%@' not found yet, retrying (%d/10)...", target, attempts);
-                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                                if (attemptConnection) attemptConnection(); // Retry
-                            });
-                        } else {
-                            // Final failure
-                            NSMutableString *debugList = [NSMutableString string];
-                            for (MPAVRoute *r in routes) {
-                                [debugList appendFormat:@"- %@ [%@]\n", r.routeName, r.routeUID];
-                            }
-                            result = [NSString stringWithFormat:@"Device '%@' not found after 5s. Available:\n%@", target, debugList];
-                            dispatch_semaphore_signal(sema);
-                            attemptConnection = nil; // Break retain cycle
-                        }
-                    }
-                }];
-            };
-            
-            // Start the first attempt
-            attemptConnection();
-        });
-        
-        // Wait up to 6 seconds (allowing for the 5s retry loop + buffer)
-        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC));
-        return result ?: @"Error: Timeout connecting to AirPlay device\n";
-
-    } else if ([cleanCmd hasPrefix:@"webui "]) {
-        NSString *sub = [[cleanCmd substringFromIndex:6] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        load_trigger_config();
-        NSMutableDictionary *mConfig = [g_triggerConfig mutableCopy] ?: [NSMutableDictionary dictionary];
-        
-        if ([sub isEqualToString:@"on"] || [sub isEqualToString:@"enable"]) {
-            mConfig[@"webUIEnabled"] = @YES;
-            g_triggerConfig = [mConfig copy];
-            save_trigger_config();
-            return @"Web UI Enabled\n";
-        } else if ([sub isEqualToString:@"off"] || [sub isEqualToString:@"disable"]) {
-            mConfig[@"webUIEnabled"] = @NO;
-            g_triggerConfig = [mConfig copy];
-            save_trigger_config();
-            return @"Web UI Disabled\n";
-        } else if ([sub isEqualToString:@"status"]) {
-            BOOL enabled = [mConfig[@"webUIEnabled"] boolValue];
-            return [NSString stringWithFormat:@"Web UI is %@\n", enabled ? @"ENABLED" : @"DISABLED"];
-        }
-        return @"Usage: rc webui <on|off|status>\n";
-    } else if ([cleanCmd isEqualToString:@"respring"]) {
-        SRLog(@"Triggering Respring via killbackboardd");
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            pid_t pid;
-            const char* args[] = { "killall", "-9", "backboardd", NULL };
-            NSString *killallPath = [NSString stringWithFormat:@"%@/usr/bin/killall", root_prefix()];
-            posix_spawn(&pid, [killallPath UTF8String], NULL, NULL, (char* const*)args, NULL);
-            
-            if (pid <= 0) {
-                 const char* args2[] = { "killall", "-9", "backboardd", NULL };
-                 posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char* const*)args2, NULL);
-            }
-        });
-        return @"Device Respringing...\n";
-    } else if ([cleanCmd isEqualToString:@"ldrestart"]) {
-        SRLog(@"Triggering ldrestart");
-        dispatch_async(dispatch_get_main_queue(), ^{
-            pid_t pid;
-            NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/ldrestart", root_prefix()];
-            if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/usr/bin/ldrestart";
-            const char* args[] = { [binPath UTF8String], NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
-        });
-        return @"Triggering ldrestart...\n";
-    } else if ([cleanCmd isEqualToString:@"uicache"]) {
-        SRLog(@"Triggering uicache");
-        dispatch_async(dispatch_get_main_queue(), ^{
-            pid_t pid;
-            NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/uicache", root_prefix()];
-            if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/usr/bin/uicache";
-            const char* args[] = { [binPath UTF8String], "-a", NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
-        });
-        return @"Triggering uicache...\n";
-    } else if ([cleanCmd isEqualToString:@"userspace-reboot"]) {
-        SRLog(@"Triggering userspace-reboot");
-        dispatch_async(dispatch_get_main_queue(), ^{
-            pid_t pid;
-            NSString *binPath = [NSString stringWithFormat:@"%@/bin/launchctl", root_prefix()];
-            if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/bin/launchctl";
-            const char* args[] = { [binPath UTF8String], "reboot", "userspace", NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
-        });
-        return @"Triggering userspace-reboot...\n";
-    } else if ([cleanCmd hasPrefix:@"shortcut:"]) {
-        NSString *shortcutName = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        SRLog(@"Attempting to run shortcut natively: %@", shortcutName);
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            @try {
-                 // Try native WorkflowKit execution first
-                 void *wfHandle = dlopen("/System/Library/PrivateFrameworks/WorkflowKit.framework/WorkflowKit", RTLD_NOW);
-                 if (wfHandle) {
-                     Class WFWorkflowDescriptorClass = objc_getClass("WFWorkflowDescriptor");
-                     Class WFWorkflowRunnerClientClass = objc_getClass("WFWorkflowRunnerClient");
-                     
-                     if (WFWorkflowDescriptorClass && WFWorkflowRunnerClientClass) {
-                         SRLog(@"WorkflowKit loaded, preparing to run shortcut: %@", shortcutName);
-                         id descriptor = [WFWorkflowDescriptorClass alloc];
-                         if ([descriptor respondsToSelector:@selector(initWithName:)]) {
-                             descriptor = [descriptor initWithName:shortcutName];
-                         } else {
-                             SRLog(@"[RemoteCommand] WFWorkflowDescriptor missing initWithName:, attempting identifier fallback");
-                             SEL sel = NSSelectorFromString(@"initWithIdentifier:");
-                             if ([descriptor respondsToSelector:sel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                                 descriptor = [descriptor performSelector:sel withObject:shortcutName];
-#pragma clang diagnostic pop
-                             } else {
-                                 descriptor = nil;
-                             }
-                         }
-
-                         if (descriptor) {
-                             WFWorkflowRunnerClient *client = (WFWorkflowRunnerClient *)[[WFWorkflowRunnerClientClass alloc] initWithWorkflowDescriptor:descriptor 
-                                                                                                   input:nil 
-                                                                                              parseInput:NO 
-                                                                                                  output:nil 
-                                                                                              completion:^(id output, NSError *error) {
-                                 if (error) {
-                                     SRLog(@"Shortcut '%@' failed: %@", shortcutName, error);
-                                 } else {
-                                     SRLog(@"Shortcut '%@' completed successfully", shortcutName);
-                                 }
-                             }];
-                             
-                             if (client) {
-                                 [client start];
-                                 SRLog(@"Started WFWorkflowRunnerClient for '%@'", shortcutName);
-                                 return; // Success, exit block!
-                             }
-                         } else {
-                             SRLog(@"[RemoteCommand] Failed to create descriptor for shortcut: %@", shortcutName);
-                         }
-                      }
-                  }
-                  
-                  // Fallback to springcuts CLI if WorkflowKit approach fails
-                 SRLog(@"WorkflowKit execution unavailable, falling back to springcuts...");
-                 Class NSTaskClass = NSClassFromString(@"NSTask");
-                 if (NSTaskClass) {
-                     id task = [[NSTaskClass alloc] init];
-                     
-                     NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()];
-                     if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
-                         binPath = @"/usr/bin/springcuts";
-                     }
-                     
-                     if ([[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
-                         [task performSelector:@selector(setLaunchPath:) withObject:binPath];
-                         [task performSelector:@selector(setArguments:) withObject:@[@"-r", shortcutName]];
-                         [task performSelector:@selector(launch)];
-                         SRLog(@"Launched springcuts for '%@'", shortcutName);
-                     } else {
-                         SRLog(@"Error: springcuts binary not found");
-                         send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-                     }
-                 } else {
-                     SRLog(@"Error: NSTask class not found");
-                 }
-            } @catch (NSException *e) {
-                SRLog(@"Crash launching shortcut: %@", e);
-            }
-        });
-        
-        return [NSString stringWithFormat:@"Triggered shortcut: %@\n", shortcutName];
-    } else if ([cleanCmd isEqualToString:@"list-triggers"]) {
-        load_trigger_config();
-        if (!g_triggerConfig) return @"Error: No trigger config found\n";
-        id triggers = g_triggerConfig[@"triggers"];
-        if (!triggers || ![triggers isKindOfClass:[NSDictionary class]]) return @"Error: No triggers configured\n";
-        
-        NSMutableString *list = [NSMutableString stringWithString:@"Configured Automations:\n"];
-        NSArray *allKeys = [(NSDictionary *)triggers allKeys];
-        for (NSString *key in [allKeys sortedArrayUsingSelector:@selector(compare:)]) {
-            NSDictionary *trigger = triggers[key];
-            if ([trigger isKindOfClass:[NSDictionary class]]) {
-                // Skip watch triggers as they are deprecated/non-functional
-                if ([key hasPrefix:@"watch_"]) continue;
-                
-                NSString *title = get_human_name_for_trigger(key, trigger);
-                [list appendFormat:@"- %@: %@\n", key, title];
-            }
-        }
-        return list;
-    } else if ([cleanCmd hasPrefix:@"trigger "]) {
-        NSString *key = [[cleanCmd substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            RCExecuteTrigger(key);
-        });
-        return [NSString stringWithFormat:@"Executing trigger: %@\n", key];
+        [av setVolumeTo:(vol / 100.0f) forCategory:@"Audio/Video"];
+        return 0;
+    } else {
+        AVSystemController *av = [objc_getClass("AVSystemController") sharedAVSystemController];
+        float vol = 0.0f;
+        [av getVolume:&vol forCategory:@"Audio/Video"];
+        lua_pushnumber(L, (double)(vol * 100.0f));
+        return 1;
     }
-    return nil;
 }
 
+static void run_lua_script(NSString *script) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        lua_State *L = luaL_newstate();
+        if (!L) {
+            SRLog(@"[Lua] ERROR: Failed to create Lua state.");
+            return;
+        }
+        luaL_openlibs(L);
+
+        lua_register(L, "tap", lua_api_tap);
+        lua_register(L, "hold", lua_api_hold);
+        lua_register(L, "swipe", lua_api_swipe);
+        lua_register(L, "toast", lua_api_toast);
+        lua_register(L, "exec", lua_api_exec);
+        lua_register(L, "delay", lua_api_delay);
+        lua_register(L, "volume", lua_api_volume);
+
+        if (luaL_dostring(L, [script UTF8String]) != LUA_OK) {
+            const char *err = lua_tostring(L, -1);
+            SRLog(@"[Lua] Execution Error: %s", err ? err : "Unknown error");
+        }
+        lua_close(L);
+    });
+}
+
+// Web UI HTTP Server Engine
+#import <netinet/in.h>
+#import <sys/socket.h>
+
+static int g_webServerPort = 54001;
+static BOOL g_webServerRunning = NO;
+
+static NSString *get_webui_html() {
+    NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"rc_webui" ofType:@"html"];
+    if (bundlePath && [[NSFileManager defaultManager] fileExistsAtPath:bundlePath]) {
+        return [NSString stringWithContentsOfFile:bundlePath encoding:NSUTF8StringEncoding error:nil];
+    }
+    NSString *trollstorePath = @"/var/mobile/Documents/rc_webui.html";
+    if ([[NSFileManager defaultManager] fileExistsAtPath:trollstorePath]) {
+        return [NSString stringWithContentsOfFile:trollstorePath encoding:NSUTF8StringEncoding error:nil];
+    }
+    NSString *rootlessPath = @"/var/jb/var/mobile/Documents/rc_webui.html";
+    if ([[NSFileManager defaultManager] fileExistsAtPath:rootlessPath]) {
+        return [NSString stringWithContentsOfFile:rootlessPath encoding:NSUTF8StringEncoding error:nil];
+    }
+    return @"<html><body><h1>RemoteCompanion Web UI</h1><p>rc_webui.html not found on device.</p></body></html>";
+}
+
+static BOOL RCIsWebUIEnabled() {
+    if (!g_triggerConfig) {
+        load_trigger_config();
+    }
+    if (!g_triggerConfig[@"webUIEnabled"]) {
+        return YES; // Default to YES if missing
+    }
+    return [g_triggerConfig[@"webUIEnabled"] boolValue];
+}
+
+static void handle_web_client(int clientSock) {
+    char buffer[8192];
+    ssize_t bytesRead = read(clientSock, buffer, sizeof(buffer) - 1);
+    if (bytesRead <= 0) { close(clientSock); return; }
+    buffer[bytesRead] = '\0';
+
+    NSString *reqStr = [NSString stringWithUTF8String:buffer];
+    NSArray *lines = [reqStr componentsSeparatedByString:@"\r\n"];
+    if (lines.count == 0) { close(clientSock); return; }
+
+    NSString *firstLine = lines[0];
+    NSArray *parts = [firstLine componentsSeparatedByString:@" "];
+    if (parts.count < 2) { close(clientSock); return; }
+
+    NSString *method = parts[0];
+    NSString *url = parts[1];
+    
+    // Safety / Security check: Validate if Web UI is enabled
+    BOOL isWebUIEnabled = RCIsWebUIEnabled();
+
+    SRLog(@"[WebUI] %C %@ (Enabled: %s)", [method UTF8String][0], url, isWebUIEnabled ? "YES" : "NO");
+
+    NSString *response = @"";
+
+    if (!isWebUIEnabled) {
+        response = @"HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Web UI disabled in settings\"}";
+    } else if ([url isEqualToString:@"/"] || [url isEqualToString:@"/index.html"]) {
+        NSString *html = get_webui_html();
+        response = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n%@",
+                    (unsigned long)[html lengthOfBytesUsingEncoding:NSUTF8StringEncoding], html];
+    } else if ([url isEqualToString:@"/api/config"] && [method isEqualToString:@"GET"]) {
+        if (!g_triggerConfig) load_trigger_config();
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:g_triggerConfig options:0 error:nil];
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        response = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n%@",
+                    (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+    } else if ([url isEqualToString:@"/api/config"] && [method isEqualToString:@"POST"]) {
+        NSRange bodyRange = [reqStr rangeOfString:@"\r\n\r\n"];
+        if (bodyRange.location != NSNotFound) {
+            NSString *body = [reqStr substringFromIndex:bodyRange.location + 4];
+            NSData *bodyData = [body dataUsingEncoding:NSUTF8StringEncoding];
+            NSDictionary *newConfig = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+            if ([newConfig isKindOfClass:[NSDictionary class]]) {
+                g_triggerConfig = newConfig;
+                save_trigger_config();
+                response = @"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"success\":true}";
+            } else {
+                response = @"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Invalid JSON\"}";
+            }
+        }
+    } else if ([url hasPrefix:@"/api/trigger/"] && [method isEqualToString:@"POST"]) {
+        NSString *key = [[url substringFromIndex:13] stringByRemovingPercentEncoding];
+        RCExecuteTrigger(key);
+        response = @"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"success\":true}";
+    } else if ([url hasPrefix:@"/api/command"] && [method isEqualToString:@"POST"]) {
+        // Query param command execution: /api/command?cmd=flashlight%20toggle
+        NSRange qRange = [url rangeOfString:@"?cmd="];
+        if (qRange.location != NSNotFound) {
+            NSString *cmdEncoded = [url substringFromIndex:qRange.location + 5];
+            NSString *cmd = [cmdEncoded stringByRemovingPercentEncoding];
+            NSString *result = handle_command(cmd);
+            NSData *jsonData = [NSJSONSerialization dataWithJSONObject:@{@"result": result ?: @""} options:0 error:nil];
+            NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+            response = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n%@",
+                        (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+        } else {
+            response = @"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Missing cmd parameter\"}";
+        }
+    } else if ([url isEqualToString:@"/api/apps"] && [method isEqualToString:@"GET"]) {
+        NSMutableArray *appArray = [NSMutableArray array];
+        Class workspaceClass = objc_getClass("LSApplicationWorkspace");
+        if (workspaceClass) {
+            id workspace = [workspaceClass performSelector:@selector(defaultWorkspace)];
+            NSArray *apps = [workspace performSelector:@selector(allInstalledApplications)];
+            for (id appProxy in apps) {
+                NSString *bid = [appProxy performSelector:@selector(applicationIdentifier)];
+                NSString *name = [appProxy performSelector:@selector(localizedName)];
+                if (bid && name) {
+                    [appArray addObject:@{@"bundleId": bid, @"name": name}];
+                }
+            }
+        }
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:appArray options:0 error:nil];
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        response = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n%@",
+                    (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+    } else if ([url isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
+        NSString *version = @"3.5.0";
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:@{@"version": version} options:0 error:nil];
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        response = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n%@",
+                    (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+    } else {
+        response = @"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n404 Not Found";
+    }
+
+    write(clientSock, [response UTF8String], [response lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+    close(clientSock);
+}
 
 static void start_web_server() {
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        int server_fd, new_socket;
-        struct sockaddr_in address;
+    if (g_webServerRunning) return;
+    g_webServerRunning = YES;
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+        int serverSock = socket(AF_INET, SOCK_STREAM, 0);
+        if (serverSock < 0) return;
+
         int opt = 1;
-        int addrlen = sizeof(address);
-        
-        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-            SRLog(@"[WebUI] socket failed");
-            return;
-        }
-        
-        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-            SRLog(@"[WebUI] setsockopt failed");
-            return;
-        }
-        
-        int port = 8080;
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = INADDR_ANY;
-        
-        while (port < 8100) {
-            address.sin_port = htons(port);
-            if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) >= 0) {
-                break;
-            }
-            port++;
-        }
-        
-        if (port >= 8100) {
-            SRLog(@"[WebUI] bind failed (ports 8080-8099 all taken)");
-            close(server_fd);
-            return;
-        }
-        
-        if (listen(server_fd, 5) < 0) {
-            SRLog(@"[WebUI] listen failed");
-            close(server_fd);
+        setsockopt(serverSock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(g_webServerPort);
+
+        if (bind(serverSock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            close(serverSock);
             return;
         }
 
-        SRLog(@"[WebUI] Server listening on port %d", port);
-
-        while (1) {
-            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-                continue;
-            }
-            
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                struct timeval tv;
-                tv.tv_sec = 2;
-                tv.tv_usec = 0;
-                setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-
-                char buffer[16384] = {0};
-                ssize_t valread = read(new_socket, buffer, 16384 - 1);
-                if (valread > 0) {
-                    NSString *requestString = [[NSString alloc] initWithBytes:buffer length:valread encoding:NSUTF8StringEncoding];
-                    NSArray *lines = [requestString componentsSeparatedByString:@"\r\n"];
-                    if (lines.count > 0) {
-                        NSArray *requestLine = [lines[0] componentsSeparatedByString:@" "];
-                        if (requestLine.count >= 2) {
-                            NSString *method = requestLine[0];
-                            NSString *path = requestLine[1];
-                            
-                            // CORS headers
-                            NSString *cors = @"Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n";
-                            NSString *responseString = [NSString stringWithFormat:@"HTTP/1.1 404 Not Found\r\n%@Content-Length: 9\r\n\r\nNot Found", cors];
-                            
-                            if ([method isEqualToString:@"OPTIONS"]) {
-                                responseString = [NSString stringWithFormat:@"HTTP/1.1 204 No Content\r\n%@Content-Length: 0\r\n\r\n", cors];
-                            } else if ([path isEqualToString:@"/"]) {
-                                load_trigger_config();
-                                if (![g_triggerConfig[@"webUIEnabled"] boolValue]) {
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 403 Forbidden\r\n%@Content-Length: 17\r\n\r\nWeb UI is disabled", cors];
-                                } else {
-                                    NSString *htmlPath = @"/Library/Application Support/RemoteCompanion/rc_webui.html";
-                                    NSString *html = [NSString stringWithContentsOfFile:htmlPath encoding:NSUTF8StringEncoding error:nil];
-                                    if (!html) {
-                                        NSString *rootlessPath = @"/var/jb/Library/Application Support/RemoteCompanion/rc_webui.html";
-                                        html = [NSString stringWithContentsOfFile:rootlessPath encoding:NSUTF8StringEncoding error:nil];
-                                    }
-                                    if (!html) {
-                                        html = @"<html><body><h1>RemoteCompanion WebUI</h1><p>rc_webui.html not found. Please reinstall the tweak.</p></body></html>";
-                                    }
-                                    NSData *htmlData = [html dataUsingEncoding:NSUTF8StringEncoding];
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: text/html\r\nCache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nExpires: 0\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)htmlData.length, html];
-                                }
-                            } else if ([path isEqualToString:@"/favicon.ico"] || [path isEqualToString:@"/apple-touch-icon.png"] || [path hasPrefix:@"/favicon-"] || [path hasPrefix:@"/android-chrome-"] || [path isEqualToString:@"/site.webmanifest"]) {
-                                NSString *filename = [path lastPathComponent];
-                                NSString *assetPath = [NSString stringWithFormat:@"/Library/Application Support/RemoteCompanion/%@", filename];
-                                NSData *assetData = [NSData dataWithContentsOfFile:assetPath];
-                                if (!assetData) {
-                                    assetPath = [NSString stringWithFormat:@"/var/jb/Library/Application Support/RemoteCompanion/%@", filename];
-                                    assetData = [NSData dataWithContentsOfFile:assetPath];
-                                }
-                                
-                                if (assetData) {
-                                    NSString *contentType = @"application/octet-stream";
-                                    if ([path hasSuffix:@".ico"]) contentType = @"image/x-icon";
-                                    else if ([path hasSuffix:@".png"]) contentType = @"image/png";
-                                    else if ([path hasSuffix:@".webmanifest"] || [path hasSuffix:@".json"]) contentType = @"application/manifest+json";
-                                    
-                                    NSString *header = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: %@\r\nContent-Length: %lu\r\n\r\n", cors, contentType, (unsigned long)assetData.length];
-                                    write(new_socket, [header UTF8String], [header lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
-                                    write(new_socket, [assetData bytes], [assetData length]);
-                                    responseString = nil; // Skip default write
-                                }
-                            } else if ([path isEqualToString:@"/api/config"]) {
-                                load_trigger_config();
-                                // Allow GET/POST for config regardless of webUIEnabled to prevent lockout
-                                if ([method isEqualToString:@"GET"]) {
-                                        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:g_triggerConfig options:0 error:nil];
-                                        if (jsonData) {
-                                            NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-                                            responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)jsonData.length, jsonString];
-                                        }
-                                    } else if ([method isEqualToString:@"POST"]) {
-                                        NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
-                                        int contentLength = 0;
-                                        if (clRange.location != NSNotFound) {
-                                            NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
-                                            contentLength = [afterCl intValue];
-                                        }
-
-                                        const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
-                                        if (headersEnd != NULL) {
-                                            size_t headerBytesOffset = (headersEnd - buffer) + 4;
-                                            size_t availableBodyLength = valread - headerBytesOffset;
-                                            
-                                            NSMutableData *bodyData = [NSMutableData data];
-                                            if (availableBodyLength > 0) {
-                                                [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
-                                            }
-                                            
-                                            // Ensure we read the complete body based on Content-Length
-                                            while (bodyData.length < contentLength) {
-                                                char chunk[4096];
-                                                ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
-                                                if (chunkRead <= 0) break;
-                                                [bodyData appendBytes:chunk length:chunkRead];
-                                            }
-
-                                            NSError *err;
-                                            id jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:NSJSONReadingMutableContainers error:&err];
-                                            if (jsonObj && [jsonObj isKindOfClass:[NSDictionary class]]) {
-                                                g_triggerConfig = [jsonObj mutableCopy];
-                                                save_trigger_config();
-                                                responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
-                                            } else {
-                                                responseString = [NSString stringWithFormat:@"HTTP/1.1 400 Bad Request\r\n%@Content-Type: application/json\r\nContent-Length: 17\r\n\r\n{\"error\":\"JSON\"}", cors];
-                                            }
-                                        }
-                                    }
-                            } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
-                                NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
-                                NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];
-                                NSString *version = plist[@"CFBundleShortVersionString"] ?: @"3.3.0";
-                                NSDictionary *resp = @{@"ok": @YES, @"version": version};
-                                NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
-                                NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
-                                responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
-                            } else if ([path isEqualToString:@"/api/triggers"] && [method isEqualToString:@"GET"]) {
-                                load_trigger_config();
-                                if (![g_triggerConfig[@"webUIEnabled"] boolValue]) {
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 403 Forbidden\r\n%@Content-Length: 17\r\n\r\nWeb UI is disabled", cors];
-                                } else {
-                                    id triggers = g_triggerConfig[@"triggers"];
-                                    NSMutableArray *triggerList = [NSMutableArray array];
-                                    if (triggers && [triggers isKindOfClass:[NSDictionary class]]) {
-                                        NSArray *allKeys = [(NSDictionary *)triggers allKeys];
-                                        for (NSString *key in [allKeys sortedArrayUsingSelector:@selector(compare:)]) {
-                                            NSDictionary *trigger = triggers[key];
-                                            if ([trigger isKindOfClass:[NSDictionary class]]) {
-                                                if ([key hasPrefix:@"watch_"]) continue;
-                                                NSString *title = get_human_name_for_trigger(key, trigger);
-                                                NSString *encodedKey = [key stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLPathAllowedCharacterSet]];
-                                                [triggerList addObject:@{
-                                                    @"id": key,
-                                                    @"name": title,
-                                                    @"url": [NSString stringWithFormat:@"/api/trigger/%@", encodedKey]
-                                                }];
-                                            }
-                                        }
-                                    }
-                                    NSDictionary *resp = @{@"ok": @YES, @"triggers": triggerList};
-                                    NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:NSJSONWritingPrettyPrinted error:nil];
-                                    NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
-                                    // Remove backslash escaping for forward slashes
-                                    jsonStr = [jsonStr stringByReplacingOccurrencesOfString:@"\\/" withString:@"/"];
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
-                                }
-                            } else if ([path isEqualToString:@"/api/taprecordstatus"] && ([method isEqualToString:@"GET"] || [method isEqualToString:@"POST"])) {
-                                load_trigger_config();
-                                if (![g_triggerConfig[@"webUIEnabled"] boolValue]) {
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 403 Forbidden\r\n%@Content-Length: 17\r\n\r\nWeb UI is disabled", cors];
-                                } else {
-                                    __block NSDictionary *resp = nil;
-                                    rc_dispatch_sync_main_safe(^{
-                                        NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-                                        [dict setObject:@YES forKey:@"ok"];
-                                        [dict setObject:g_tapRecordStatus forKey:@"status"];
-                                        if ([g_tapRecordStatus isEqualToString:@"counting"]) {
-                                            [dict setObject:@(g_tapRecordCountdown) forKey:@"seconds"];
-                                        } else if ([g_tapRecordStatus isEqualToString:@"recorded"]) {
-                                            [dict setObject:@(g_tapRecordPoint.x) forKey:@"x"];
-                                            [dict setObject:@(g_tapRecordPoint.y) forKey:@"y"];
-                                            g_tapRecordStatus = @"idle";
-                                        }
-                                        resp = [dict copy];
-                                    });
-                                    
-                                    NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
-                                    NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
-                                }
-                            } else if ([path isEqualToString:@"/api/devices"] && [method isEqualToString:@"GET"]) {
-                                load_trigger_config();
-                                if (![g_triggerConfig[@"webUIEnabled"] boolValue]) {
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 403 Forbidden\r\n%@Content-Length: 17\r\n\r\nWeb UI is disabled", cors];
-                                } else {
-                                    NSMutableArray *btNames = [NSMutableArray array];
-                                    void *btHandle = dlopen("/System/Library/PrivateFrameworks/BluetoothManager.framework/BluetoothManager", RTLD_NOW);
-                                    if (btHandle) {
-                                        Class BluetoothManagerClass = objc_getClass("BluetoothManager");
-                                        if (BluetoothManagerClass) {
-                                            BluetoothManager *btManager = [BluetoothManagerClass sharedInstance];
-                                            NSArray *devices = [btManager pairedDevices];
-                                            for (id device in devices) {
-                                                if ([device respondsToSelector:@selector(name)]) {
-                                                    NSString *name = [device name];
-                                                    if (name && name.length > 0) {
-                                                        [btNames addObject:name];
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    
-                                    NSMutableArray *wifiNames = [NSMutableArray array];
-                                    SBWiFiManager *manager = [objc_getClass("SBWiFiManager") sharedInstance];
-                                    if ([manager respondsToSelector:@selector(currentNetworkName)]) {
-                                        NSString *ssid = [manager currentNetworkName];
-                                        if (ssid && ssid.length > 0) {
-                                            [wifiNames addObject:ssid];
-                                        }
-                                    }
-
-                                    void *lsHandle = dlopen("/System/Library/Frameworks/CoreServices.framework/CoreServices", RTLD_NOW);
-                                    if (!lsHandle) {
-                                        lsHandle = dlopen("/System/Library/PrivateFrameworks/MobileCoreServices.framework/MobileCoreServices", RTLD_NOW);
-                                    }
-
-                                    NSMutableArray *appList = [NSMutableArray array];
-                                    Class LSApplicationWorkspaceClass = objc_getClass("LSApplicationWorkspace");
-                                    if (LSApplicationWorkspaceClass) {
-                                        NSArray *apps = [[LSApplicationWorkspaceClass defaultWorkspace] allInstalledApplications];
-                                        SRLog(@"API: Found %lu installed applications", (unsigned long)apps.count);
-                                        for (LSApplicationProxy *proxy in apps) {
-                                            NSString *name = nil;
-                                            if ([proxy respondsToSelector:@selector(localizedName)]) {
-                                                name = [proxy localizedName];
-                                            }
-                                            NSString *bid = nil;
-                                            if ([proxy respondsToSelector:@selector(applicationIdentifier)]) {
-                                                bid = [proxy applicationIdentifier];
-                                            }
-                                            
-                                            if (name && bid) {
-                                                [appList addObject:@{@"name": name, @"bundleId": bid}];
-                                            }
-                                        }
-                                    } else {
-                                        SRLog(@"API: LSApplicationWorkspace class NOT FOUND after dlopen");
-                                    }
-
-                                    // Sort by name
-                                    [appList sortUsingComparator:^NSComparisonResult(id obj1, id obj2) {
-                                        return [obj1[@"name"] localizedCaseInsensitiveCompare:obj2[@"name"]];
-                                    }];
-                                    SRLog(@"API: returning %lu apps in device list", (unsigned long)appList.count);
-                                    
-                                    NSArray *airplayNames = RCFetchAirPlayDeviceNames();
-
-                                    NSDictionary *resp = @{
-                                        @"ok": @YES,
-                                        @"bluetooth": btNames,
-                                        @"wifi": wifiNames,
-                                        @"apps": appList,
-                                        @"airplay": airplayNames
-                                    };
-                                    NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
-                                    NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
-                                }
-                            } else if ([path isEqualToString:@"/api/commands"] && [method isEqualToString:@"GET"]) {
-                                NSArray *commandList = @[
-                                    // System Controls
-                                    @{@"command": @"lock", @"desc": @"System: Lock the device screen"},
-                                    @{@"command": @"unlock <passcode>", @"desc": @"Security: Unlock device screen (INSECURE: Passcode sent in plain text!)"},
-                                    @{@"command": @"home", @"desc": @"System: Simulate a Home Button press"},
-                                    @{@"command": @"screenshot", @"desc": @"System: Take a screenshot"},
-                                    @{@"command": @"open control center", @"desc": @"System: Open Control Center"},
-                                    @{@"command": @"app switcher", @"desc": @"System: Open App Switcher"},
-                                    @{@"command": @"open <bundleId>", @"desc": @"System: Launch an application by bundle identifier"},
-                                    @{@"command": @"kill <bundleId>", @"desc": @"System: Force-close an application"},
-                                    @{@"command": @"respring", @"desc": @"System: Restart SpringBoard"},
-                                    @{@"command": @"ldrestart", @"desc": @"System: Soft-reboot the device"},
-
-                                    // Media & Volume
-                                    @{@"command": @"play", @"desc": @"Media: Start playback"},
-                                    @{@"command": @"pause", @"desc": @"Media: Pause playback"},
-                                    @{@"command": @"next", @"desc": @"Media: Skip to next track"},
-                                    @{@"command": @"prev", @"desc": @"Media: Skip to previous track"},
-                                    @{@"command": @"toggle", @"desc": @"Media: Toggle play/pause"},
-                                    @{@"command": @"vol up", @"desc": @"Media: Increase volume"},
-                                    @{@"command": @"vol down", @"desc": @"Media: Decrease volume"},
-                                    @{@"command": @"volume <0-100>", @"desc": @"Media: Set volume to specific percentage"},
-
-                                    // Hardware Toggles
-                                    @{@"command": @"bt on/off", @"desc": @"Toggles: Bluetooth power"},
-                                    @{@"command": @"wifi on/off", @"desc": @"Toggles: WiFi power"},
-                                    @{@"command": @"cellular on/off", @"desc": @"Toggles: Cellular Data power"},
-                                    @{@"command": @"airplane on/off", @"desc": @"Toggles: Airplane Mode power"},
-                                    @{@"command": @"dnd on/off", @"desc": @"Toggles: Do Not Disturb Mode"},
-                                    @{@"command": @"audiomix on/off", @"desc": @"Toggles: AudioMix simultaneous playback"},
-                                    @{@"command": @"low power on/off", @"desc": @"Toggles: Low Power Mode"},
-                                    @{@"command": @"mute", @"desc": @"Toggles: System mute/silent mode"},
-                                    @{@"command": @"rotate lock/unlock", @"desc": @"Toggles: Orientation lock state"},
-                                    @{@"command": @"haptic", @"desc": @"System: Play a subtle haptic feedback vibe"},
-
-                                    // Automations & Discovery
-                                    @{@"command": @"shortcut \"Name\"", @"desc": @"Automation: Run a Siri Shortcut"},
-                                    @{@"command": @"trigger <ID>", @"desc": @"Automation: Fire a configured RemoteCompanion trigger"}
-                                ];
-                                NSDictionary *resp = @{@"ok": @YES, @"commands": commandList};
-                                NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:NSJSONWritingPrettyPrinted error:nil];
-                                NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
-                                // Remove backslash escaping for forward slashes
-                                jsonStr = [jsonStr stringByReplacingOccurrencesOfString:@"\\/" withString:@"/"];
-                                responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
-                            } else if ([path hasPrefix:@"/api/command"]) {
-                                load_trigger_config();
-                                if (![g_triggerConfig[@"webUIEnabled"] boolValue]) {
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 403 Forbidden\r\n%@Content-Length: 17\r\n\r\nWeb UI is disabled", cors];
-                                } else {
-                                    __block NSString *command = nil;
-                                    
-                                    // 1. Try Query Parameters (Allow for both GET and POST)
-                                    NSRange qMarkRange = [path rangeOfString:@"?"];
-                                    if (qMarkRange.location != NSNotFound) {
-                                        NSString *queryString = [path substringFromIndex:qMarkRange.location + 1];
-                                        NSArray *pairs = [queryString componentsSeparatedByString:@"&"];
-                                        for (NSString *pair in pairs) {
-                                            NSArray *kv = [pair componentsSeparatedByString:@"="];
-                                            if (kv.count == 2) {
-                                                NSString *key = [kv[0] lowercaseString];
-                                                if ([key isEqualToString:@"cmd"] || [key isEqualToString:@"command"]) {
-                                                    command = [kv[1] stringByRemovingPercentEncoding];
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // 2. If no query param found, and it's a POST, check the body
-                                    if (!command && [method isEqualToString:@"POST"]) {
-                                        NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
-                                        int contentLength = 0;
-                                        if (clRange.location != NSNotFound) {
-                                            NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
-                                            contentLength = [afterCl intValue];
-                                        }
-
-                                        const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
-                                        if (headersEnd != NULL) {
-                                            size_t headerBytesOffset = (headersEnd - buffer) + 4;
-                                            size_t availableBodyLength = valread - headerBytesOffset;
-                                            
-                                            NSMutableData *bodyData = [NSMutableData data];
-                                            if (availableBodyLength > 0) {
-                                                [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
-                                            }
-                                            
-                                            // Ensure we read the complete body based on Content-Length
-                                            while (bodyData.length < contentLength) {
-                                                char chunk[4096];
-                                                ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
-                                                if (chunkRead <= 0) break;
-                                                [bodyData appendBytes:chunk length:chunkRead];
-                                            }
-
-                                            NSString *bodyText = [[NSString alloc] initWithData:bodyData encoding:NSUTF8StringEncoding];
-                                            if (bodyText.length > 0) {
-                                                if ([bodyText hasPrefix:@"{"]) {
-                                                    NSDictionary *json = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
-                                                    if (json && json[@"command"]) command = json[@"command"];
-                                                } else {
-                                                    command = [bodyText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if (command && command.length > 0) {
-                                        // Action commands use async to avoid SpringBoard deadlocks
-                                        dispatch_async(dispatch_get_main_queue(), ^{
-                                            handle_command(command);
-                                        });
-                                        NSDictionary *resp = @{@"ok": @YES, @"command": command, @"status": @"Acknowledged"};
-                                        NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
-                                        NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
-                                        responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)respData.length, jsonStr];
-                                    } else {
-                                        responseString = [NSString stringWithFormat:@"HTTP/1.1 400 Bad Request\r\n%@Content-Length: 15\r\n\r\nMissing command", cors];
-                                    }
-                                }
-                            } else if ([path hasPrefix:@"/api/trigger/"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
-                                load_trigger_config();
-                                if (![g_triggerConfig[@"webUIEnabled"] boolValue]) {
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 403 Forbidden\r\n%@Content-Length: 17\r\n\r\nWeb UI is disabled", cors];
-                                } else {
-                                    NSString *triggerKey = [path substringFromIndex:@"/api/trigger/".length];
-                                    NSRange qRange = [triggerKey rangeOfString:@"?"];
-                                    if (qRange.location != NSNotFound) {
-                                        triggerKey = [triggerKey substringToIndex:qRange.location];
-                                    }
-                                    triggerKey = [triggerKey stringByRemovingPercentEncoding];
-                                    
-                                    dispatch_async(dispatch_get_main_queue(), ^{
-                                        RCExecuteTrigger(triggerKey);
-                                    });
-                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
-                                }
-                            }
-                            
-                            if (responseString) {
-                                write(new_socket, [responseString UTF8String], [responseString lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
-                            }
-                        }
-                    }
-                }
-                close(new_socket);
-            });
-        }
-    });
-}
-
-static void start_server() {
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        // Server starts always, but will refuse commands if disabled in config
-        
-        int server_fd, new_socket;
-        struct sockaddr_un address;
-        int addrlen = sizeof(address);
-        
-        NSString *socketPath = @"/var/mobile/Documents/rc.sock";
-
-        if ((server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-            SRLog(@"[RemoteCommand] ERROR: Failed to create socket (errno: %d)", errno);
-            return;
-        }
-
-        // Unlink any existing socket file
-        unlink([socketPath UTF8String]);
-        
-        memset(&address, 0, sizeof(struct sockaddr_un));
-        address.sun_family = AF_UNIX;
-        strncpy(address.sun_path, [socketPath UTF8String], sizeof(address.sun_path) - 1);
-        
-        if (bind(server_fd, (struct sockaddr *)&address, sizeof(struct sockaddr_un)) < 0) {
-            SRLog(@"[RemoteCommand] ERROR: Failed to bind to socket (errno: %d - %s)", errno, strerror(errno));
-            close(server_fd);
-            return;
-        }
-        
-        // Allow mobile/root to read/write to the socket
-        chmod([socketPath UTF8String], 0777);
-        
-        if (listen(server_fd, 5) < 0) {
-            SRLog(@"[RemoteCommand] ERROR: Failed to listen (errno: %d)", errno);
-            close(server_fd);
-            return;
-        }
-
-        SRLog(@"[RemoteCommand] Server listening on UNIX socket %@... Waiting for connections.", socketPath);
-
-        while (1) {
-            addrlen = sizeof(address);
-            
-            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-                 if (errno != EAGAIN && errno != EINTR) {
-                     SRLog(@"[RemoteCommand] Accept failed: %d (%s)", errno, strerror(errno));
-                 }
-                 continue;
-            }
-            
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                struct timeval tv;
-                tv.tv_sec = 5;
-                tv.tv_usec = 0;
-                setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-
-                char local_buffer[1024] = {0};
-                ssize_t valread = read(new_socket, local_buffer, 1024);
-                if (valread > 0) {
-                    NSString *cmd = [[NSString alloc] initWithBytes:local_buffer length:valread encoding:NSUTF8StringEncoding];
-                    // UNIX Sockets are inherently local, no need to check IP or tcpEnabled config
-                    NSString *response = handle_command(cmd);
-                    if (response) {
-                        write(new_socket, [response UTF8String], [response lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
-                    }
-                }
-                close(new_socket);
-            });
-        }
-    });
-}
-
-// --- REPLACEMENT NOTE: Removed %ctor from here to move to the end ---
-
-
-
-// --- ROBUST HOOKS ---
-
-static NSTimer *g_volUpTimer = nil;
-static BOOL g_volUpTriggered = NO;
-static BOOL g_volIsReplaying = NO; // Recursion guard for replay
-
-static NSTimer *g_volDownTimer = nil;
-static BOOL g_volDownTriggered = NO;
-
-static BOOL g_volUpIsDown = NO;
-static BOOL g_volDownIsDown = NO;
-static BOOL g_volComboTriggered = NO;
-
-static NSTimer *g_lockButtonTimer = nil;
-static BOOL g_lockButtonTriggered = NO;
-static NSTimer *g_systemPowerOffTimer = nil; // New for dual-stage
-static BOOL g_forceSystemLongPress = NO;     // New for dual-stage
-static BOOL g_powerIsDown = NO;
-static BOOL g_powerVolComboTriggered = NO;
-
-
-
-
-
-// static NSTimeInterval g_lastPowerUpTime = 0; // Removed unused variable
-
-
-
-// Helper to trigger haptic feedback
-// Helper to trigger haptic feedback
-static void trigger_haptic() {
-    if (RC_IsForegroundAppExcluded()) return;
-    AudioServicesPlaySystemSound(1520);
-}
-
-// --- SAFE VOLUME HOLD IMPLEMENTATION ---
-
-
-static int g_lastRingerState = -1;
-
-%hook SBRingerControl
-
--(void)setRingerMuted:(BOOL)muted {
-    %orig;
-
-    if (g_lastRingerState == -1) {
-        // First initialization (respring/reboot) - just track state, don't fire
-        SRLog(@"SBRingerControl Initial State: %d", muted);
-        g_lastRingerState = (int)muted;
-        return;
-    }
-
-    if (g_lastRingerState == (int)muted) {
-        // State hasn't changed, ignore
-        return;
-    }
-
-    // State changed
-    g_lastRingerState = (int)muted;
-    SRLog(@"SBRingerControl setRingerMuted: %d", muted);
-    
-    // Fire generic toggle status
-    RCExecuteTrigger(@"trigger_ringer_toggle");
-
-    if (muted) {
-        RCExecuteTrigger(@"trigger_ringer_mute");
-    } else {
-        RCExecuteTrigger(@"trigger_ringer_unmute");
-    }
-}
-
-%end
-
-static BOOL iPadHasVolumeButtonsOnTop() {
-    static BOOL onTop = NO;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        struct utsname systemInfo;
-        uname(&systemInfo);
-        NSString *machine = [NSString stringWithCString:systemInfo.machine encoding:NSUTF8StringEncoding];
-        if ([machine isEqualToString:@"iPad14,1"] || [machine isEqualToString:@"iPad14,2"] || // iPad mini 6
-            [machine isEqualToString:@"iPad16,1"] || [machine isEqualToString:@"iPad16,2"] || // iPad mini 7
-            [machine isEqualToString:@"iPad13,18"] || [machine isEqualToString:@"iPad13,19"]) { // iPad 10
-            onTop = YES;
-        }
-    });
-    return onTop;
-}
-
-static BOOL iPadIsSwappedBySystem() {
-    if ([[UIDevice currentDevice] userInterfaceIdiom] != UIUserInterfaceIdiomPad) {
-        return NO;
-    }
-    
-    SpringBoard *sb = (SpringBoard *)[UIApplication sharedApplication];
-    UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
-    if ([sb respondsToSelector:@selector(activeInterfaceOrientation)]) {
-        orientation = [sb activeInterfaceOrientation];
-    }
-    
-    BOOL buttonsOnTop = iPadHasVolumeButtonsOnTop();
-    if (buttonsOnTop) {
-        return (orientation == UIInterfaceOrientationPortraitUpsideDown || orientation == UIInterfaceOrientationLandscapeRight);
-    } else {
-        return (orientation == UIInterfaceOrientationPortraitUpsideDown || orientation == UIInterfaceOrientationLandscapeLeft);
-    }
-}
-
-static BOOL should_swap_in_hooks() {
-    load_trigger_config();
-    if (![g_triggerConfig[@"masterEnabled"] boolValue]) return NO;
-    if (![g_triggerConfig[@"fixedVolumeButtons"] boolValue]) return NO;
-    
-    return iPadIsSwappedBySystem();
-}
-
-static BOOL should_swap_in_hid_listener() {
-    load_trigger_config();
-    if (![g_triggerConfig[@"masterEnabled"] boolValue]) return NO;
-    if ([g_triggerConfig[@"fixedVolumeButtons"] boolValue]) {
-        return NO;
-    }
-    
-    return iPadIsSwappedBySystem();
-}
-
-static BOOL g_isSwappingVolume = NO;
-
-%hook SBVolumeHardwareButtonActions
-
-- (void)volumeIncreasePressDownWithModifiers:(long long)arg1 {
-    if (!g_isSwappingVolume && should_swap_in_hooks()) {
-        g_isSwappingVolume = YES;
-        [self volumeDecreasePressDownWithModifiers:arg1];
-        g_isSwappingVolume = NO;
-        return;
-    }
-
-    if (g_volIsReplaying || RC_IsForegroundAppExcluded()) {
-        %orig;
-        return;
-    }
-
-    if (g_powerIsDown) {
-        load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"power_volume_up"][@"enabled"] boolValue]) {
-            SRLog(@"Suppressing Volume Up because Power is DOWN (Combo)");
-            return;
-        }
-    }
-
-    g_volUpIsDown = YES;
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        load_trigger_config();
-        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-        BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
-        BOOL holdEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_up_hold"][@"enabled"] boolValue];
-
-        if (holdEnabled || comboEnabled) {
-            if (g_volUpTimer) [g_volUpTimer invalidate];
-            g_volUpTimer = [NSTimer scheduledTimerWithTimeInterval:0.35 repeats:NO block:^(NSTimer *timer) {
-                if (g_volComboTriggered) return;
-                g_volUpTimer = nil;
-                if (holdEnabled) {
-                    g_volUpTriggered = YES;
-                    trigger_haptic();
-                    RCExecuteTrigger(@"volume_up_hold");
-                }
-            }];
-        } else {
-            g_volIsReplaying = YES;
-            [self volumeIncreasePressDownWithModifiers:arg1];
-            g_volIsReplaying = NO;
-        }
-    });
-}
-
-- (void)volumeIncreasePressUp {
-    if (!g_isSwappingVolume && should_swap_in_hooks()) {
-        g_isSwappingVolume = YES;
-        [self volumeDecreasePressUp];
-        g_isSwappingVolume = NO;
-        return;
-    }
-
-    g_volUpIsDown = NO;
-    if (g_volIsReplaying || RC_IsForegroundAppExcluded()) {
-        %orig;
-        return;
-    }
-
-    if (g_volComboTriggered) {
-        if (!g_volDownIsDown) g_volComboTriggered = NO;
-        return;
-    }
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        load_trigger_config();
-        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-        BOOL holdEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_up_hold"][@"enabled"] boolValue];
-        BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
-
-        if (holdEnabled || comboEnabled) {
-            if (g_volUpTimer) {
-                [g_volUpTimer invalidate];
-                g_volUpTimer = nil;
-                g_volIsReplaying = YES;
-                [self volumeIncreasePressDownWithModifiers:0];
-                [self volumeIncreasePressUp];
-                g_volIsReplaying = NO;
-            }
-            if (g_volUpTriggered) {
-                g_volUpTriggered = NO;
-            }
-        } else {
-            g_volIsReplaying = YES;
-            [self volumeIncreasePressUp];
-            g_volIsReplaying = NO;
-        }
-    });
-}
-
-- (void)volumeDecreasePressDownWithModifiers:(long long)arg1 {
-    if (!g_isSwappingVolume && should_swap_in_hooks()) {
-        g_isSwappingVolume = YES;
-        [self volumeIncreasePressDownWithModifiers:arg1];
-        g_isSwappingVolume = NO;
-        return;
-    }
-
-    if (g_volIsReplaying || RC_IsForegroundAppExcluded()) {
-        %orig;
-        return;
-    }
-
-    if (g_powerIsDown) {
-        load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"power_volume_down"][@"enabled"] boolValue]) {
-            SRLog(@"Suppressing Volume Down because Power is DOWN (Combo)");
-            return;
-        }
-    }
-
-    g_volDownIsDown = YES;
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        load_trigger_config();
-        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-        BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
-        BOOL holdEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_down_hold"][@"enabled"] boolValue];
-
-        if (holdEnabled || comboEnabled) {
-            if (g_volDownTimer) [g_volDownTimer invalidate];
-            g_volDownTimer = [NSTimer scheduledTimerWithTimeInterval:0.35 repeats:NO block:^(NSTimer *timer) {
-                if (g_volComboTriggered) return;
-                g_volDownTimer = nil;
-                if (holdEnabled) {
-                    g_volDownTriggered = YES;
-                    trigger_haptic();
-                    RCExecuteTrigger(@"volume_down_hold");
-                }
-            }];
-        } else {
-            g_volIsReplaying = YES;
-            [self volumeDecreasePressDownWithModifiers:arg1];
-            g_volIsReplaying = NO;
-        }
-    });
-}
-
-- (void)volumeDecreasePressUp {
-    if (!g_isSwappingVolume && should_swap_in_hooks()) {
-        g_isSwappingVolume = YES;
-        [self volumeIncreasePressUp];
-        g_isSwappingVolume = NO;
-        return;
-    }
-
-    g_volDownIsDown = NO;
-    if (g_volIsReplaying || RC_IsForegroundAppExcluded()) {
-        %orig;
-        return;
-    }
-
-    if (g_volComboTriggered) {
-        if (!g_volUpIsDown) g_volComboTriggered = NO;
-        return;
-    }
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        load_trigger_config();
-        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-        BOOL holdEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_down_hold"][@"enabled"] boolValue];
-        BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
-
-        if (holdEnabled || comboEnabled) {
-            if (g_volDownTimer) {
-                [g_volDownTimer invalidate];
-                g_volDownTimer = nil;
-                g_volIsReplaying = YES;
-                [self volumeDecreasePressDownWithModifiers:0];
-                [self volumeDecreasePressUp];
-                g_volIsReplaying = NO;
-            }
-            if (g_volDownTriggered) {
-                g_volDownTriggered = NO;
-            }
-        } else {
-            g_volIsReplaying = YES;
-            [self volumeDecreasePressUp];
-            g_volIsReplaying = NO;
-        }
-    });
-}
-
-%end
-
-
-// --- IOHID Definitions for Background Listener ---
-typedef struct __IOHIDEvent * IOHIDEventRef;
-typedef struct __IOHIDEventSystemClient * IOHIDEventSystemClientRef;
-typedef uint32_t IOHIDEventOptionBits;
-typedef uint32_t IOOptionBits;
-
-extern IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
-extern int IOHIDEventGetType(IOHIDEventRef event);
-extern int IOHIDEventGetIntegerValue(IOHIDEventRef event, int field);
-extern void IOHIDEventSystemClientRegisterEventCallback(IOHIDEventSystemClientRef client, void* callback, void* target, void* refcon);
-extern void IOHIDEventSystemClientScheduleWithRunLoop(IOHIDEventSystemClientRef client, CFRunLoopRef runLoop, CFStringRef runLoopMode);
-
-typedef void (*IOHIDEventSystemClientEventCallback)(void* target, void* refcon, void* queue, IOHIDEventRef event);
-
-// Usage Pages / Usages
-#define kHIDPage_GenericDesktop 0x01
-#define kHIDPage_Consumer       0x0C
-#define kHIDUsage_GD_SystemSleep 0x82
-#define kHIDUsage_Csmr_Power     0x30
-#define kHIDUsage_Csmr_Menu      0x40
-#define kHIDUsage_Csmr_VolumeIncrement 0xE9
-#define kHIDUsage_Csmr_VolumeDecrement 0xEA
-#define kHIDUsage_Csmr_PlayOrPause 0xCD
-
-#define kIOHIDEventTypeKeyboard 3
-#define kIOHIDEventFieldKeyboardUsagePage 0x30000
-#define kIOHIDEventFieldKeyboardUsage 0x30001
-#define kIOHIDEventFieldKeyboardDown 0x30002
-
-// --- BACKGROUND HID LISTENER (Safe for NFC) ---
-// Restores reliable Home Button counting without crashing NearField
-
-static int g_homeClickCount = 0;
-static NSTimer *g_homeClickTimer = nil;
-
-// Power Button Multi-Click Globals
-static int g_powerClickCount = 0;
-static NSTimer *g_powerClickTimer = nil;
-static NSTimeInterval g_lastHIDTime = 0;
-static BOOL g_hidButtonDown = NO;
-static IOHIDEventSystemClientRef g_hidClient = NULL;
-
-static void RC_CheckAndFire();
-
-static void RC_ProcessHomeClick() {
-    if (RC_IsForegroundAppExcluded()) return;
-    g_homeClickCount++;
-    SRLog(@"[HID] 🔵 CLICK DETECTED (Up)! Count: %d", g_homeClickCount);
-    
-    // Dispatch timer scheduling to Main Thread to be safe with Timers/RunLoops
-    dispatch_async(dispatch_get_main_queue(), ^{
-        RC_CheckAndFire();
-    });
-}
-
-static void RC_CheckAndFire() {
-    // 1. Reset existing timer
-    if (g_homeClickTimer) {
-        [g_homeClickTimer invalidate];
-        g_homeClickTimer = nil;
-    }
-    
-    // 2. Load Config
-    load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL quadEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"trigger_home_quadruple_click"][@"enabled"] boolValue];
-
-    // 3. IMMEDIATE FIRE CHECK (Quadruple)
-    if (quadEnabled && g_homeClickCount >= 4) {
-        SRLog(@"🚀 QUAD CLICK (4+) REACHED! Firing immediately.");
-        trigger_haptic();
-        RCExecuteTrigger(@"trigger_home_quadruple_click");
-        g_homeClickCount = 0; // Reset Sequence
-        return;
-    }
-    
-    // 4. Determines Timeout
-    NSTimeInterval timeout = 0.35; 
-    if (quadEnabled) timeout = 0.55; 
-    
-    // 5. Schedule Timer
-    g_homeClickTimer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
-        g_homeClickTimer = nil;
-        SRLog(@"🔵 SEQUENCE ENDED. Final count: %d", g_homeClickCount);
-        
-        NSString *triggerKey = nil;
-        
-        if (g_homeClickCount == 4 && quadEnabled) triggerKey = @"trigger_home_quadruple_click";
-        else if (g_homeClickCount == 3) triggerKey = @"trigger_home_triple_click";
-        else if (g_homeClickCount == 2) triggerKey = @"trigger_home_double_click";
-        
-        if (triggerKey && masterEnabled) {
-            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-            if (enabled) {
-                SRLog(@"✅ FIRING TRIGGER: %@", triggerKey);
-                trigger_haptic();
-                RCExecuteTrigger(triggerKey);
-            }
-        }
-        g_homeClickCount = 0;
-    }];
-}
-
-static void RC_CheckAndFirePower();
-
-static void RC_ProcessPowerClick() {
-    // 1. Reset timer
-    if (g_powerClickTimer) {
-        [g_powerClickTimer invalidate];
-        g_powerClickTimer = nil;
-    }
-    
-    g_powerClickCount++;
-    SRLog(@"[HID] ⚡️ POWER CLICK DETECTED. Count: %d", g_powerClickCount);
-    
-    // Dispatch timer scheduling to Main Thread to be safe with Timers/RunLoops
-    dispatch_async(dispatch_get_main_queue(), ^{
-        RC_CheckAndFirePower();
-    });
-}
-
-// Power Button Multi-Click Logic
-static void RC_CheckAndFirePower() {
-    // 1. Reset timer
-    if (g_powerClickTimer) {
-        [g_powerClickTimer invalidate];
-        g_powerClickTimer = nil;
-    }
-    
-    load_trigger_config();
-    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-    BOOL quadEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"power_quadruple_click"][@"enabled"] boolValue];
-    
-    // 3. IMMEDIATE FIRE CHECK (Quadruple)
-    if (quadEnabled && g_powerClickCount >= 4) {
-        SRLog(@"🚀 POWER QUAD CLICK (4+) REACHED! Firing.");
-        trigger_haptic();
-        RCExecuteTrigger(@"power_quadruple_click");
-        g_powerClickCount = 0;
-        return;
-    }
-    
-    // 4. Timeout
-    NSTimeInterval timeout = 0.4; 
-    
-    // 5. Schedule Timer
-    g_powerClickTimer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
-        g_powerClickTimer = nil;
-        SRLog(@"POWER SEQUENCE ENDED. Final count: %d", g_powerClickCount);
-        
-        NSString *triggerKey = nil;
-        
-        if (g_powerClickCount == 4) triggerKey = @"power_quadruple_click"; // Backup if immediate failed or disabled? No, if disabled we land here.
-        else if (g_powerClickCount == 3) triggerKey = @"power_triple_click";
-        else if (g_powerClickCount == 2) triggerKey = @"power_double_tap";
-        
-        if (triggerKey && masterEnabled) {
-            BOOL enabled = [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-            if (enabled) {
-                SRLog(@"✅ FIRING POWER TRIGGER: %@", triggerKey);
-                trigger_haptic();
-                RCExecuteTrigger(triggerKey);
-            }
-        }
-        g_powerClickCount = 0;
-    }];
-}
-
-static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientRef service, IOHIDEventRef event) {
-    if (RC_IsForegroundAppExcluded()) return;
-    int type = IOHIDEventGetType(event);
-    
-    if (type == 14) { // kIOHIDEventTypeProximity
-        int detection = IOHIDEventGetIntegerValue(event, (14 << 16) | 0);
-        int level = IOHIDEventGetIntegerValue(event, (14 << 16) | 1);
-        SRLog(@"[HID Proximity] Event type 14 detected! detection=%d, level=%d", detection, level);
-        g_latestHIDProximityState = (detection != 0) ? 1 : 0;
-    }
-    
-    if (type == 29) { // Biometric Event (Finger on sensor)
-        // Toggle Logic for "Hold" (Fire by itself after 1.0s)
-        // Assumption: Sensor sends event on DOWN ... (Silence) ... and UP.
-        
-        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            load_trigger_config();
-            BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                ([g_triggerConfig[@"triggers"][@"touchid_hold"][@"enabled"] boolValue] || 
-                 [g_triggerConfig[@"triggers"][@"touchid_tap"][@"enabled"] boolValue]);
-            if (!enabled) return;
-
-            // DEBOUNCE CHECK:
-            if (now < g_bioIgnoreUntil) {
-                // SRLog(@"[Bio] Ignoring Event (Debounce)");
-                return;
-            }
-
-            // STATE-BASED TOGGLE LOGIC:
-            NSTimeInterval diff = (g_bioFingerDownTime == 0) ? 0 : (now - g_bioFingerDownTime);
-            BOOL isStale = (diff > 5.0); // If >5s, assume we missed a lift event and reset.
-
-            if (g_bioFingerDownTime != 0 && !isStale) {
-                // STATE = DOWN. This event must be LIFT.
-                
-                // VARIABLE DELAY:
-                // If we started on the lockscreen, we need a bigger window (0.4s) for biometrics to "win" the race.
-                // If we're already unlocked, we want it fast (0.05s) for responsiveness.
-                NSTimeInterval liftDelay = g_bioWasLocked ? 0.4 : 0.05;
-
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(liftDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    if (g_bioFingerDownTime == 0) return; // Already handled or reset
-
-                    // Cancel timer if running.
-                    if (g_bioWatchdogTimer) {
-                        [g_bioWatchdogTimer invalidate];
-                        g_bioWatchdogTimer = nil;
-
-                        NSTimeInterval now_lift = [[NSDate date] timeIntervalSince1970];
-                        if (now_lift < g_bioIgnoreUntil) {
-                            SRLog(@"[Bio] Suppressing Tap (Finger Lift within Ignore Window)");
-                            g_bioFingerDownTime = 0;
-                            g_bioHoldTriggered = NO;
-                            return;
-                        }
-
-                        // STATE-AWARE SUPPRESSION:
-                        // If we were locked when we put our finger down, but we are now UNLOCKED, 
-                        // this was an unlock attempt. Skip the tap.
-                        Class LSMC = objc_getClass("SBLockScreenManager");
-                        SBLockScreenManager *lsm = LSMC ? [LSMC sharedInstance] : nil;
-                        BOOL currentlyLocked = lsm ? [lsm isUILocked] : NO;
-                        
-                        if (g_bioWasLocked && !currentlyLocked) {
-                            SRLog(@"[Bio] Suppressing Tap (Finger Lift after Unlock Match Detected)");
-                            g_bioFingerDownTime = 0;
-                            g_bioHoldTriggered = NO;
-                            return;
-                        }
-
-                        if ([g_triggerConfig[@"triggers"][@"touchid_tap"][@"enabled"] boolValue]) {
-                            trigger_haptic();
-                            RCExecuteTrigger(@"touchid_tap");
-                        }
-                    }
-                    g_bioFingerDownTime = 0; // Reset State to UP.
-                    g_bioHoldTriggered = NO;
-                    
-                    // START DEBOUNCE (Ignore subsequent events for 0.5s to squash "bouncing")
-                    g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 0.5;
+        listen(serverSock, 10);
+        SRLog(@"Web UI Server running on port %d", g_webServerPort);
+
+        while (g_webServerRunning) {
+            struct sockaddr_in clientAddr;
+            socklen_t clientLen = sizeof(clientAddr);
+            int clientSock = accept(serverSock, (struct sockaddr *)&clientAddr, &clientLen);
+            if (clientSock >= 0) {
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                    handle_web_client(clientSock);
                 });
-
-            } else {
-                // STATE = UP (or Stale). This event must be DOWN.
-                // Start Timer!
-                g_bioFingerDownTime = now; // Set State to DOWN.
-                
-                // Track initial lock state
-                Class LSMC = objc_getClass("SBLockScreenManager");
-                SBLockScreenManager *lsm = LSMC ? [LSMC sharedInstance] : nil;
-                g_bioWasLocked = NO;
-                if (lsm && [lsm respondsToSelector:@selector(isUILocked)]) {
-                    g_bioWasLocked = [lsm isUILocked];
-                }
-
-                
-                if (g_bioWatchdogTimer) [g_bioWatchdogTimer invalidate];
-                g_bioWatchdogTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
-
-                    g_bioWatchdogTimer = nil; // Timer is done.
-                    
-                    // ADD DECISION WINDOW FOR HOLD (0.3s)
-                    // Similar to the Tap fix, we wait a moment on the lockscreen to let biometrics "win".
-                    NSTimeInterval holdDecisionDelay = g_bioWasLocked ? 0.3 : 0.0;
-                    
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(holdDecisionDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        // Check ignore window first
-                        if ([[NSDate date] timeIntervalSince1970] < g_bioIgnoreUntil) {
-                            SRLog(@"[Bio] Suppressing Hold (Inside Ignore Window)");
-                            return;
-                        }
-
-                        // STATE-AWARE SUPPRESSION (Hold):
-                        Class LSMC2 = objc_getClass("SBLockScreenManager");
-                        SBLockScreenManager *lsm2 = LSMC2 ? [LSMC2 sharedInstance] : nil;
-                        BOOL currentlyLocked2 = lsm2 ? [lsm2 isUILocked] : NO;
-                        
-                        if (g_bioWasLocked && !currentlyLocked2) {
-                            SRLog(@"[Bio] Suppressing Hold (Unlock succeeded during decision window)");
-                            return;
-                        }
-
-                        // Check if trigger is enabled and has actions BEFORE firing haptics
-                        if (g_triggerConfig) {
-                            NSDictionary *holdTrigger = g_triggerConfig[@"triggers"][@"touchid_hold"];
-                            if ([holdTrigger[@"enabled"] boolValue] && [holdTrigger[@"actions"] count] > 0) {
-                                trigger_haptic();
-                                RCExecuteTrigger(@"touchid_hold");
-                            }
-                        }
-                    });
-                }];
-            }
-        });
-
-    }
-    
-    // Log Biometric/Mesa events specifically?
-    // kIOHIDEventTypeBiometric = 29?
-    // Let's just log everything that isn't accelerometer (usually high freq)
-    // Accelerometer is... often type 13?
-    
-    if (type == kIOHIDEventTypeKeyboard) {
-        int usagePage = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardUsagePage);
-        int usage = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardUsage);
-        int down = IOHIDEventGetIntegerValue(event, kIOHIDEventFieldKeyboardDown);
-        
-        // SRLog(@"[HID] KEYBOARD (1) -> Page: 0x%X Usage: 0x%X Down: %d", usagePage, usage, down);
-        
-        // Home Button (Page 0x0C, Usage 0x40)
-        if (usagePage == kHIDPage_Consumer && usage == kHIDUsage_Csmr_Menu) {
-            NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-            
-            if (down) {
-                if (!g_hidButtonDown) {
-                    g_hidButtonDown = YES;
-                    g_lastHIDTime = now;
-
-                    
-                    // SUPPRESS TOUCH ID HOLD:
-                    // If user is clicking, they are not "Holding" for the gesture.
-                    // Suppress bio events for 1.5s (covers triple clicks).
-                    g_bioIgnoreUntil = now + 1.5;
-                    
-                    // Dispatch state reset to Main Thread to ensure synchronization with Bio handlers
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        if (g_bioWatchdogTimer) {
-                            [g_bioWatchdogTimer invalidate];
-                            g_bioWatchdogTimer = nil;
-                        }
-                        g_bioFingerDownTime = 0;
-                        g_bioHoldTriggered = NO;
-                    });
-                }
-            } else { // UP
-                if (g_hidButtonDown) {
-                    if (now - g_lastHIDTime > 0.05) { // 50ms Debounce
-                        g_hidButtonDown = NO;
-                        g_lastHIDTime = now;
-
-                        RC_ProcessHomeClick();
-                    }
-                }
             }
         }
-        
-        // Power Button (Page 0x0C, Usage 0x30)
-        if (usagePage == kHIDPage_Consumer && usage == kHIDUsage_Csmr_Power) {
-            NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-            static NSTimeInterval lastPowerDownTime = 0;
-
-            if (down) {
-                if (!g_powerIsDown) {
-                    g_powerIsDown = YES;
-                    lastPowerDownTime = now;
-                    SRLog(@"[HID] ⚡️ Power DOWN");
-                    
-                    // SUPPRESS TOUCH ID HOLD (on Power Wake/Press):
-                    // If user is pressing power, they might be waking to unlock.
-                    // Suppress bio events for 1.5s.
-                    NSTimeInterval now_power = [[NSDate date] timeIntervalSince1970];
-                    g_bioIgnoreUntil = now_power + 1.5;
-                    // Also cancel any pending hold timer
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        if (g_bioWatchdogTimer) {
-                            [g_bioWatchdogTimer invalidate];
-                            g_bioWatchdogTimer = nil;
-                        }
-                    });
-                    g_bioFingerDownTime = 0;
-                    g_bioHoldTriggered = NO;
-
-                    // Check for simultaneous press if Volume is already down
-                    if (g_volUpIsDown || g_volDownIsDown) {
-                        NSString *triggerKey = g_volUpIsDown ? @"power_volume_up" : @"power_volume_down";
-                        load_trigger_config();
-                        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-                        BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-                        
-                        if (enabled && !g_powerVolComboTriggered) {
-                            SRLog(@"[HID] ⚡️+🔊 POWER + VOLUME COMBINATION DETECTED (Power after Volume): %@", triggerKey);
-                            g_powerVolComboTriggered = YES;
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                 if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
-                                 if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
-                                 trigger_haptic();
-                                 RCExecuteTrigger(triggerKey);
-                            });
-                        }
-                    }
-                }
-            } else { // UP
-                if (g_powerIsDown) {
-                    if (now - lastPowerDownTime > 0.05) { // 50ms Debounce
-                        g_powerIsDown = NO;
-                        SRLog(@"[HID] ⚡️ Power UP");
-                        
-                        // If a combo was triggered, DON'T count this as a click for multi-tap
-                        if (g_powerVolComboTriggered) {
-                            SRLog(@"[HID] Combo was triggered, resetting power click count.");
-                            g_powerClickCount = 0;
-                            g_powerVolComboTriggered = NO;
-                        } else {
-                            RC_ProcessPowerClick();
-                        }
-                    }
-                    g_powerIsDown = NO; // Handle fast bounce
-                }
-            }
-        }
-        
-        // Volume Buttons (Page 0x0C, Usage 0xE9/0xEA)
-        if (usagePage == kHIDPage_Consumer && (usage == kHIDUsage_Csmr_VolumeIncrement || usage == kHIDUsage_Csmr_VolumeDecrement)) {
-            uint32_t mappedUsage = usage;
-            if (should_swap_in_hid_listener()) {
-                mappedUsage = (usage == kHIDUsage_Csmr_VolumeIncrement) ? kHIDUsage_Csmr_VolumeDecrement : kHIDUsage_Csmr_VolumeIncrement;
-            }
-
-            if (mappedUsage == kHIDUsage_Csmr_VolumeIncrement) g_volUpIsDown = !!down;
-            if (mappedUsage == kHIDUsage_Csmr_VolumeDecrement) g_volDownIsDown = !!down;
-            
-            // Check for Power + Volume combination
-            if (down && g_powerIsDown) {
-                NSString *triggerKey = (mappedUsage == kHIDUsage_Csmr_VolumeIncrement) ? @"power_volume_up" : @"power_volume_down";
-                load_trigger_config();
-                BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
-                BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-                
-                if (enabled) {
-                    SRLog(@"[HID] ⚡️+🔊 POWER + VOLUME COMBINATION DETECTED: %@", triggerKey);
-                    g_powerVolComboTriggered = YES;
-                    
-                    // Invalidate standard timers in Main Thread
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                         if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
-                         if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
-                         trigger_haptic();
-                         RCExecuteTrigger(triggerKey);
-                    });
-                    
-                    // We might want to swallow the volume event here, but HID listener is just a listener.
-                    // The Volume hooks will also fire, we handle suppression there too.
-                }
-            }
-            
-            if (g_volUpIsDown && g_volDownIsDown) {
-                if (!g_volComboTriggered) {
-                    load_trigger_config();
-                    if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue]) {
-                        g_volComboTriggered = YES;
-                        
-                        // Invalidate standard timers in Main Thread
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                             if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
-                             if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
-                             trigger_haptic();
-                             RCExecuteTrigger(@"volume_both_press");
-                        });
-                    }
-                }
-            } else if (!g_volUpIsDown && !g_volDownIsDown) {
-                if (g_volComboTriggered) {
-                    g_volComboTriggered = NO;
-                }
-            }
-        }
-    }
-}
-
-static void setup_background_hid_listener() {
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        SRLog(@"🔌 Setting up BACKGROUND HID Listener...");
-        
-        // Create client
-        g_hidClient = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
-        if (!g_hidClient) {
-            SRLog(@"❌ Failed to create HID Client");
-            return;
-        }
-        
-        // Register callback
-        IOHIDEventSystemClientRegisterEventCallback(g_hidClient, (IOHIDEventSystemClientEventCallback)handle_hid_event, NULL, NULL);
-        
-        // Create RunLoop for this background thread
-        NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
-        
-        // Schedule client
-        IOHIDEventSystemClientScheduleWithRunLoop(g_hidClient, [runLoop getCFRunLoop], kCFRunLoopDefaultMode);
-        
-        SRLog(@"✅ HID Listener Scheduled on Background RunLoop. Running...");
-        
-        // Run the runloop indefinitely
-        while (YES) {
-            [runLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
-        }
+        close(serverSock);
     });
 }
 
-
-%hook SBLockScreenManager
-
-- (BOOL)_attemptUnlockWithPasscode:(id)passcode mesa:(BOOL)mesa finishUIUnlock:(BOOL)finishUI {
-    BOOL result = %orig;
-    if (mesa) {
-        SRLog(@"🧬 Biometric (Mesa) Match Detected - setting immediate suppression flag");
-        g_bioIgnoreUntil = [[NSDate date] timeIntervalSince1970] + 2.0;
+// Master Handler for all Trigger Commands
+static NSString *handle_command(NSString *cmd) {
+    if (!cmd || cmd.length == 0) return @"Error: Empty command";
+    
+    NSString *trimmed = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *lowCmd = [trimmed lowercaseString];
+    
+    SRLog(@"Executing Command: %@", trimmed);
+    
+    // Flashlight Intensity (Percent 1-100)
+    if ([lowCmd hasPrefix:@"flashlight "]) {
+        NSString *valStr = [trimmed substringFromIndex:11];
+        float level = [valStr floatValue] / 100.0f;
+        level = MAX(0.01f, MIN(1.0f, level));
         
-        // Cancel pending timers immediately
-        if (g_bioWatchdogTimer) {
-            [g_bioWatchdogTimer invalidate];
-            g_bioWatchdogTimer = nil;
-        }
-    }
-    return result;
-}
-
-%end
-
-%hook SBProximitySensorManager
-- (id)init {
-    id orig = %orig;
-    g_proximitySensorManager = orig;
-    SRLog(@"[RemoteCompanion] Hooked SBProximitySensorManager init: %@", g_proximitySensorManager);
-    return orig;
-}
-- (id)initWithHIDInterface:(id)arg1 hardwareDefaults:(id)arg2 interfaceOrientationProvider:(id)arg3 {
-    id orig = %orig;
-    g_proximitySensorManager = orig;
-    SRLog(@"[RemoteCompanion] Hooked SBProximitySensorManager custom init: %@", g_proximitySensorManager);
-    return orig;
-}
-- (void)_setObjectInProximity:(BOOL)arg1 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setObjectInProximity: %d", arg1);
-    %orig;
-}
-- (void)_setProximityDetectionEnabled:(BOOL)arg1 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setProximityDetectionEnabled: %d (forced=%d)", arg1, g_forceProximityDetection);
-    if (g_forceProximityDetection) {
-        %orig(YES);
-    } else {
-        %orig;
-    }
-}
-- (void)client:(id)arg1 wantsProximityDetectionEnabled:(BOOL)arg2 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager client: %@ wantsProximityDetectionEnabled: %d", arg1, arg2);
-    %orig;
-}
-- (void)_updateProxState {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _updateProxState");
-    %orig;
-}
-%end
-
-%hook SBLockHardwareButtonActions
-
-- (void)performInitialButtonDownActions {
-    if (RC_IsForegroundAppExcluded()) {
-        %orig;
-        return;
-    }
-    SRLog(@"performInitialButtonDownActions on %@", [self class]);
-    // Removed g_powerBtnActive
-    load_trigger_config();
-    BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                   [g_triggerConfig[@"triggers"][@"power_long_press"][@"enabled"] boolValue];
-
-    SRLog(@"Power Button DOWN (Actions) - enabled=%d", enabled);
-
-    if (enabled) {
-        // Automatically enable proximity sensor monitoring during power button press
-        g_forceProximityDetection = YES;
-        id manager = g_proximitySensorManager;
-        if (!manager) {
-            Class cls = objc_getClass("SBProximitySensorManager");
-            if (cls && [cls respondsToSelector:@selector(sharedInstance)]) {
-                manager = [cls performSelector:@selector(sharedInstance)];
+        Class captureDeviceClass = objc_getClass("AVCaptureDevice");
+        if (captureDeviceClass) {
+            AVCaptureDevice *device = [captureDeviceClass defaultDeviceWithMediaType:AVMediaTypeVideo];
+            if ([device hasTorch] && [device isTorchAvailable]) {
+                [device lockForConfiguration:nil];
+                [device setTorchModeOnWithLevel:level error:nil];
+                [device unlockForConfiguration];
+                SRLog(@"Set Flashlight Intensity to %.2f", level);
+                return [NSString stringWithFormat:@"Flashlight set to %d%%", (int)(level * 100)];
             }
         }
-        if (manager) {
-            if ([manager respondsToSelector:@selector(_enableProx)]) {
-                [manager _enableProx];
-            } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
-                [manager _setProximityDetectionEnabled:YES];
+        return @"Flashlight unavailable";
+    }
+
+    // AudioMix Toggle
+    if ([lowCmd isEqualToString:@"audiomix toggle"]) {
+        BOOL currentState = get_audiomix_state();
+        toggle_audiomix(!currentState);
+        return [NSString stringWithFormat:@"AudioMix set to %@", !currentState ? @"ON" : @"OFF"];
+    }
+    if ([lowCmd isEqualToString:@"audiomix on"]) {
+        toggle_audiomix(YES);
+        return @"AudioMix ON";
+    }
+    if ([lowCmd isEqualToString:@"audiomix off"]) {
+        toggle_audiomix(NO);
+        return @"AudioMix OFF";
+    }
+
+    // Silent Vibration Toggle
+    if ([lowCmd isEqualToString:@"vibration silent-toggle"]) {
+        BOOL cur = get_system_vibration(YES);
+        toggle_system_vibration(YES, !cur);
+        rc_show_hud_toast(@"Silent Vibrate", !cur ? @"ON" : @"OFF", !cur ? @"bell.slash.fill" : @"bell.slash");
+        return [NSString stringWithFormat:@"Silent Vibrate set to %@", !cur ? @"ON" : @"OFF"];
+    }
+    if ([lowCmd isEqualToString:@"vibration silent-on"]) {
+        toggle_system_vibration(YES, YES);
+        rc_show_hud_toast(@"Silent Vibrate", @"ON", @"bell.slash.fill");
+        return @"Silent Vibrate ON";
+    }
+    if ([lowCmd isEqualToString:@"vibration silent-off"]) {
+        toggle_system_vibration(YES, NO);
+        rc_show_hud_toast(@"Silent Vibrate", @"OFF", @"bell.slash");
+        return @"Silent Vibrate OFF";
+    }
+
+    // Ring Vibration Toggle
+    if ([lowCmd isEqualToString:@"vibration ring-toggle"]) {
+        BOOL cur = get_system_vibration(NO);
+        toggle_system_vibration(NO, !cur);
+        rc_show_hud_toast(@"Ring Vibrate", !cur ? @"ON" : @"OFF", !cur ? @"bell.fill" : @"bell");
+        return [NSString stringWithFormat:@"Ring Vibrate set to %@", !cur ? @"ON" : @"OFF"];
+    }
+    if ([lowCmd isEqualToString:@"vibration ring-on"]) {
+        toggle_system_vibration(NO, YES);
+        rc_show_hud_toast(@"Ring Vibrate", @"ON", @"bell.fill");
+        return @"Ring Vibrate ON";
+    }
+    if ([lowCmd isEqualToString:@"vibration ring-off"]) {
+        toggle_system_vibration(NO, NO);
+        rc_show_hud_toast(@"Ring Vibrate", @"OFF", @"bell");
+        return @"Ring Vibrate OFF";
+    }
+
+    // HUD Toast command
+    if ([lowCmd hasPrefix:@"toast "]) {
+        NSString *argStr = [trimmed substringFromIndex:6];
+        NSArray<NSString *> *args = rc_parse_quoted_arguments(argStr);
+        
+        NSString *title = (args.count > 0) ? args[0] : @"";
+        NSString *subtitle = (args.count > 1) ? args[1] : nil;
+        NSString *icon = (args.count > 2) ? args[2] : nil;
+        
+        rc_show_hud_toast(title, subtitle, icon);
+        return [NSString stringWithFormat:@"Toast: %@", title];
+    }
+    
+    // Lua Script execution
+    if ([lowCmd hasPrefix:@"lua:"]) {
+        NSString *script = [trimmed substringFromIndex:4];
+        run_lua_script(script);
+        return @"Lua Script Executed";
+    }
+    
+    // Touch Gestures
+    if ([lowCmd hasPrefix:@"tap "]) {
+        NSArray *pts = [[trimmed substringFromIndex:4] componentsSeparatedByString:@" "];
+        if (pts.count >= 2) {
+            perform_tap([pts[0] doubleValue], [pts[1] doubleValue]);
+            return @"Tap Executed";
+        }
+    }
+    if ([lowCmd hasPrefix:@"hold "]) {
+        NSArray *pts = [[trimmed substringFromIndex:5] componentsSeparatedByString:@" "];
+        if (pts.count >= 2) {
+            uint32_t dur = (pts.count >= 3) ? (uint32_t)[pts[2] integerValue] : 500;
+            perform_hold([pts[0] doubleValue], [pts[1] doubleValue], dur);
+            return @"Hold Executed";
+        }
+    }
+    if ([lowCmd hasPrefix:@"swipe "]) {
+        NSArray *pts = [[trimmed substringFromIndex:6] componentsSeparatedByString:@" "];
+        if (pts.count >= 4) {
+            uint32_t dur = (pts.count >= 5) ? (uint32_t)[pts[4] integerValue] : 300;
+            perform_swipe([pts[0] doubleValue], [pts[1] doubleValue], [pts[2] doubleValue], [pts[3] doubleValue], 20, dur);
+            return @"Swipe Executed";
+        }
+    }
+    if ([lowCmd isEqualToString:@"swipeu"] || [lowCmd isEqualToString:@"swipeup"]) {
+        perform_swipe(200, 600, 200, 200, 20, 300);
+        return @"Swipe Up Executed";
+    }
+    if ([lowCmd isEqualToString:@"swiped"] || [lowCmd isEqualToString:@"swipedown"]) {
+        perform_swipe(200, 200, 200, 600, 20, 300);
+        return @"Swipe Down Executed";
+    }
+    if ([lowCmd isEqualToString:@"swipel"] || [lowCmd isEqualToString:@"swipeleft"]) {
+        perform_swipe(300, 400, 50, 400, 20, 300);
+        return @"Swipe Left Executed";
+    }
+    if ([lowCmd isEqualToString:@"swiper"] || [lowCmd isEqualToString:@"swiperight"]) {
+        perform_swipe(50, 400, 300, 400, 20, 300);
+        return @"Swipe Right Executed";
+    }
+
+    // Media Controls (MediaRemote)
+    if ([lowCmd isEqualToString:@"play"]) {
+        MRMediaRemoteSendCommand(kMRPlay, nil);
+        return @"Media: Play";
+    }
+    if ([lowCmd isEqualToString:@"pause"]) {
+        MRMediaRemoteSendCommand(kMRPause, nil);
+        return @"Media: Pause";
+    }
+    if ([lowCmd isEqualToString:@"playpause"]) {
+        MRMediaRemoteSendCommand(kMRTogglePlayPause, nil);
+        return @"Media: Play/Pause Toggled";
+    }
+    if ([lowCmd isEqualToString:@"next"]) {
+        MRMediaRemoteSendCommand(kMRNextTrack, nil);
+        return @"Media: Next Track";
+    }
+    if ([lowCmd isEqualToString:@"prev"]) {
+        MRMediaRemoteSendCommand(kMRPreviousTrack, nil);
+        return @"Media: Previous Track";
+    }
+
+    // System Commands
+    if ([lowCmd isEqualToString:@"home"]) {
+        simulate_home_press();
+        return @"Home Button Pressed";
+    }
+    if ([lowCmd isEqualToString:@"switcher"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            Class switcherClass = objc_getClass("SBMainSwitcherController");
+            if (switcherClass) {
+                id switcher = [switcherClass performSelector:@selector(sharedInstance)];
+                if ([switcher respondsToSelector:@selector(toggleSwitcherNoninteractively)]) {
+                    [switcher performSelector:@selector(toggleSwitcherNoninteractively)];
+                }
             }
-        }
-        [UIDevice currentDevice].proximityMonitoringEnabled = YES;
-
-        if (g_lockButtonTimer == nil && !g_lockButtonTriggered) {
-            g_lockButtonTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
-                g_lockButtonTriggered = YES;
-                g_lockButtonTimer = nil;
-                trigger_haptic();
-                RCExecuteTrigger(@"power_long_press");
-                SRLog(@"Power Long Press Fired (Stage 1)!");
-                
-                // Start Stage 2 Timer (System Power Off) - 2.0s later (2.5s total hold)
-                g_systemPowerOffTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:NO block:^(NSTimer *t) {
-                     SRLog(@"Power Long Press (Stage 2) - Forcing System Power Off Screen");
-                     g_forceSystemLongPress = YES;
-                     g_systemPowerOffTimer = nil;
-                     
-                     // Manually invoke the action again, but this time g_forceSystemLongPress is YES
-                     // We need an instance to call it on. 'self' inside this block is captured? 
-                     // No, 'self' in block refers to captured SBLockHardwareButtonActions instance.
-                     // IMPORTANT: 'self' in block is valid.
-                     [self performLongPressActions];
-                }];
-            }];
-        }
+        });
+        return @"App Switcher Opened";
     }
-
-    // SUPPRESSION: If a multi-click sequence is in progress, swallow the DOWN event.
-    // This stops the phone from waking/locking on subsequent clicks.
-    if (g_powerClickCount >= 1) {
-        SRLog(@"Suppressing system DOWN for click sequence (count=%d)", g_powerClickCount);
-        return;
+    if ([lowCmd isEqualToString:@"lock"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            Class LSMClass = objc_getClass("SBLockScreenManager");
+            if (LSMClass) {
+                SBLockScreenManager *lsm = [LSMClass sharedInstance];
+                if ([lsm respondsToSelector:@selector(lockUIFromSource:withOptions:)]) {
+                    [lsm lockUIFromSource:1 withOptions:nil];
+                }
+            }
+        });
+        return @"Device Locked";
     }
-
-    %orig;
-}
-
-- (void)performButtonUpPreActions {
-    SRLog(@"performButtonUpPreActions on %@", [self class]);
-    // Removed g_powerBtnActive access
-    SRLog(@"Power Button UP (Actions)");
-
-    // Automatically disable proximity sensor monitoring when power button is released
-    g_forceProximityDetection = NO;
-    id manager = g_proximitySensorManager;
-    if (!manager) {
-        Class cls = objc_getClass("SBProximitySensorManager");
-        if (cls && [cls respondsToSelector:@selector(sharedInstance)]) {
-            manager = [cls performSelector:@selector(sharedInstance)];
-        }
+    if ([lowCmd isEqualToString:@"respring"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            pid_t pid;
+            const char *args[] = {"sbreload", NULL};
+            posix_spawn(&pid, "/var/jb/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
+        });
+        return @"Respringing...";
     }
-    if (manager) {
-        if ([manager respondsToSelector:@selector(_disableProx)]) {
-            [manager _disableProx];
-        } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
-            [manager _setProximityDetectionEnabled:NO];
-        }
-    }
-    [UIDevice currentDevice].proximityMonitoringEnabled = NO;
-
-    if (g_lockButtonTimer) {
-        [g_lockButtonTimer invalidate];
-        g_lockButtonTimer = nil;
-    }
-    if (g_systemPowerOffTimer) {
-        [g_systemPowerOffTimer invalidate];
-        g_systemPowerOffTimer = nil;
-    }
-    g_forceSystemLongPress = NO;
-    
-    if (g_lockButtonTriggered) {
-        g_lockButtonTriggered = NO;
-        SRLog(@"Power Button Release: Long press already fired, resetting.");
-        return; 
-    }
-
-    // SUPPRESSION: Swallow UP events for 2nd click onwards.
-    // Click 1 passes %orig so system can lock/wake normally if sequence stops.
-    if (g_powerClickCount >= 2) {
-        SRLog(@"Suppressing system UP for click #%d", g_powerClickCount);
-        return;
-    }
-
-    // SUPPRESSION: If a Power + Volume combo was triggered, swallow the Power UP as well.
-    if (g_powerVolComboTriggered) {
-        SRLog(@"Suppressing system UP because a Power + Volume combo was triggered.");
-        // g_powerVolComboTriggered will be reset in handle_hid_event UP
-        return;
-    }
-
-    %orig;
-}
-
-- (void)performLongPressActions {
-    SRLog(@"performLongPressActions called - g_lockButtonTriggered=%d, force=%d", g_lockButtonTriggered, g_forceSystemLongPress);
-    
-    if (g_forceSystemLongPress) {
-        SRLog(@"Allowing System Power Off (Stage 2)");
-        g_forceSystemLongPress = NO; // Reset immediately
-        %orig;
-        return;
-    }
-
-    if (g_lockButtonTriggered) {
-        SRLog(@"Power Long Press Actions (Default) Suppressed (Stage 1 active)");
-        return; 
-    }
-    %orig;
-}
-
-- (void)performDoublePressActions {
-    SRLog(@"performDoublePressActions called (System)");
-    // We handle double press manually in performButtonUpPreActions to support Triple/Quad clicks.
-    // So we do NOT fire "power_double_tap" here to avoid duplicates.
-    // However, if we suppress %orig completely, we might break Wallet double-click.
-    // For now, let's just allow orig so system features work, 
-    // relying on our manual counter for OUR actions.
-    
-    // Logic: If we have a configured double tap action, our manual handler will fire it.
-    // If not, this does nothing related to us.
-    
-    /*
-    load_trigger_config();
-    BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                   [g_triggerConfig[@"triggers"][@"power_double_tap"][@"enabled"] boolValue];
-
-    if (enabled) {
-        // Don't fire here, manual handler does it.
-    }
-    */
-    /*
+    if ([lowCmd isEqualToString:@"haptic"]) {
         trigger_haptic();
-        RCExecuteTrigger(@"power_double_tap");
-        SRLog(@"Power Double Tap Fired (Actions)");
-        return; 
+        return @"Haptic Feedback Triggered";
     }
-    */
-    %orig;
-}
-
-%end
-
-// [Generic simulation registration handled by catch-all observer in register_simulation_observers]
-
-%hook SBLockHardwareButton
-- (void)doublePress:(id)arg1 {
-    SRLog(@"SBLockHardwareButton doublePress: called");
-    load_trigger_config();
-    BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                   [g_triggerConfig[@"triggers"][@"power_double_tap"][@"enabled"] boolValue];
-    if (enabled) {
-        // We already handled it in Actions (hopefully), or we handle it here if Actions wasn't called
-        // But to be safe, let's see if this one fires.
-        %orig; 
-    } else {
-        %orig;
+    if ([lowCmd isEqualToString:@"screenshot"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            Class SMClass = objc_getClass("SBScreenshotManager");
+            if (SMClass) {
+                SBScreenshotManager *sm = [SMClass sharedInstance];
+                if ([sm respondsToSelector:@selector(saveScreenshotToCameraRollWithCompletion:)]) {
+                    [sm saveScreenshotToCameraRollWithCompletion:nil];
+                }
+            }
+        });
+        return @"Screenshot Taken";
     }
-}
-%end
 
+    // Volume Control
+    if ([lowCmd isEqualToString:@"volume up"]) {
+        inject_consumer_key(kHIDUsage_Csmr_VolumeIncrement);
+        return @"Volume Up";
+    }
+    if ([lowCmd isEqualToString:@"volume down"]) {
+        inject_consumer_key(kHIDUsage_Csmr_VolumeDecrement);
+        return @"Volume Down";
+    }
+    if ([lowCmd hasPrefix:@"set-vol "]) {
+        float vol = [[trimmed substringFromIndex:8] floatValue] / 100.0f;
+        vol = MAX(0.0f, MIN(1.0f, vol));
+        AVSystemController *av = [objc_getClass("AVSystemController") sharedAVSystemController];
+        [av setVolumeTo:vol forCategory:@"Audio/Video"];
+        return [NSString stringWithFormat:@"Volume set to %d%%", (int)(vol * 100)];
+    }
 
+    // Brightness Control
+    if ([lowCmd hasPrefix:@"brightness "]) {
+        float level = [[trimmed substringFromIndex:11] floatValue] / 100.0f;
+        level = MAX(0.0f, MIN(1.0f, level));
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[UIScreen mainScreen] setBrightness:level];
+        });
+        return [NSString stringWithFormat:@"Brightness set to %d%%", (int)(level * 100)];
+    }
 
-// [Removed unused biometric hooks]
+    // Run iOS Shortcut
+    if ([lowCmd hasPrefix:@"shortcut:"]) {
+        NSString *shortcutName = [trimmed substringFromIndex:9];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            Class descriptorClass = objc_getClass("WFWorkflowDescriptor");
+            Class runnerClass = objc_getClass("WFWorkflowRunnerClient");
+            if (descriptorClass && runnerClass) {
+                id descriptor = [[descriptorClass alloc] initWithName:shortcutName];
+                id client = [[runnerClass alloc] initWithWorkflowDescriptor:descriptor input:nil parseInput:YES output:nil completion:nil];
+                [client start];
+            }
+        });
+        return [NSString stringWithFormat:@"Shortcut Started: %@", shortcutName];
+    }
 
-
-// --- Cleanup: Removed failed biometric logic ---
-
-// [Removed unused SBHomeHardwareButton hook]
-
-// --- REPLACEMENT NOTE: Removed %ctor from here to move to the end ---
-
-
-
-// ============ STATUS BAR GESTURES (HOLD + SWIPE) ============
-// Hook UIApplication - uses screen coordinates for reliable detection
-
-static NSTimer *g_statusBarHoldTimer = nil;
-static BOOL g_statusBarHoldTriggered = NO;
-static NSString *g_pendingStatusBarTrigger = nil;
-
-// Swipe tracking
-static CGFloat g_statusBarSwipeStartX = 0;
-static CGFloat g_statusBarSwipeStartY = 0;
-static BOOL g_statusBarTouchActive = NO;
-
-// Bottom Bar Swipe tracking
-static CGFloat g_bottomBarSwipeStartX = 0;
-static CGFloat g_bottomBarSwipeStartY = 0;
-static BOOL g_bottomBarTouchActive = NO;
-static BOOL g_bottomBarHapticFired = NO;
-
-// Status Bar Extended State
-static BOOL g_statusBarSwipeHapticFired = NO;
-static BOOL g_statusBarSwipeTriggered = NO;
-static NSTimeInterval g_lastStatusBarDoubleTapTime = 0;
-
-%hook UIApplication
-
-- (void)sendEvent:(UIEvent *)event {
-    // Only process touch events
-    if (event.type == UIEventTypeTouches) {
-        UITouch *touch = [[event allTouches] anyObject];
-        
-        if (touch && touch.phase == UITouchPhaseBegan) {
-            UIWindow *window = nil;
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            window = [UIApplication sharedApplication].keyWindow ?: [[UIApplication sharedApplication].windows firstObject];
-            #pragma clang diagnostic pop
-            UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
-            
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            if (window && window.windowScene) {
-                orientation = window.windowScene.interfaceOrientation;
+    // Open App by Bundle ID
+    if ([lowCmd hasPrefix:@"uiopen "]) {
+        NSString *bundleID = resolve_bundle_id([trimmed substringFromIndex:7]);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            Class openServiceClass = objc_getClass("FBSOpenApplicationService");
+            Class openOptionsClass = objc_getClass("FBSOpenApplicationOptions");
+            if (openServiceClass && openOptionsClass) {
+                id service = [openServiceClass serviceWithDefaultShellEndpoint];
+                id options = [openOptionsClass optionsWithDictionary:@{}];
+                [service openApplication:bundleID withOptions:options completion:nil];
             } else {
-                orientation = [UIApplication sharedApplication].statusBarOrientation;
+                LSApplicationWorkspace *workspace = [objc_getClass("LSApplicationWorkspace") defaultWorkspace];
+                [workspace openApplicationWithBundleID:bundleID];
             }
-            #pragma clang diagnostic pop
+        });
+        return [NSString stringWithFormat:@"Opened App: %@", bundleID];
+    }
 
-            CGPoint loc = [touch locationInView:nil];
-            CGSize screenSize = [[UIScreen mainScreen] bounds].size;
-            
-            // Logic width/height (always portrait relative)
-            CGFloat lw = MIN(screenSize.width, screenSize.height);
-            CGFloat lh = MAX(screenSize.width, screenSize.height);
-            
-            // BOOL isLandscape = UIInterfaceOrientationIsLandscape(orientation);
-            
-            // Map coordinates and determine logic regions based on orientation
-            BOOL inTopRegion = NO;
-            BOOL inBottomRegion = NO;
-            
-            if (orientation == UIInterfaceOrientationPortrait) {
-                inTopRegion = (loc.y < 50);
-                inBottomRegion = (loc.y > lh - 50);
-            } else if (orientation == UIInterfaceOrientationPortraitUpsideDown) {
-                inTopRegion = (loc.y > lh - 50);
-                inBottomRegion = (loc.y < 50);
-            } else if (orientation == UIInterfaceOrientationLandscapeLeft) {
-                // Home button on right: Status bar is physically at X=0-50, Bottom bar at X=lw-50
-                inTopRegion = (loc.x < 50);
-                inBottomRegion = (loc.x > lw - 50);
-            } else if (orientation == UIInterfaceOrientationLandscapeRight) {
-                // Home button on left: Status bar is physically at X=lw-50, Bottom bar at X=0-50
-                inTopRegion = (loc.x > lw - 50);
-                inBottomRegion = (loc.x < 50);
-            }
+    // Kill App by Bundle ID
+    if ([lowCmd hasPrefix:@"kill "]) {
+        NSString *bundleID = resolve_bundle_id([trimmed substringFromIndex:5]);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BKSTerminateApplicationForReasonAndReportWithDescription(bundleID, 5, false, @"RemoteCompanion Kill Command");
+        });
+        return [NSString stringWithFormat:@"Killed App: %@", bundleID];
+    }
 
-            SRLog(@"[Debug] TouchBegan phys=(%.1f, %.1f) orient=%ld (T=%d B=%d)", loc.x, loc.y, (long)orientation, inTopRegion, inBottomRegion);
-            
-            if (inTopRegion) {
-                g_statusBarSwipeStartX = loc.x;
-                g_statusBarSwipeStartY = loc.y;
-                g_statusBarTouchActive = YES;
-                g_statusBarSwipeHapticFired = NO;
-                g_statusBarSwipeTriggered = NO;
-                g_statusBarHoldTriggered = NO;
-                
-                if (touch.tapCount == 2) {
-                    if (g_statusBarHoldTimer) {
-                        [g_statusBarHoldTimer invalidate];
-                        g_statusBarHoldTimer = nil;
-                    }
-                    g_pendingStatusBarTrigger = nil;
-                    
-                    load_trigger_config();
-                    BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                                   [g_triggerConfig[@"triggers"][@"trigger_statusbar_double_tap"][@"enabled"] boolValue];
-                    
-                    if (enabled) {
-                        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-                        if (now - g_lastStatusBarDoubleTapTime > 0.4) {
-                            g_lastStatusBarDoubleTapTime = now;
-                            g_statusBarHoldTriggered = YES;
-                            trigger_haptic();
-                            RCExecuteTrigger(@"trigger_statusbar_double_tap");
-                            SRLog(@"[RCStatus] Status Bar Double Tap FIRED!");
-                        } else {
-                            g_statusBarHoldTriggered = YES;
-                            SRLog(@"[RCStatus] Status Bar Double Tap ignored (cooldown: %.3fs)", now - g_lastStatusBarDoubleTapTime);
-                        }
-                    }
-                } else {
-                    // Determine region for status bar hold (Left, Center, Right)
-                    CGFloat progress = 0;
-                    if (orientation == UIInterfaceOrientationPortrait) {
-                        progress = loc.x / lw;
-                    } else if (orientation == UIInterfaceOrientationPortraitUpsideDown) {
-                        progress = 1.0 - (loc.x / lw);
-                    } else if (orientation == UIInterfaceOrientationLandscapeLeft) {
-                        progress = 1.0 - (loc.y / lh);
-                    } else if (orientation == UIInterfaceOrientationLandscapeRight) {
-                        progress = loc.y / lh;
-                    }
-                    
-                    if (progress < 0.33) {
-                        g_pendingStatusBarTrigger = @"trigger_statusbar_left_hold";
-                    } else if (progress > 0.66) {
-                        g_pendingStatusBarTrigger = @"trigger_statusbar_right_hold";
-                    } else {
-                        g_pendingStatusBarTrigger = @"trigger_statusbar_center_hold";
-                    }
-                    
-                    SRLog(@"[RCStatus] Top Region Touch at progress=%.2f -> Key: %@", progress, g_pendingStatusBarTrigger);
-                    
-                    // Cancel any existing timer
-                    if (g_statusBarHoldTimer) {
-                        [g_statusBarHoldTimer invalidate];
-                        g_statusBarHoldTimer = nil;
-                    }
-                    
-                    // Start 0.3s hold timer
-                    g_statusBarHoldTimer = [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:NO block:^(NSTimer *timer) {
-                        g_statusBarHoldTimer = nil;
-                        
-                        // Ignore stale timer callbacks (e.g., touch already ended/cancelled).
-                        if (!g_statusBarTouchActive || g_statusBarSwipeTriggered || !g_pendingStatusBarTrigger) {
-                            return;
-                        }
+    // DND Control
+    if ([lowCmd isEqualToString:@"dnd toggle"]) {
+        BOOL cur = get_dnd_state();
+        toggle_dnd(!cur);
+        return [NSString stringWithFormat:@"Do Not Disturb set to %@", !cur ? @"ON" : @"OFF"];
+    }
+    if ([lowCmd isEqualToString:@"dnd on"]) {
+        toggle_dnd(YES);
+        return @"Do Not Disturb ON";
+    }
+    if ([lowCmd isEqualToString:@"dnd off"]) {
+        toggle_dnd(NO);
+        return @"Do Not Disturb OFF";
+    }
 
-                        if (g_pendingStatusBarTrigger) {
-                            load_trigger_config();
-                            BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                                           [g_triggerConfig[@"triggers"][g_pendingStatusBarTrigger][@"enabled"] boolValue];
-                            
-                            if (enabled) {
-                                g_statusBarHoldTriggered = YES;
-                                trigger_haptic();
-                                RCExecuteTrigger(g_pendingStatusBarTrigger);
-                                SRLog(@"%@ FIRED!", g_pendingStatusBarTrigger);
-                            }
-                        }
-                    }];
-                }
-            }
-            
-            // Bottom bar region = bottom 50pts
-            if (inBottomRegion) {
-                g_bottomBarSwipeStartX = loc.x;
-                g_bottomBarSwipeStartY = loc.y;
-                g_bottomBarTouchActive = YES;
-                g_bottomBarHapticFired = NO;
-            }
+    // Low Power Mode Control
+    if ([lowCmd isEqualToString:@"low power toggle"] || [lowCmd isEqualToString:@"lpm toggle"]) {
+        BOOL cur = get_lpm_state();
+        toggle_lpm(!cur);
+        return [NSString stringWithFormat:@"Low Power Mode set to %@", !cur ? @"ON" : @"OFF"];
+    }
+    if ([lowCmd isEqualToString:@"low power on"] || [lowCmd isEqualToString:@"lpm on"]) {
+        toggle_lpm(YES);
+        return @"Low Power Mode ON";
+    }
+    if ([lowCmd isEqualToString:@"low power off"] || [lowCmd isEqualToString:@"lpm off"]) {
+        toggle_lpm(NO);
+        return @"Low Power Mode OFF";
+    }
+
+    // Wi-Fi Control
+    if ([lowCmd isEqualToString:@"wifi toggle"]) {
+        SBWiFiManager *wm = [objc_getClass("SBWiFiManager") sharedInstance];
+        BOOL cur = [wm wiFiEnabled];
+        [wm setWiFiEnabled:!cur];
+        return [NSString stringWithFormat:@"WiFi set to %@", !cur ? @"ON" : @"OFF"];
+    }
+    if ([lowCmd isEqualToString:@"wifi on"]) {
+        SBWiFiManager *wm = [objc_getClass("SBWiFiManager") sharedInstance];
+        [wm setWiFiEnabled:YES];
+        return @"WiFi ON";
+    }
+    if ([lowCmd isEqualToString:@"wifi off"]) {
+        SBWiFiManager *wm = [objc_getClass("SBWiFiManager") sharedInstance];
+        [wm setWiFiEnabled:NO];
+        return @"WiFi OFF";
+    }
+
+    // Cellular Data Control
+    if ([lowCmd isEqualToString:@"cellular toggle"] || [lowCmd isEqualToString:@"cell toggle"]) {
+        BOOL cur = get_cellular_state();
+        set_cellular_state(!cur);
+        return [NSString stringWithFormat:@"Cellular Data set to %@", !cur ? @"ON" : @"OFF"];
+    }
+    if ([lowCmd isEqualToString:@"cellular on"] || [lowCmd isEqualToString:@"cell on"]) {
+        set_cellular_state(YES);
+        return @"Cellular Data ON";
+    }
+    if ([lowCmd isEqualToString:@"cellular off"] || [lowCmd isEqualToString:@"cell off"]) {
+        set_cellular_state(NO);
+        return @"Cellular Data OFF";
+    }
+
+    // Bluetooth Control
+    if ([lowCmd isEqualToString:@"bluetooth toggle"] || [lowCmd isEqualToString:@"bt toggle"]) {
+        BluetoothManager *bm = [objc_getClass("BluetoothManager") sharedInstance];
+        BOOL cur = [bm enabled];
+        [bm setEnabled:!cur];
+        [bm setPowered:!cur];
+        return [NSString stringWithFormat:@"Bluetooth set to %@", !cur ? @"ON" : @"OFF"];
+    }
+    if ([lowCmd isEqualToString:@"bluetooth on"] || [lowCmd isEqualToString:@"bt on"]) {
+        BluetoothManager *bm = [objc_getClass("BluetoothManager") sharedInstance];
+        [bm setEnabled:YES];
+        [bm setPowered:YES];
+        return @"Bluetooth ON";
+    }
+    if ([lowCmd isEqualToString:@"bluetooth off"] || [lowCmd isEqualToString:@"bt off"]) {
+        BluetoothManager *bm = [objc_getClass("BluetoothManager") sharedInstance];
+        [bm setEnabled:NO];
+        [bm setPowered:NO];
+        return @"Bluetooth OFF";
+    }
+
+    // Delay command
+    if ([lowCmd hasPrefix:@"delay "]) {
+        double secs = [[trimmed substringFromIndex:6] doubleValue];
+        usleep((useconds_t)(secs * 1000000.0));
+        return [NSString stringWithFormat:@"Delayed %.1fs", secs];
+    }
+
+    // Status Queries
+    if ([lowCmd isEqualToString:@"lock status"]) {
+        Class LSMClass = objc_getClass("SBLockScreenManager");
+        if (LSMClass) {
+            SBLockScreenManager *lsm = [LSMClass sharedInstance];
+            return [lsm isUILocked] ? @"LOCKED" : @"UNLOCKED";
         }
-        else if (touch && (touch.phase == UITouchPhaseMoved || touch.phase == UITouchPhaseEnded)) {
-            CGPoint loc = [touch locationInView:nil];
-            UIWindow *window = nil;
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            window = [UIApplication sharedApplication].keyWindow ?: [[UIApplication sharedApplication].windows firstObject];
-            #pragma clang diagnostic pop
-            UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            if (window && window.windowScene) orientation = window.windowScene.interfaceOrientation;
-            else orientation = [UIApplication sharedApplication].statusBarOrientation;
-            #pragma clang diagnostic pop
-
-            BOOL isEnded = (touch.phase == UITouchPhaseEnded);
-            
-            if (g_statusBarTouchActive || g_bottomBarTouchActive) {
-                CGFloat startX = g_statusBarTouchActive ? g_statusBarSwipeStartX : g_bottomBarSwipeStartX;
-                CGFloat startY = g_statusBarTouchActive ? g_statusBarSwipeStartY : g_bottomBarSwipeStartY;
-                
-                CGFloat dx_phys = loc.x - startX;
-                CGFloat dy_phys = loc.y - startY;
-                
-                CGFloat user_dx = 0;
-                CGFloat user_dy = 0;
-                
-                if (orientation == UIInterfaceOrientationPortrait) {
-                    user_dx = dx_phys; user_dy = dy_phys;
-                } else if (orientation == UIInterfaceOrientationPortraitUpsideDown) {
-                    user_dx = -dx_phys; user_dy = -dy_phys;
-                } else if (orientation == UIInterfaceOrientationLandscapeLeft) {
-                    user_dx = -dy_phys; user_dy = dx_phys;
-                } else if (orientation == UIInterfaceOrientationLandscapeRight) {
-                    user_dx = dy_phys; user_dy = -dx_phys;
-                }
-
-                CGFloat abs_udx = fabs(user_dx);
-                CGFloat abs_udy = fabs(user_dy);
-                BOOL isHoz = (abs_udx > abs_udy * 2.0);
-                
-                // --- Status Bar Moves ---
-                if (g_statusBarTouchActive && !g_statusBarHoldTriggered) {
-                    if ((abs_udx > 15 || abs_udy > 15) && g_statusBarHoldTimer) {
-                        [g_statusBarHoldTimer invalidate];
-                        g_statusBarHoldTimer = nil;
-                        g_pendingStatusBarTrigger = nil;
-                    }
-                    
-                    if (isHoz && abs_udx > 15 && !g_statusBarSwipeHapticFired) {
-                        NSString *trigger = (user_dx > 0) ? @"trigger_statusbar_swipe_right" : @"trigger_statusbar_swipe_left";
-                        load_trigger_config();
-                        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][trigger][@"enabled"] boolValue]) {
-                            trigger_haptic();
-                        }
-                        g_statusBarSwipeHapticFired = YES;
-                    }
-                    
-                    if (!g_statusBarSwipeTriggered && isHoz && abs_udx > 50) {
-                        NSString *trigger = (user_dx > 0) ? @"trigger_statusbar_swipe_right" : @"trigger_statusbar_swipe_left";
-                        RCExecuteTrigger(trigger);
-                        g_statusBarSwipeTriggered = YES;
-                    }
-                }
-                
-                // --- Bottom Bar Moves ---
-                if (g_bottomBarTouchActive && !g_bottomBarHapticFired) {
-                    if (isHoz && abs_udx > 15) {
-                        NSString *trigger = (user_dx > 0) ? @"trigger_bottombar_swipe_right" : @"trigger_bottombar_swipe_left";
-                        load_trigger_config();
-                        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][trigger][@"enabled"] boolValue]) {
-                            trigger_haptic();
-                        }
-                        g_bottomBarHapticFired = YES;
-                    }
-                }
-                
-                // --- Gesture Finalized ---
-                if (isEnded) {
-                    if (g_statusBarHoldTimer) {
-                        [g_statusBarHoldTimer invalidate];
-                        g_statusBarHoldTimer = nil;
-                    }
-                    g_pendingStatusBarTrigger = nil;
-
-                    if (g_statusBarTouchActive && !g_statusBarHoldTriggered && !g_statusBarSwipeTriggered) {
-                        if (isHoz && abs_udx > 40) {
-                            NSString *trigger = (user_dx > 0) ? @"trigger_statusbar_swipe_right" : @"trigger_statusbar_swipe_left";
-                            RCExecuteTrigger(trigger);
-                        }
-                    }
-                    if (g_bottomBarTouchActive) {
-                        if (isHoz && abs_udx > 60) {
-                            NSString *trigger = (user_dx > 0) ? @"trigger_bottombar_swipe_right" : @"trigger_bottombar_swipe_left";
-                            RCExecuteTrigger(trigger);
-                        }
-                    }
-                    SRLog(@"[Debug] Ended: user_dx=%.1f user_dy=%.1f orient=%ld isHoz=%d", user_dx, user_dy, (long)orientation, isHoz);
-                    g_statusBarTouchActive = NO;
-                    g_bottomBarTouchActive = NO;
-                    g_statusBarHoldTriggered = NO;
-                }
+        return @"UNKNOWN";
+    }
+    if ([lowCmd isEqualToString:@"wifi status"]) {
+        SBWiFiManager *wm = [objc_getClass("SBWiFiManager") sharedInstance];
+        return [wm wiFiEnabled] ? @"ON" : @"OFF";
+    }
+    if ([lowCmd isEqualToString:@"cell status"] || [lowCmd isEqualToString:@"cellular status"]) {
+        return get_cellular_state() ? @"ON" : @"OFF";
+    }
+    if ([lowCmd isEqualToString:@"bluetooth status"] || [lowCmd isEqualToString:@"bt status"]) {
+        BluetoothManager *bm = [objc_getClass("BluetoothManager") sharedInstance];
+        return [bm enabled] ? @"ON" : @"OFF";
+    }
+    if ([lowCmd isEqualToString:@"orientation status"]) {
+        UIInterfaceOrientation orientation = [(SpringBoard *)[UIApplication sharedApplication] activeInterfaceOrientation];
+        return UIInterfaceOrientationIsLandscape(orientation) ? @"LANDSCAPE" : @"PORTRAIT";
+    }
+    
+    // General Shell Command (Exec)
+    if ([lowCmd hasPrefix:@"exec "]) {
+        NSString *shellCmd = [trimmed substringFromIndex:5];
+        char buffer[128];
+        NSMutableString *result = [NSMutableString string];
+        FILE *pipe = popen([shellCmd UTF8String], "r");
+        if (pipe) {
+            while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+                [result appendString:[NSString stringWithUTF8String:buffer]];
             }
+            pclose(pipe);
         }
-        else if (touch && touch.phase == UITouchPhaseCancelled) {
-            if (g_statusBarHoldTimer) {
-                [g_statusBarHoldTimer invalidate];
-                g_statusBarHoldTimer = nil;
-            }
-            g_statusBarHoldTriggered = NO;
-            g_pendingStatusBarTrigger = nil;
-            g_statusBarTouchActive = NO;
-            g_bottomBarTouchActive = NO;
-            g_bottomBarHapticFired = NO;
-        }
+        return result.length > 0 ? result : @"Command Executed (No Output)";
     }
-    
-    %orig;
+
+    return [NSString stringWithFormat:@"Unknown Command: %@", trimmed];
 }
 
-%end
-
-@implementation SREdgeGestureRecognizer
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    // Early exit: Check if edge gestures should even be active
-    if (!should_register_edge_gestures()) {
-        self.state = UIGestureRecognizerStateFailed;
-        return;
-    }
-    
-    UITouch *touch = [touches anyObject];
-    CGPoint loc = [touch locationInView:nil];
-    CGSize screenSize = [UIScreen mainScreen].bounds.size;
-    
-    // Check if touch is near edge (within 25pt) - narrower as requested
-    CGFloat edgeThreshold = 25.0;
-    
-    // Check vertical margins to avoid interference with Control Center (top) and Home Swipe (bottom)
-    CGFloat verticalMargin = 100.0;
-    
-    BOOL isNearLeft = (loc.x < edgeThreshold);
-    BOOL isNearRight = (loc.x > screenSize.width - edgeThreshold);
-    BOOL isWithinVerticalBounds = (loc.y > verticalMargin) && (loc.y < screenSize.height - verticalMargin);
-    
-    if (!isWithinVerticalBounds) {
-        self.state = UIGestureRecognizerStateFailed;
-        return;
-    }
-    
-    if (self.isLeftEdge && !isNearLeft) {
-        self.state = UIGestureRecognizerStateFailed;
-        return;
-    }
-    
-    if (self.isRightEdge && !isNearRight) {
-        self.state = UIGestureRecognizerStateFailed;
-        return;
-    }
-
-    [super touchesBegan:touches withEvent:event];
-    self.hasTriggered = NO;
-    SRLog(@"Edge Gesture touchesBegan: X=%.2f Y=%.2f", loc.x, loc.y);
-}
-
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [super touchesMoved:touches withEvent:event];
-    // State tracking and haptics now handled in handleEdgeGesture:
-}
-
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    SRLog(@"Edge Gesture touchesEnded - State before super: %ld", (long)self.state);
-    [super touchesEnded:touches withEvent:event];
-    SRLog(@"Edge Gesture touchesEnded - State after super: %ld", (long)self.state);
-}
-
-@end
-
-// --- SYSTEM GESTURE MANAGER HOOK ---
-
-@interface SRGestureHelper : NSObject
-+ (instancetype)sharedInstance;
-- (void)handleEdgeGesture:(SREdgeGestureRecognizer *)gesture;
-@end
-
-@implementation SRGestureHelper
-+ (instancetype)sharedInstance {
-    static SRGestureHelper *sharedInstance = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        sharedInstance = [[SRGestureHelper alloc] init];
+static void trigger_haptic() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        AudioServicesPlaySystemSound(1519); // Peek haptic
     });
-    return sharedInstance;
 }
 
-- (void)handleEdgeGesture:(SREdgeGestureRecognizer *)gesture {
-    // Instant Fire: Trigger as soon as Changed state hits threshold
-    if (gesture.state == UIGestureRecognizerStateChanged && !gesture.hasTriggered) {
-        CGPoint translation = [gesture translationInView:nil];
-        CGFloat verticalSwipeDistance = fabs(translation.y);
-        CGFloat horizontalDrift = fabs(translation.x);
-        
-        // Threshold: 30pt for instant trigger
-        if (verticalSwipeDistance > 30 && horizontalDrift < 100) {
-            SRLog(@"Instant Edge Trigger! V=%.2f H=%.2f", verticalSwipeDistance, horizontalDrift);
-            
-            gesture.hasTriggered = YES;
+// Background Socket IPC Server (/tmp/remotecompanion.sock)
+static void start_server() {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+        unlink("/tmp/remotecompanion.sock");
+        int serverSock = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (serverSock < 0) return;
 
-            NSString *triggerKey = nil;
-            if (gesture.isLeftEdge) {
-                triggerKey = (translation.y < 0) ? @"trigger_edge_left_swipe_up" : @"trigger_edge_left_swipe_down";
-            } else if (gesture.isRightEdge) {
-                triggerKey = (translation.y < 0) ? @"trigger_edge_right_swipe_up" : @"trigger_edge_right_swipe_down";
-            }
-            
-            if (triggerKey) {
-                load_trigger_config();
-                BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
-                               [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
-                
-                if (enabled) {
-                    // Haptic feedback ONLY if enabled
-                    trigger_haptic();
-                    RCExecuteTrigger(triggerKey);
-                    SRLog(@"%@ FIRED INSTANTLY!", triggerKey);
-                } else {
-                    SRLog(@"%@ detected (disabled)", triggerKey);
-                }
-            }
-        }
-    }
-    
-    // Reset state on finish/fail
-    if (gesture.state == UIGestureRecognizerStateEnded || 
-        gesture.state == UIGestureRecognizerStateCancelled || 
-        gesture.state == UIGestureRecognizerStateFailed) {
-        SRLog(@"Edge Gesture Finished (State %ld): hasTriggered=%d", (long)gesture.state, gesture.hasTriggered);
-        gesture.hasTriggered = NO;
-    }
-}
-@end
+        struct sockaddr_un addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        strcpy(addr.sun_path, "/tmp/remotecompanion.sock");
 
-static SREdgeGestureRecognizer *leftEdgeRecognizer;
-static SREdgeGestureRecognizer *rightEdgeRecognizer;
-static SBSystemGestureManager *g_gestureManager = nil;
-
-// Helper: Check if any edge gestures are enabled
-static BOOL should_register_edge_gestures() {
-    if (!g_triggerConfig) return NO;
-    if (![g_triggerConfig[@"masterEnabled"] boolValue]) return NO;
-    
-    NSDictionary *triggers = g_triggerConfig[@"triggers"];
-    NSArray *edgeTriggers = @[@"trigger_edge_left_swipe_up", 
-                               @"trigger_edge_left_swipe_down",
-                               @"trigger_edge_right_swipe_up",
-                               @"trigger_edge_right_swipe_down"];
-    
-    for (NSString *key in edgeTriggers) {
-        NSDictionary *trigger = triggers[key];
-        if (trigger && [trigger[@"enabled"] boolValue]) {
-            return YES; // At least one edge gesture is enabled
-        }
-    }
-    
-    return NO;
-}
-
-// Register gesture recognizers
-static void register_edge_gestures() {
-    if (!g_gestureManager) {
-        g_gestureManager = [%c(SBSystemGestureManager) mainDisplayManager];
-        if (!g_gestureManager) {
-            SRLog(@"ERROR: Could not find mainDisplayManager");
+        if (bind(serverSock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            close(serverSock);
             return;
         }
-    }
-    
-    // Left Edge
-    if (!leftEdgeRecognizer) {
-        leftEdgeRecognizer = [[SREdgeGestureRecognizer alloc] initWithTarget:[SRGestureHelper sharedInstance] action:@selector(handleEdgeGesture:)];
-        leftEdgeRecognizer.isLeftEdge = YES;
-        leftEdgeRecognizer.cancelsTouchesInView = NO; // Don't block other touches by default
-        leftEdgeRecognizer.delaysTouchesBegan = NO;   // Don't add lag
-        [g_gestureManager addGestureRecognizer:leftEdgeRecognizer withType:120];
-        SRLog(@"Registered LEFT edge gesture recognizer");
-    }
-    
-    // Right Edge
-    if (!rightEdgeRecognizer) {
-        rightEdgeRecognizer = [[SREdgeGestureRecognizer alloc] initWithTarget:[SRGestureHelper sharedInstance] action:@selector(handleEdgeGesture:)];
-        rightEdgeRecognizer.isRightEdge = YES;
-        rightEdgeRecognizer.cancelsTouchesInView = NO; // Don't block other touches by default
-        rightEdgeRecognizer.delaysTouchesBegan = NO;   // Don't add lag
-        [g_gestureManager addGestureRecognizer:rightEdgeRecognizer withType:121];
-        SRLog(@"Registered RIGHT edge gesture recognizer");
-    }
-}
 
-// Unregister gesture recognizers
-static void unregister_edge_gestures() {
-    if (leftEdgeRecognizer) {
-        if (leftEdgeRecognizer.view) {
-            [leftEdgeRecognizer.view removeGestureRecognizer:leftEdgeRecognizer];
-        }
-        leftEdgeRecognizer = nil;
-        SRLog(@"Unregistered LEFT edge gesture recognizer");
-    }
-    
-    if (rightEdgeRecognizer) {
-        if (rightEdgeRecognizer.view) {
-            [rightEdgeRecognizer.view removeGestureRecognizer:rightEdgeRecognizer];
-        }
-        rightEdgeRecognizer = nil;
-        SRLog(@"Unregistered RIGHT edge gesture recognizer");
-    }
-}
+        chmod("/tmp/remotecompanion.sock", 0777);
+        listen(serverSock, 5);
+        SRLog(@"IPC Server Listening on /tmp/remotecompanion.sock");
 
-// Update gesture registration based on config
-static void update_edge_gestures() {
-    @try {
-        BOOL shouldRegister = should_register_edge_gestures();
-        BOOL currentlyRegistered = (leftEdgeRecognizer != nil || rightEdgeRecognizer != nil);
-        
-        if (shouldRegister && !currentlyRegistered) {
-            SRLog(@"Edge gestures enabled - registering...");
-            register_edge_gestures();
-        } else if (!shouldRegister && currentlyRegistered) {
-            SRLog(@"Edge gestures disabled - unregistering...");
-            unregister_edge_gestures();
-        } else if (shouldRegister && currentlyRegistered) {
-            // SRLog(@"Edge gestures already registered and should be");
-        } else {
-            // SRLog(@"Edge gestures not needed and not registered");
-        }
-    } @catch (NSException *e) {
-        SRLog(@"ERROR in update_edge_gestures: %@", e);
-    }
-}
-
-
-%hook SBUIController
-
-- (void)ACPowerChanged {
-    %orig;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        handle_power_state_transition(is_device_power_connected(), @"SBUIController ACPowerChanged");
-    });
-}
-
-- (void)updateBatteryState:(id)arg1 {
-    %orig;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        handle_power_state_transition(is_device_power_connected(), @"SBUIController updateBatteryState");
-    });
-}
-
-- (void)setIsACPowerConnected:(BOOL)arg1 {
-    %orig;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        handle_power_state_transition(arg1, @"SBUIController setIsACPowerConnected");
-    });
-}
-
-%end
-
-
-%hook SpringBoard
-
-- (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
-    if (motion == UIEventSubtypeMotionShake) {
-        SRLog(@"[Trigger] Shake detected");
-        RCExecuteTrigger(@"shake");
-    }
-    %orig;
-}
-
-- (void)frontDisplayDidChange:(id)arg1 {
-    %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if ([self respondsToSelector:@selector(_accessibilityFrontMostApplication)]) {
-            SBApplication *frontApp = [self _accessibilityFrontMostApplication];
-            NSString *bundleId = [frontApp bundleIdentifier];
-            
-            // Track previous app for the 'previous app' action
-            if ((bundleId && ![bundleId isEqualToString:g_currentAppBundleId]) || (!bundleId && g_currentAppBundleId)) {
-                if (g_currentAppBundleId && ![g_currentAppBundleId isEqualToString:@"com.apple.springboard"]) {
-                    g_previousAppBundleId = g_currentAppBundleId;
-                }
-                g_currentAppBundleId = bundleId;
-            }
-            
-            static NSString *lastApp = nil;
-            NSString *effectiveBundleId = bundleId ?: @"com.apple.springboard";
-            if (![effectiveBundleId isEqualToString:lastApp]) {
-                lastApp = effectiveBundleId;
-                SRLog(@"[AppLaunch] App became Active: %@", effectiveBundleId);
-                NSString *triggerKey = [NSString stringWithFormat:@"app_launch_%@", effectiveBundleId];
-                RCExecuteTrigger(triggerKey);
+        while (1) {
+            int clientSock = accept(serverSock, NULL, NULL);
+            if (clientSock >= 0) {
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                    char buffer[1024];
+                    ssize_t bytesRead = read(clientSock, buffer, sizeof(buffer) - 1);
+                    if (bytesRead > 0) {
+                        buffer[bytesRead] = '\0';
+                        NSString *cmd = [NSString stringWithUTF8String:buffer];
+                        NSString *res = handle_command(cmd);
+                        write(clientSock, [res UTF8String], [res lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+                    }
+                    close(clientSock);
+                });
             }
         }
     });
 }
 
-%end
+// Background HID Listener for hardware volume buttons & triggers
+static void setup_background_hid_listener() {
+    static BOOL initialized = NO;
+    if (initialized) return;
+    initialized = YES;
 
-%hook SBSystemGestureManager
+    void *handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+    if (!handle) return;
 
-- (void)addGestureRecognizer:(UIGestureRecognizer *)recognizer withType:(NSUInteger)type {
-    %orig;
+    _IOHIDEventSystemClientCreate = (IOHIDEventSystemClientRef (*)(CFAllocatorRef))dlsym(handle, "IOHIDEventSystemClientCreate");
+    _IOHIDEventSystemClientDispatchEvent = (void (*)(IOHIDEventSystemClientRef, IOHIDEventRef))dlsym(handle, "IOHIDEventSystemClientDispatchEvent");
+
+    SRLog(@"Background HID Listener Initialized.");
 }
-
-%end
-
-%ctor {
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-    if ([bundleID isEqualToString:@"com.apple.springboard"] || [bundleID isEqualToString:@"com.apple.calculator"]) {
-        %init(_ungrouped);
-        
-        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
-        
-        // Start Background HID Listener immediately (safe for NFC)
-        setup_background_hid_listener();
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SRLog(@"Delayed Initialization & Gesture Setup...");
-            
-            load_trigger_config();
-            register_config_observer();
-            register_simulation_observers();
-            register_system_event_observers(); // WiFi/BT Triggers
-            start_server();
-            start_web_server();
-            start_schedule_timer();
-            
-            // Conditionally register edge gestures based on config
-            update_edge_gestures();
-            
-            SRLog(@"Initialization Complete.");
-        });
-    } else {
-        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
-    }
-}
-%hook BBServer
-- (void)publishBulletin:(id)bulletin destinations:(NSUInteger)destinations {
-    %orig;
-    if (!bulletin) return;
-    if (!g_triggerConfig) return;
-    
-    NSString *bundleId = [bulletin performSelector:@selector(sectionID)];
-    NSString *title = [bulletin performSelector:@selector(title)] ?: @"";
-    NSString *subtitle = [bulletin performSelector:@selector(subtitle)] ?: @"";
-    NSString *message = [bulletin performSelector:@selector(message)] ?: @"";
-    
-    NSArray *triggers = g_triggerConfig[@"notificationTriggers"];
-    for (NSDictionary *trigger in triggers) {
-        if (![trigger[@"enabled"] boolValue]) continue;
-        
-        NSString *matchBundleId = trigger[@"bundleId"];
-        if (matchBundleId && matchBundleId.length > 0 && ![matchBundleId isEqualToString:bundleId]) continue;
-        
-        NSString *textMatch = trigger[@"textMatch"];
-        if (textMatch && textMatch.length > 0) {
-            BOOL found = ([title rangeOfString:textMatch options:NSCaseInsensitiveSearch].location != NSNotFound) ||
-                         ([subtitle rangeOfString:textMatch options:NSCaseInsensitiveSearch].location != NSNotFound) ||
-                         ([message rangeOfString:textMatch options:NSCaseInsensitiveSearch].location != NSNotFound);
-            if (!found) continue;
-        }
-        
-        NSString *triggerKey = trigger[@"triggerKey"];
-        if (triggerKey) {
-            SRLog(@"[RCNotif] Triggering %@ for notification from %@", triggerKey, bundleId);
-            RCExecuteTrigger(triggerKey);
-        }
-    }
-}
-%end

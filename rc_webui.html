@@ -996,6 +996,7 @@
     <div class="dialog-msg" style="text-align:center;padding:0 16px 4px">Fires when a notification arrives matching these criteria.</div>
     <div style="padding:0 14px 12px;display:flex;flex-direction:column;gap:10px">
       <input list="app-datalist" class="dialog-input" id="notif-bundle" type="text" placeholder="App Bundle ID (Blank = All Apps)" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0;width:100%">
+      <input class="dialog-input" id="notif-override-bundle" type="text" placeholder="Notification Bundle ID Override (optional)" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0;width:100%">
       <input class="dialog-input" id="notif-text" type="text" placeholder="Text Match (optional)" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0;width:100%">
     </div>
     <div class="dialog-btns">
@@ -1560,40 +1561,42 @@ function renderTriggerRow(key, deletable) {
   const favBtn = document.createElement('div');
   favBtn.className = isFav ? 'swipe-action sa-unfav' : 'swipe-action sa-fav';
   favBtn.innerHTML = `<i class="f7-icons">${isFav ? 'star_slash_fill' : 'star_fill'}</i>`;
-  favBtn.addEventListener('click', e => { e.stopPropagation(); toggleFavorite(key); closeOpenRow(); });
+  favBtn.addEventListener('click', e => { e.stopPropagation(); toggleFavorite(key); });
+  actionsEl.appendChild(favBtn);
 
   const playBtn = document.createElement('div');
   playBtn.className = 'swipe-action sa-play';
   playBtn.innerHTML = `<i class="f7-icons">play_fill</i>`;
-  playBtn.addEventListener('click', e => { e.stopPropagation(); runTrigger(key); closeOpenRow(); });
+  playBtn.addEventListener('click', e => { e.stopPropagation(); runTrigger(key); });
+  actionsEl.appendChild(playBtn);
 
   const copyBtn = document.createElement('div');
   copyBtn.className = 'swipe-action sa-copy';
   copyBtn.innerHTML = `<i class="f7-icons">doc_on_doc</i>`;
-  copyBtn.addEventListener('click', e => { e.stopPropagation(); copyTriggerUrl(key, copyBtn); closeOpenRow(); });
-
-  actionsEl.appendChild(favBtn);
+  copyBtn.addEventListener('click', e => { e.stopPropagation(); copyTriggerUrl(key, copyBtn); });
   actionsEl.appendChild(copyBtn);
-  actionsEl.appendChild(playBtn);
 
   if (deletable) {
     const delBtn = document.createElement('div');
     delBtn.className = 'swipe-action sa-del';
     delBtn.innerHTML = `<i class="f7-icons">trash_fill</i>`;
-    delBtn.addEventListener('click', e => { e.stopPropagation(); closeOpenRow(); deleteTrigger(key); });
+    delBtn.addEventListener('click', e => { e.stopPropagation(); deleteTrigger(key); });
     actionsEl.appendChild(delBtn);
   }
 
   row.appendChild(actionsEl);
 
-  // ── Row content (slides left on swipe) ──
+  // ── Sliding inner content ──
   const inner = document.createElement('div');
   inner.className = 'trigger-row-inner';
   inner.innerHTML = `
-    <div class="row-icon ${cls}"><i class="f7-icons">${icon}</i></div>
+    <div class="row-icon ${cls}">
+      <i class="f7-icons">${icon}</i>
+    </div>
     <div class="row-text">
       <div class="row-title">
         <span>${escHtml(name)}</span>
+        ${isFav ? '<i class="f7-icons" style="font-size:12px;color:#f2c350">star_fill</i>' : ''}
       </div>
       <div class="row-subtitle">${escHtml(subtitle)}</div>
     </div>
@@ -1601,101 +1604,87 @@ function renderTriggerRow(key, deletable) {
   `;
   row.appendChild(inner);
 
-  // ── Unified swipe handling (touch + mouse) ──
-  let startX = 0, startY = 0, dx = 0, isSwipe = false, didMove = false, isTracking = false;
+  // ── Unified swipe (touch + mouse) ──
+  let startX, startY, dx, startedSwipe, currentlyTracking = false;
   let lastSwipeAt = 0;
-  const ACTION_WIDTH = (deletable ? 4 : 3) * 60; // total px of actions (Fav, Copy, Play, [Del])
+  const numActions = deletable ? 4 : 3;
+  const maxSwipe = numActions * 60; // 60px per action button
 
-  function swipeStart(clientX, clientY) {
+  function onStart(clientX, clientY) {
     if (_openRow && _openRow !== row) closeOpenRow();
-    startX = clientX; startY = clientY;
-    dx = 0; isSwipe = false; didMove = false; isTracking = true;
-    
-    // Add window moves for better tracking once started
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    startX = clientX; startY = clientY; dx = 0;
+    startedSwipe = false; currentlyTracking = true;
   }
 
-  function onMouseMove(e) { swipeMove(e.clientX, e.clientY, null); }
-  function onMouseUp()    { swipeEnd(); window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); }
-
-  function swipeMove(clientX, clientY, preventDefaultFn) {
-    if (!isTracking) return;
+  function onMove(clientX, clientY, preventDefault) {
+    if (!currentlyTracking) return;
     dx = clientX - startX;
     const dy = clientY - startY;
-    if (!didMove && Math.abs(dy) > Math.abs(dx)) { isTracking = false; return; }
-    didMove = true;
-    if (!isSwipe && Math.abs(dx) > 5) isSwipe = true;
-    if (!isSwipe) return;
-    if (preventDefaultFn) preventDefaultFn();
+
+    if (!startedSwipe) {
+      if (Math.abs(dy) > Math.abs(dx)) { currentlyTracking = false; return; }
+      if (Math.abs(dx) > 5) startedSwipe = true;
+    }
+    if (!startedSwipe) return;
+    if (preventDefault) preventDefault();
+
     const isOpen = row.classList.contains('swiped-open');
-    let offset = isOpen ? -ACTION_WIDTH + dx : dx;
-    offset = Math.max(-ACTION_WIDTH, Math.min(0, offset));
+    let offset = isOpen ? -maxSwipe + dx : dx;
+    offset = Math.max(-maxSwipe, Math.min(0, offset));
+
     inner.style.transition = 'none';
     inner.style.transform = `translateX(${offset}px)`;
-    // Proportionally show action buttons
-    const ratio = Math.min(1, Math.abs(offset) / ACTION_WIDTH);
-    actionsEl.querySelectorAll('.swipe-action').forEach(el => {
-      el.style.transition = 'none';
-      el.style.width = `${ratio * (ACTION_WIDTH / actionsEl.children.length)}px`;
+
+    // Scale swipe-action buttons linearly
+    const progress = Math.abs(offset) / maxSwipe;
+    row.querySelectorAll('.swipe-action').forEach(btn => {
+      btn.style.width = `${progress * 60}px`;
     });
   }
 
-  function swipeEnd() {
-    if (!isTracking) return;
-    isTracking = false;
-    inner.style.transition = '';
-
-    if (!isSwipe) {
-      inner.style.transform = row.classList.contains('swiped-open') ? `translateX(-${ACTION_WIDTH}px)` : '';
-      return;
-    }
-
+  function onEnd() {
+    if (!startedSwipe) { currentlyTracking = false; return; }
     lastSwipeAt = Date.now();
+    inner.style.transition = '';
+    row.querySelectorAll('.swipe-action').forEach(btn => btn.style.width = '');
+
     const isOpen = row.classList.contains('swiped-open');
-    const threshold = 40; // Reduced from 35% to 40px for better feel
-    
-    if (!isOpen && dx < -threshold) {
-      // Snap open
+    if (!isOpen && dx < -30) {
       row.classList.add('swiped-open');
-      inner.style.transform = `translateX(-${ACTION_WIDTH}px)`;
+      inner.style.transform = `translateX(-${maxSwipe}px)`;
       _openRow = row;
     } else if (isOpen && dx > 20) {
-      // Swipe right to close
-      row.classList.remove('swiped-open');
-      inner.style.transform = '';
-      if (_openRow === row) _openRow = null;
+      closeOpenRow();
     } else {
-      // Snap back to current state
-      inner.style.transform = isOpen ? `translateX(-${ACTION_WIDTH}px)` : '';
+      inner.style.transform = isOpen ? `translateX(-${maxSwipe}px)` : '';
     }
-
-    // Clear inline widths AFTER class changes to allow CSS transitions to take over smoothly
-    setTimeout(() => {
-      actionsEl.querySelectorAll('.swipe-action').forEach(el => {
-        el.style.transition = '';
-        el.style.width = '';
-      });
-    }, 0);
+    currentlyTracking = false;
   }
 
-  // Touch events
-  inner.addEventListener('touchstart', e => swipeStart(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
-  inner.addEventListener('touchmove',  e => swipeMove(e.touches[0].clientX, e.touches[0].clientY, () => e.preventDefault()), { passive: false });
-  inner.addEventListener('touchend',   () => swipeEnd());
+  // Touch
+  inner.addEventListener('touchstart', e => onStart(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+  inner.addEventListener('touchmove', e => onMove(e.touches[0].clientX, e.touches[0].clientY, () => e.preventDefault()), { passive: false });
+  inner.addEventListener('touchend', onEnd, { passive: true });
 
-  // Mouse events (desktop testing)
-  inner.addEventListener('mousedown', e => swipeStart(e.clientX, e.clientY));
+  // Mouse drag fallback for desktop
+  let isMouseDown = false;
+  inner.addEventListener('mousedown', e => { isMouseDown = true; onStart(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', e => { if (isMouseDown) onMove(e.clientX, e.clientY, () => e.preventDefault()); });
+  window.addEventListener('mouseup', () => { if (isMouseDown) { isMouseDown = false; onEnd(); } });
 
-  // ── Context menu (Right-click) ──
+  // Context menu (Right click)
   inner.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    closeOpenRow();
+    
     const items = [
+      { label: isFav ? 'Unfavorite' : 'Favorite', icon: isFav ? 'star_slash_fill' : 'star_fill', action: () => toggleFavorite(key) },
       { label: 'Run Trigger', icon: 'play_fill', action: () => runTrigger(key) },
-      { label: 'Copy API Link', icon: 'doc_on_doc', action: () => copyTriggerUrl(key, null) },
-      { label: isFav ? 'Unfavorite' : 'Favorite', icon: isFav ? 'star_slash_fill' : 'star_fill', action: () => toggleFavorite(key) }
+      { label: 'Copy API Link', icon: 'doc_on_doc', action: () => copyTriggerUrl(key) }
     ];
+    
     if (deletable) {
-      items.push({ label: 'Delete', icon: 'trash_fill', action: () => deleteTrigger(key), destructive: true });
+      items.push({ label: 'Delete', icon: 'trash_fill', destructive: true, action: () => deleteTrigger(key) });
     }
     showContextMenu(e, items);
   });
@@ -1743,7 +1732,7 @@ function deleteTrigger(key) {
       delete config.triggers[key];
       config.favoriteTriggers = (config.favoriteTriggers||[]).filter(k => k !== key);
       // Also remove from notificationTriggers array if applicable
-      if ((key.startsWith('notif_') || key.startsWith('notify_')) && config.notificationTriggers) {
+      if (config.notificationTriggers) {
         config.notificationTriggers = config.notificationTriggers.filter(t => t.triggerKey !== key);
       }
       saveConfig(); renderAll();
@@ -1860,6 +1849,7 @@ function onEditTriggerSettings() {
   const isNotif = currentKey.startsWith('notif_') || currentKey.startsWith('notify_');
   const isWiFi = currentKey.startsWith('wifi_');
   const isBT = currentKey.startsWith('bt_');
+  const isApp = currentKey.startsWith('app_launch_');
   
   if (isSched) promptSchedTrigger(currentKey);
   else if (isNotif) promptNotifTrigger(currentKey);
@@ -2002,236 +1992,120 @@ function renderActionList() {
 
     // Touch
     inner.addEventListener('touchstart', e => onStart(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
-    inner.addEventListener('touchmove',  e => onMove(e.touches[0].clientX, e.touches[0].clientY, () => e.preventDefault()), { passive: false });
-    inner.addEventListener('touchend',   () => onEnd());
+    inner.addEventListener('touchmove', e => onMove(e.touches[0].clientX, e.touches[0].clientY, () => e.preventDefault()), { passive: false });
+    inner.addEventListener('touchend', onEnd, { passive: true });
 
-    // Mouse (for desktop browser testing)
-    const onMouseMove = e => { if (currentlyTracking) onMove(e.clientX, e.clientY, null); };
-    const onMouseUp = () => {
-      if (currentlyTracking) onEnd();
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
+    // Mouse drag fallback for desktop
+    let isMouseDown = false;
+    inner.addEventListener('mousedown', e => { isMouseDown = true; onStart(e.clientX, e.clientY); });
+    window.addEventListener('mousemove', e => { if (isMouseDown) onMove(e.clientX, e.clientY, () => e.preventDefault()); });
+    window.addEventListener('mouseup', () => { if (isMouseDown) { isMouseDown = false; onEnd(); } });
 
-    inner.addEventListener('mousedown', e => {
-      onStart(e.clientX, e.clientY);
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    });
-
-    // ── Context menu (Right-click / Long press) ──
+    // Context menu (Right click)
     inner.addEventListener('contextmenu', e => {
-      const items = [];
-      if (typeof action === 'string') {
-        items.push({ label: 'Run Action', icon: 'play_fill', action: () => runSingleAction(action) });
-      }
-
-      if (isCtrl) {
-        if (type === 'if' || type === 'else_if' || type === 'else' || type === 'end_if' || type === 'end') {
-          const parentIf = findParentIfIndex(actions, idx);
-          if (parentIf > -1) {
-            if (type === 'if' || type === 'else_if') {
-              items.push({
-                label: 'Edit Condition',
-                icon: 'pencil',
-                action: () => showConditionPicker(idx, undefined, type)
-              });
-            }
-
-            const insertIdx = getElseIfInsertionIndex(actions, idx);
-            if (insertIdx > -1) {
-              items.push({
-                label: 'Add Else If',
-                icon: 'arrow_triangle_branch',
-                action: () => showConditionPicker(undefined, insertIdx, 'else_if')
-              });
-            }
-
-            const siblingElse = findSiblingElseIndex(actions, parentIf);
-            if (siblingElse > -1) {
-              if (type === 'else' || type === 'if') {
-                items.push({
-                  label: 'Remove Else',
-                  icon: 'trash_fill',
-                  destructive: true,
-                  action: () => {
-                    actions.splice(siblingElse, 1);
-                    saveConfig(); renderActionList();
-                  }
-                });
-              }
-            } else {
-              items.push({
-                label: 'Add Else',
-                icon: 'arrow_triangle_branch',
-                action: () => {
-                  const endIdx = findMatchingEndIfIndex(actions, parentIf);
-                  if (endIdx > -1) {
-                    actions.splice(endIdx, 0, { type: 'else' });
-                    saveConfig(); renderActionList();
-                  }
-                }
-              });
-            }
-          }
-        }
-      }
-
-      items.push({ label: 'Delete Action', icon: 'trash_fill', action: () => removeAction(idx), destructive: true });
+      e.preventDefault();
+      closeOpenActionRow();
+      
+      const items = [
+        { label: 'Run Action Now', icon: 'play_fill', action: () => runSingleAction(action) },
+        { label: 'Edit Action', icon: 'pencil', action: () => editAction(idx) },
+        { label: 'Delete Action', icon: 'trash_fill', destructive: true, action: () => removeAction(idx) }
+      ];
       showContextMenu(e, items);
     });
 
-    // Click handler with suppression
+    // ── Click handler with suppression ──
     inner.addEventListener('click', e => {
+      // Don't trigger click if we just swiped or clicked a button/handle
       if (Date.now() - lastSwipeAt < 150) return;
-      if (row.classList.contains('del-open')) { closeOpenActionRow(); e.stopPropagation(); }
+      if (e.target.closest('.drag-handle') || e.target.closest('.action-del-btn')) return;
+      
+      if (row.classList.contains('del-open')) {
+        closeOpenActionRow();
+        return;
+      }
+      editAction(idx);
+    });
+
+    // Close swipe if tapping elsewhere
+    document.addEventListener('touchstart', e => {
+      if (_openActionRow === row && !row.contains(e.target)) closeOpenActionRow();
+    }, { passive: true });
+    document.addEventListener('mousedown', e => {
+      if (_openActionRow === row && !row.contains(e.target)) closeOpenActionRow();
     });
 
     card.appendChild(row);
 
-    if (isIf || isElse || isElseIf) indent++;
-    if (isEnd || isElse || isElseIf) indent = Math.max(0, indent - 1);
+    // Update indent level for subsequent rows
+    if (isIf || type === 'repeat') indent++;
+    else if (isEnd) indent = Math.max(0, indent - 1);
   });
 
-  if (window._actionSortable) {
-    window._actionSortable.destroy();
-  }
-  window._actionSortable = new Sortable(card, {
+  // Re-init drag reorder
+  if (card._sortable) card._sortable.destroy();
+  card._sortable = new Sortable(card, {
     handle: '.drag-handle',
-    animation: 200,
-    onEnd: function (evt) {
-      if (evt.oldIndex === evt.newIndex) return;
-      const arr = triggerData(currentKey).actions;
-      const movedItem = arr.splice(evt.oldIndex, 1)[0];
-      arr.splice(evt.newIndex, 0, movedItem);
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    onEnd(evt) {
+      const actions = triggerData(currentKey).actions || [];
+      const [moved] = actions.splice(evt.oldIndex, 1);
+      actions.splice(evt.newIndex, 0, moved);
       saveConfig();
       renderActionList();
     }
   });
 }
 
-function removeAction(idx) {
-  const arr = triggerData(currentKey).actions;
-  arr.splice(idx, 1);
-  saveConfig(); renderActionList();
+function renderActionNameHtml(action, idx) {
+  if (typeof action === 'object') {
+    return escHtml(nameForCmd(action));
+  }
+  const toggleInfo = parseToggleCmd(action);
+  if (toggleInfo) {
+    let html = `<span>${escHtml(toggleInfo.name)}</span> `;
+    html += `<select onchange="updateToggleAction(${idx}, this.value)" onclick="event.stopPropagation()" style="background:#2c2c2e;color:#0a84ff;border:none;border-radius:6px;padding:2px 6px;font-size:14px;font-family:inherit;outline:none;cursor:pointer;">`;
+    toggleInfo.suffixes.forEach((s, i) => {
+      const sel = s === toggleInfo.currentSuffix ? 'selected' : '';
+      html += `<option value="${s}" ${sel}>${escHtml(toggleInfo.displaySuffixes[i])}</option>`;
+    });
+    html += `</select>`;
+    return html;
+  }
+  return escHtml(nameForCmd(action));
 }
 
 function parseToggleCmd(cmd) {
-  if (!cmd || typeof cmd !== 'string') return null;
+  if (typeof cmd !== 'string') return null;
   const lower = cmd.toLowerCase();
-
+  
   const definitions = [
-    {
-      key: 'airplane',
-      name: 'Airplane Mode',
-      icon: 'airplane',
-      prefixes: ['airplane '],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle']
-    },
-    {
-      key: 'low_power',
-      name: 'Low Power Mode',
-      icon: 'battery_25',
-      prefixes: ['low power ', 'lpm ', 'low power mode '],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle']
-    },
-    {
-      key: 'appearance',
-      name: 'Appearance',
-      icon: 'moon_fill',
-      prefixes: ['appearance '],
-      suffixes: ['dark', 'light', 'toggle'],
-      displaySuffixes: ['Dark', 'Light', 'Toggle']
-    },
-    {
-      key: 'dnd',
-      name: 'Do Not Disturb',
-      icon: 'moon_fill',
-      prefixes: ['dnd '],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle']
-    },
-    {
-      key: 'wifi',
-      name: 'Wi-Fi',
-      icon: 'wifi',
-      prefixes: ['wifi '],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle']
-    },
-    {
-      key: 'bluetooth',
-      name: 'Bluetooth',
-      icon: 'bolt_horizontal_fill',
-      prefixes: ['bluetooth ', 'bt '],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle']
-    },
-    {
-      key: 'flashlight',
-      name: 'Flashlight',
-      icon: 'bolt_fill',
-      prefixes: ['flashlight ', 'flash '],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle']
-    },
-    {
-      key: 'audiomix',
-      name: 'AudioMix',
-      icon: 'equalizer',
-      prefixes: ['audiomix '],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle'],
-      exactMatches: { 'audiomix': 'toggle' }
-    },
-    {
-      key: 'rotate',
-      name: 'Rotation Lock',
-      icon: 'lock_rotation',
-      prefixes: ['rotate '],
-      suffixes: ['lock', 'unlock', 'toggle'],
-      displaySuffixes: ['Lock', 'Unlock', 'Toggle']
-    },
-    {
-      key: 'vibration_silent',
-      name: 'Silent Vibration',
-      icon: 'bell_slash',
-      prefixes: ['vibration silent-'],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle']
-    },
-    {
-      key: 'vibration_ring',
-      name: 'Ring Vibration',
-      icon: 'bell',
-      prefixes: ['vibration ring-'],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle']
-    },
-    {
-      key: 'mute',
-      name: 'Mute',
-      icon: 'speaker_slash_fill',
-      prefixes: ['mute '],
-      suffixes: ['on', 'off', 'toggle'],
-      displaySuffixes: ['On', 'Off', 'Toggle'],
-      exactMatches: { 'mute': 'toggle' }
-    }
+    { key:'airplane', name:'Airplane Mode', icon:'airplane', prefixes:['airplane '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'low_power', name:'Low Power Mode', icon:'battery_25', prefixes:['low power ','lpm ','low power mode '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'dnd', name:'Do Not Disturb', icon:'moon_fill', prefixes:['dnd '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'wifi', name:'Wi-Fi', icon:'wifi', prefixes:['wifi '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'cellular', name:'Cellular Data', icon:'antenna_radiowaves_left_right', prefixes:['cellular ','cell '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'bluetooth', name:'Bluetooth', icon:'bolt_horizontal_fill', prefixes:['bluetooth ','bt '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'flashlight', name:'Flashlight', icon:'bolt_fill', prefixes:['flashlight ','flash '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'appearance', name:'Appearance', icon:'moon_fill', prefixes:['appearance '], suffixes:['dark','light','toggle'], displaySuffixes:['Dark','Light','Toggle'] },
+    { key:'audiomix', name:'AudioMix', icon:'equalizer', prefixes:['audiomix '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'], exactMatches: { 'audiomix':'toggle' } },
+    { key:'rotate', name:'Rotation Lock', icon:'lock_rotation', prefixes:['rotate '], suffixes:['lock','unlock','toggle'], displaySuffixes:['Lock','Unlock','Toggle'] },
+    { key:'vibration_silent', name:'Silent Vibration', icon:'bell_slash', prefixes:['vibration silent-'], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'vibration_ring', name:'Ring Vibration', icon:'bell', prefixes:['vibration ring-'], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'mute', name:'Mute', icon:'speaker_slash_fill', prefixes:['mute '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'], exactMatches: { 'mute':'toggle' } }
   ];
 
   for (const def of definitions) {
     if (def.exactMatches && def.exactMatches[lower]) {
       const suffix = def.exactMatches[lower];
       const idx = def.suffixes.indexOf(suffix);
-      const displaySuffix = def.displaySuffixes[idx];
       return {
         key: def.key,
         name: def.name,
         icon: def.icon,
         currentSuffix: suffix,
-        currentDisplaySuffix: displaySuffix,
+        currentDisplaySuffix: def.displaySuffixes[idx],
         suffixes: def.suffixes,
         displaySuffixes: def.displaySuffixes,
         matchedPrefix: '',
@@ -2244,13 +2118,12 @@ function parseToggleCmd(cmd) {
         const suffix = lower.slice(prefix.length);
         const idx = def.suffixes.indexOf(suffix);
         if (idx !== -1) {
-          const displaySuffix = def.displaySuffixes[idx];
           return {
             key: def.key,
             name: def.name,
             icon: def.icon,
             currentSuffix: suffix,
-            currentDisplaySuffix: displaySuffix,
+            currentDisplaySuffix: def.displaySuffixes[idx],
             suffixes: def.suffixes,
             displaySuffixes: def.displaySuffixes,
             matchedPrefix: prefix,
@@ -2260,188 +2133,114 @@ function parseToggleCmd(cmd) {
       }
     }
   }
-
   return null;
 }
 
-function changeToggleState(event, idx) {
-  if (event) event.stopPropagation();
+function updateToggleAction(idx, newSuffix) {
   const actions = triggerData(currentKey).actions || [];
   const action = actions[idx];
   const toggleInfo = parseToggleCmd(action);
   if (!toggleInfo) return;
-
-  const buttons = toggleInfo.suffixes.map((suffix, sIdx) => {
-    const displaySuffix = toggleInfo.displaySuffixes[sIdx];
-    return {
-      label: displaySuffix,
-      action: () => {
-        const canonicalPrefix = toggleInfo.matchedPrefix || toggleInfo.prefixes[0] || '';
-        let newCommand = canonicalPrefix + suffix;
-        if (!toggleInfo.matchedPrefix && toggleInfo.key === 'audiomix' && suffix === 'toggle') {
-          newCommand = 'audiomix';
-        }
-        actions[idx] = newCommand;
-        saveConfig();
-        renderActionList();
-      }
-    };
-  });
-
-  buttons.push({
-    label: 'Cancel',
-    action: () => {}
-  });
-
-  showSheet(toggleInfo.name, buttons);
+  
+  let newCmd;
+  if (toggleInfo.matchedPrefix) {
+    newCmd = `${toggleInfo.matchedPrefix}${newSuffix}`;
+  } else {
+    newCmd = `${toggleInfo.prefixes[0]}${newSuffix}`;
+  }
+  
+  actions[idx] = newCmd;
+  saveConfig();
+  renderActionList();
 }
 
-function changeParamValue(event, idx) {
-  if (event) event.stopPropagation();
+function removeAction(idx) {
   const actions = triggerData(currentKey).actions || [];
-  const action = actions[idx];
-  if (typeof action !== 'string') return;
+  actions.splice(idx, 1);
+  saveConfig();
+  renderActionList();
+}
 
-  const lower = action.toLowerCase();
-
-  const needsText = {
-    '__DELAY__':          { title:'Edit Delay',        msg:'Seconds:', type:'number', build: v => `delay ${v}` },
-    '__SET_VOLUME__':     { title:'Edit Volume',        msg:'Value (0-100):', type:'number', build: v => `set-vol ${Math.max(0,Math.min(100,+v||50))}` },
-    '__SET_BRIGHTNESS__': { title:'Edit Brightness',    msg:'Value (0-100):', type:'number', build: v => `brightness ${Math.max(0,Math.min(100,+v||50))}` },
-    '__SET_FLASHLIGHT__': { title:'Edit Flashlight %',      msg:'Value (0-100):', type:'number', build: v => `flashlight ${Math.max(0,Math.min(100,+v||50))}` },
-    '__BT_CONNECT__':     { title:'Edit BT Device', msg:'Device name:',   type:'text',   build: v => `bt connect ${v}` },
-    '__BT_DISCONNECT__':  { title:'Edit BT Disconnect', msg:'Device name:',   type:'text',   build: v => `bt disconnect ${v}` },
-    '__AIRPLAY_CONNECT__':{ title:'Edit AirPlay',  msg:'Device name:',   type:'text',   build: v => `airplay connect ${v}` },
-    '__SHORTCUT__':       { title:'Edit Shortcut',      msg:'Shortcut name:', type:'text',   build: v => `shortcut:${v}` },
-    '__OPEN_APP__':       { title:'Edit App',          msg:'Search App:',     type:'text',   build: v => `uiopen ${v}` },
-    '__KILL_APP__':       { title:'Edit Kill App',     msg:'Search App:',     type:'text',   build: v => `kill ${v}` }
-  };
-
-  let typeKey = null;
-  let currentVal = '';
-
-  if (lower.startsWith('set-vol ')) {
-    typeKey = '__SET_VOLUME__';
-    currentVal = action.slice(8);
-  } else if (lower.startsWith('brightness ')) {
-    typeKey = '__SET_BRIGHTNESS__';
-    currentVal = action.slice(11);
-  } else if (lower.startsWith('flashlight ') || lower.startsWith('flash ')) {
-    const val = action.slice(lower.startsWith('flashlight ') ? 11 : 6);
-    if (!isNaN(val) && val.trim() !== '') {
-      typeKey = '__SET_FLASHLIGHT__';
-      currentVal = val;
+function editAction(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  const act = actions[idx];
+  if (typeof act === 'object') {
+    const type = (act.type||'').toLowerCase();
+    if (type === 'if' || type === 'else_if') promptIfCondition(idx);
+    else if (type === 'repeat') {
+      showDialog('Edit Repeat Count', 'Times to loop:', String(act.count||1), 'Save', val => {
+        if (!val) return;
+        act.count = parseInt(val, 10) || 1;
+        saveConfig(); renderActionList();
+      }, true);
     }
-  } else if (lower.startsWith('delay ')) {
-    typeKey = '__DELAY__';
-    currentVal = action.slice(6);
-  } else if (lower.startsWith('shortcut:')) {
-    typeKey = '__SHORTCUT__';
-    currentVal = action.slice(9);
-  } else if (lower.startsWith('uiopen ')) {
-    typeKey = '__OPEN_APP__';
-    currentVal = action.slice(7);
-  } else if (lower.startsWith('kill ')) {
-    typeKey = '__KILL_APP__';
-    currentVal = action.slice(5);
-  } else if (lower.startsWith('airplay connect ')) {
-    typeKey = '__AIRPLAY_CONNECT__';
-    currentVal = action.slice(16);
-  } else if (lower.startsWith('bt connect ') || lower.startsWith('bluetooth connect ')) {
-    typeKey = '__BT_CONNECT__';
-    currentVal = action.slice(lower.startsWith('bt connect ') ? 11 : 18);
-  } else if (lower.startsWith('bt disconnect ') || lower.startsWith('bluetooth disconnect ')) {
-    typeKey = '__BT_DISCONNECT__';
-    currentVal = action.slice(lower.startsWith('bt disconnect ') ? 14 : 21);
-  }
-
-  if (typeKey && needsText[typeKey]) {
-    const d = needsText[typeKey];
-    let listId = null;
-    if (typeKey === '__OPEN_APP__' || typeKey === '__KILL_APP__') listId = 'app-datalist';
-    if (typeKey === '__BT_CONNECT__' || typeKey === '__BT_DISCONNECT__') listId = 'bt-datalist';
-    if (typeKey === '__AIRPLAY_CONNECT__') listId = 'airplay-datalist';
-    
-    if (listId) refreshDatalists();
-
-    showDialog(d.title, d.msg, currentVal, 'Save', val => {
-      if (!val) return;
-      actions[idx] = d.build(val);
-      saveConfig();
-      renderActionList();
-    }, d.type, listId);
+  } else if (typeof act === 'string') {
+    const low = act.toLowerCase();
+    if (low.startsWith('delay ')) {
+      showDialog('Edit Delay', 'Seconds:', act.slice(6), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `delay ${val}`;
+        saveConfig(); renderActionList();
+      }, true);
+    } else if (low.startsWith('toast ')) {
+      showDialog('Edit Toast Message', 'Text to display:', act.slice(6), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `toast ${val}`;
+        saveConfig(); renderActionList();
+      });
+    } else if (low.startsWith('exec ')) {
+      showDialog('Edit Command', 'Terminal command:', act.slice(5), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `exec ${val}`;
+        saveConfig(); renderActionList();
+      });
+    } else if (low.startsWith('root ')) {
+      showDialog('Edit Root Command', 'Root terminal command:', act.slice(5), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `root ${val}`;
+        saveConfig(); renderActionList();
+      });
+    } else if (low.startsWith('shortcut:')) {
+      showDialog('Edit Shortcut', 'Name:', act.slice(9), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `shortcut:${val}`;
+        saveConfig(); renderActionList();
+      });
+    } else if (low.startsWith('uiopen ')) {
+      showDialog('Edit Open App', 'Bundle ID:', act.slice(7), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `uiopen ${val}`;
+        saveConfig(); renderActionList();
+      });
+    } else if (low.startsWith('kill ')) {
+      showDialog('Edit Kill App', 'Bundle ID:', act.slice(5), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `kill ${val}`;
+        saveConfig(); renderActionList();
+      });
+    } else if (low.startsWith('flashlight ')) {
+      showDialog('Edit Flashlight Level', 'Intensity % (1-100):', act.slice(11), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `flashlight ${val}`;
+        saveConfig(); renderActionList();
+      }, true);
+    } else if (low.startsWith('set-vol ')) {
+      showDialog('Edit Volume Level', 'Volume % (0-100):', act.slice(8), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `set-vol ${val}`;
+        saveConfig(); renderActionList();
+      }, true);
+    } else if (low.startsWith('brightness ')) {
+      showDialog('Edit Brightness Level', 'Brightness % (0-100):', act.slice(11), 'Save', val => {
+        if (!val) return;
+        actions[idx] = `brightness ${val}`;
+        saveConfig(); renderActionList();
+      }, true);
+    }
   }
 }
 
-function renderActionNameHtml(action, idx) {
-  const toggleInfo = parseToggleCmd(action);
-  if (toggleInfo) {
-    return `${escHtml(toggleInfo.name)} <span class="toggle-link" style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="changeToggleState(event, ${idx})">${escHtml(toggleInfo.currentDisplaySuffix)}</span>`;
-  }
-
-  if (typeof action === 'object') {
-    const t = (action.type || '').toLowerCase();
-    if (t === 'if' || t === 'else_if') {
-      const prefix = t === 'if' ? 'If' : 'Else If';
-      const condTitle = action.conditionTitle || 'Condition';
-      const expTitle = action.expectedTitle || 'Value';
-      return `${prefix} ${escHtml(condTitle)} is <span class="toggle-link" style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="event.stopPropagation(); showConditionPicker(${idx}, undefined, '${t}')">${escHtml(expTitle)}</span>`;
-    }
-  }
-
-  if (typeof action === 'string') {
-    const lower = action.toLowerCase();
-    let baseText = null;
-    let paramText = null;
-
-    if (lower.startsWith('set-vol ')) {
-      baseText = 'Set Volume ';
-      paramText = action.slice(8) + '%';
-    } else if (lower.startsWith('brightness ')) {
-      baseText = 'Set Brightness ';
-      paramText = action.slice(11) + '%';
-    } else if (lower.startsWith('flashlight ') || lower.startsWith('flash ')) {
-      const val = action.slice(lower.startsWith('flashlight ') ? 11 : 6);
-      if (!isNaN(val) && val.trim() !== '') {
-        baseText = 'Flashlight ';
-        paramText = val + '%';
-      }
-    } else if (lower.startsWith('delay ')) {
-      baseText = 'Wait ';
-      paramText = action.slice(6) + 's';
-    } else if (lower.startsWith('shortcut:')) {
-      baseText = 'Shortcut: ';
-      paramText = action.slice(9);
-    } else if (lower.startsWith('uiopen ')) {
-      baseText = 'Open ';
-      const bundleId = action.slice(7).trim().toLowerCase();
-      const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
-      paramText = app ? app.name : action.slice(7).trim();
-    } else if (lower.startsWith('kill ')) {
-      baseText = 'Kill ';
-      const bundleId = action.slice(5).trim().toLowerCase();
-      const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
-      paramText = app ? app.name : action.slice(5).trim();
-    } else if (lower.startsWith('airplay connect ')) {
-      baseText = 'AirPlay Connect ';
-      paramText = action.slice(16);
-    } else if (lower.startsWith('bt connect ') || lower.startsWith('bluetooth connect ')) {
-      baseText = 'Connect ';
-      paramText = action.slice(lower.startsWith('bt connect ') ? 11 : 18);
-    } else if (lower.startsWith('bt disconnect ') || lower.startsWith('bluetooth disconnect ')) {
-      baseText = 'Disconnect ';
-      paramText = action.slice(lower.startsWith('bt disconnect ') ? 14 : 21);
-    }
-
-    if (baseText && paramText) {
-      return `${escHtml(baseText)}<span style="color:#0a84ff;cursor:pointer;font-weight:500;" onclick="changeParamValue(event, ${idx})">${escHtml(paramText)}</span>`;
-    }
-  }
-
-  return escHtml(nameForCmd(action));
-}
-
-// ── Action picker ─────────────────────────────────────────────────────────────
+// ── Action picker panel ───────────────────────────────────────────────────────
 function showActionPickerPanel() {
   document.getElementById('action-search').value = '';
   renderPickerSections();
@@ -2453,685 +2252,250 @@ function closePickerPanel() {
 }
 
 function renderPickerSections() {
-  const q = (document.getElementById('action-search').value || '').toLowerCase().trim();
-  const content = document.getElementById('picker-content');
-  content.innerHTML = '';
+  const query = document.getElementById('action-search').value.toLowerCase().trim();
+  const container = document.getElementById('picker-content');
+  container.innerHTML = '';
 
-  let sections = ACTION_SECTIONS;
-  if (q) {
-    const all = ACTION_SECTIONS.flatMap(s => s.actions);
-    const filtered = all.filter(a => a.name.toLowerCase().includes(q) || a.cmd.toLowerCase().includes(q));
-    sections = [{ title:'Results', actions: filtered }];
-  }
+  ACTION_SECTIONS.forEach(sec => {
+    const filtered = query
+      ? sec.actions.filter(a => a.name.toLowerCase().includes(query) || (a.cmd && a.cmd.toLowerCase().includes(query)))
+      : sec.actions;
+    if (filtered.length === 0) return;
 
-  sections.forEach(sec => {
-    if (!sec.actions.length) return;
     const hdr = document.createElement('div');
     hdr.className = 'picker-section-header';
-    hdr.textContent = sec.title.toUpperCase();
-    content.appendChild(hdr);
+    hdr.textContent = sec.title;
+    container.appendChild(hdr);
 
     const card = document.createElement('div');
-    card.className = 'action-list-card';
-    sec.actions.forEach(a => {
+    card.className = 'list-card';
+    filtered.forEach(act => {
       const row = document.createElement('div');
       row.className = 'picker-row';
       row.innerHTML = `
-        <div class="picker-row-icon icon-dark"><i class="f7-icons">${a.icon}</i></div>
-        <div class="picker-row-text">${escHtml(a.name)}</div>
-        ${a.needs_input ? `<i class="f7-icons picker-row-chevron">chevron_right</i>` : ''}
+        <div class="picker-row-icon icon-dark">
+          <i class="f7-icons">${act.icon}</i>
+        </div>
+        <div class="picker-row-text">${escHtml(act.name)}</div>
+        <i class="f7-icons picker-row-chevron">${act.needs_input ? 'ellipsis' : 'chevron_right'}</i>
       `;
-      // Use the encoded JSON string safely
-      row.addEventListener('click', () => selectAction(a));
+      row.onclick = () => selectPickerAction(act);
       card.appendChild(row);
     });
-    content.appendChild(card);
+    container.appendChild(card);
   });
-
-  if (q && (!sections[0] || !sections[0].actions.length)) {
-    content.innerHTML = `<div style="text-align:center;color:#636366;padding:40px">No results for "${escHtml(q)}"</div>`;
-  }
 }
 
-async function selectAction(action) {
-  const cmd = action.cmd;
-
-  if (action.is_toggle) {
-    const toggleInfo = parseToggleCmd(cmd);
-    if (toggleInfo) {
-      const buttons = toggleInfo.suffixes.map((suffix, sIdx) => {
-        const displaySuffix = toggleInfo.displaySuffixes[sIdx];
-        return {
-          label: displaySuffix,
-          action: () => {
-            const canonicalPrefix = toggleInfo.matchedPrefix || toggleInfo.prefixes[0] || '';
-            let newCommand = canonicalPrefix + suffix;
-            if (!toggleInfo.matchedPrefix && toggleInfo.key === 'audiomix' && suffix === 'toggle') {
-              newCommand = 'audiomix';
-            }
-            addAction(newCommand);
-            closePickerPanel();
-          }
-        };
-      });
-      buttons.push({
-        label: 'Cancel',
-        action: () => {}
-      });
-      showSheet(toggleInfo.name, buttons);
-      return;
-    }
-  }
-
-  const needsText = {
-    '__DELAY__':          { title:'Add Delay',        msg:'Seconds:', def:'1', type:'number', build: v => `delay ${v}` },
-    '__SET_VOLUME__':     { title:'Set Volume',        msg:'Value (0-100):', def:'50', type:'number', build: v => `set-vol ${Math.max(0,Math.min(100,+v||50))}` },
-    '__SET_BRIGHTNESS__': { title:'Set Brightness',    msg:'Value (0-100):', def:'50', type:'number', build: v => `brightness ${Math.max(0,Math.min(100,+v||50))}` },
-    '__SET_FLASHLIGHT__': { title:'Flashlight %',      msg:'Value (0-100):', def:'50', type:'number', build: v => `flashlight ${Math.max(0,Math.min(100,+v||50))}` },
-    '__BT_CONNECT__':     { title:'Connect BT Device', msg:'Device name:',   def:'',  type:'text',   build: v => `bt connect ${v}` },
-    '__BT_DISCONNECT__':  { title:'Disconnect BT',     msg:'Device name:',   def:'',  type:'text',   build: v => `bt disconnect ${v}` },
-    '__AIRPLAY_CONNECT__':{ title:'Connect AirPlay',  msg:'Device name:',   def:'',  type:'text',   build: v => `airplay connect ${v}` },
-    '__SHORTCUT__':       { title:'Run Shortcut',      msg:'Shortcut name:', def:'',  type:'text',   build: v => `shortcut:${v}` },
-    '__OPEN_APP__':       { title:'Open App',          msg:'Search App:',    def:'',  type:'text',   build: v => `uiopen ${v}` },
-    '__KILL_APP__':       { title:'Kill App',          msg:'Search App:',    def:'',  type:'text',   build: v => `kill ${v}` },
-    '__LUA_SCRIPT__':     { title:'Lua Script',        msg:'Lua code:',      def:'',  type:'text',   build: v => `Lua ${v}` },
-    '__TOAST__':          { title:'HUD Toast Notification', msg:'Format: "Title" ["Subtitle"] ["SF Symbol"] (e.g., "Hello" "World" "info.circle")', def:'"Hello" "World" "info.circle"', type:'text', build: v => `toast ${v.trim()}` },
-    '__CUSTOM__':         { title:'Terminal Command',  msg:'Command:',       def:'',  type:'text',   build: v => `exec ${v}` },
-    '__TAP__':            { title:'Tap at Coordinates', msg:'x y  (pixels, e.g. 195 422):', def:'195 422', type:'text', build: v => `tap ${v.trim()}` },
-    '__HOLD__':           { title:'Hold at Coordinates', msg:'x y [ms]  (e.g. 195 422 800):', def:'195 422 800', type:'text', build: v => `hold ${v.trim()}` },
-    '__SWIPE__':          { title:'Custom Swipe', msg:'x1 y1 x2 y2  (pixels, e.g. 195 700 195 200):', def:'195 700 195 200', type:'text', build: v => `swipe ${v.trim()}` },
-  };
-
-  if (needsText[cmd]) {
-    const d = needsText[cmd];
-    let listId = null;
-    if (cmd === '__OPEN_APP__' || cmd === '__KILL_APP__') listId = 'app-datalist';
-    if (cmd === '__BT_CONNECT__' || cmd === '__BT_DISCONNECT__') listId = 'bt-datalist';
-    if (cmd === '__AIRPLAY_CONNECT__') listId = 'airplay-datalist';
-    
-    // Ensure lists are fresh if we might use one
-    if (listId) refreshDatalists();
-
-    showDialog(d.title, d.msg, d.def, 'Add', val => {
-      if (!val) return;
-      addAction(d.build(val));
-    }, d.type, listId);
-    return;
-  }
-
-  if (cmd === '__IF_CONDITION__') {
-    showConditionPicker();
-    return;
-  }
-
-  addAction(cmd);
-  closePickerPanel();
-}
-
-function addAction(cmd) {
-  if (!currentKey) return;
-  const data = triggerData(currentKey);
-  if (!data.actions) data.actions = [];
-  data.actions.push(cmd);
-  if (!data.enabled) { data.enabled = true; document.getElementById('trigger-enabled-toggle').checked = true; }
+function addActionToCurrent(cmd) {
+  const actions = triggerData(currentKey).actions || [];
+  actions.push(cmd);
+  triggerData(currentKey).actions = actions;
   saveConfig();
   renderActionList();
+}
+
+function selectPickerAction(act) {
   closePickerPanel();
-}
-
-function findParentIfIndex(actions, index) {
-  const item = actions[index];
-  if (!item || typeof item !== 'object') return -1;
-  const type = (item.type || '').toLowerCase();
-  
-  if (type === 'if') return index;
-  
-  if (type === 'else_if' || type === 'else') {
-    let depth = 0;
-    for (let idx = index - 1; idx >= 0; idx--) {
-      const checkItem = actions[idx];
-      if (typeof checkItem === 'object') {
-        const cType = (checkItem.type || '').toLowerCase();
-        if (cType === 'end_if' || cType === 'end') {
-          depth++;
-        } else if (cType === 'if') {
-          depth--;
-          if (depth < 0) return idx;
-        }
-      }
-    }
-  } else if (type === 'end_if' || type === 'end') {
-    let depth = 0;
-    for (let idx = index - 1; idx >= 0; idx--) {
-      const checkItem = actions[idx];
-      if (typeof checkItem === 'object') {
-        const cType = (checkItem.type || '').toLowerCase();
-        if (cType === 'end_if' || cType === 'end') {
-          depth++;
-        } else if (cType === 'if') {
-          depth--;
-          if (depth === 0) return idx;
-        }
-      }
-    }
+  const c = act.cmd;
+  if (c === '__DELAY__') {
+    showDialog('Add Delay', 'Delay duration in seconds:', '1', 'Add', val => {
+      if (val) addActionToCurrent(`delay ${val}`);
+    }, true);
+  } else if (c === '__TOAST__') {
+    showDialog('Add HUD Toast', 'Message text:', '', 'Add', val => {
+      if (val) addActionToCurrent(`toast ${val}`);
+    });
+  } else if (c === '__CUSTOM__') {
+    showDialog('Terminal Command', 'Shell command to execute:', '', 'Add', val => {
+      if (val) addActionToCurrent(`exec ${val}`);
+    });
+  } else if (c === '__LUA_SCRIPT__') {
+    showDialog('Lua Script', 'Lua expression or script:', '', 'Add', val => {
+      if (val) addActionToCurrent(`lua:${val}`);
+    });
+  } else if (c === '__SHORTCUT__') {
+    showDialog('Run Shortcut', 'Exact name of the iOS Shortcut:', '', 'Add', val => {
+      if (val) addActionToCurrent(`shortcut:${val}`);
+    });
+  } else if (c === '__OPEN_APP__') {
+    promptAppLaunchPicker(bid => {
+      if (bid) addActionToCurrent(`uiopen ${bid}`);
+    });
+  } else if (c === '__KILL_APP__') {
+    promptAppLaunchPicker(bid => {
+      if (bid) addActionToCurrent(`kill ${bid}`);
+    });
+  } else if (c === '__BT_CONNECT__') {
+    showDialog('Connect Bluetooth', 'Device name or MAC address:', '', 'Add', val => {
+      if (val) addActionToCurrent(`bt connect ${val}`);
+    });
+  } else if (c === '__BT_DISCONNECT__') {
+    showDialog('Disconnect Bluetooth', 'Device name or MAC address:', '', 'Add', val => {
+      if (val) addActionToCurrent(`bt disconnect ${val}`);
+    });
+  } else if (c === '__AIRPLAY_CONNECT__') {
+    showDialog('Connect AirPlay', 'AirPlay Receiver name:', '', 'Add', val => {
+      if (val) addActionToCurrent(`airplay connect ${val}`);
+    });
+  } else if (c === '__IF_CONDITION__') {
+    promptIfCondition();
+  } else if (c === '__SET_FLASHLIGHT__') {
+    showDialog('Flashlight Intensity', 'Brightness percentage (1-100):', '100', 'Add', val => {
+      if (val) addActionToCurrent(`flashlight ${val}`);
+    }, true);
+  } else if (c === '__SET_VOLUME__') {
+    showDialog('Set Volume', 'Volume percentage (0-100):', '50', 'Add', val => {
+      if (val) addActionToCurrent(`set-vol ${val}`);
+    }, true);
+  } else if (c === '__SET_BRIGHTNESS__') {
+    showDialog('Set Brightness', 'Brightness percentage (0-100):', '50', 'Add', val => {
+      if (val) addActionToCurrent(`brightness ${val}`);
+    }, true);
+  } else {
+    addActionToCurrent(c);
   }
-  return -1;
 }
 
-function findSiblingElseIndex(actions, ifIndex) {
-  if (ifIndex < 0) return -1;
-  let depth = 0;
-  for (let idx = ifIndex; idx < actions.length; idx++) {
-    const checkItem = actions[idx];
-    if (typeof checkItem === 'object') {
-      const cType = (checkItem.type || '').toLowerCase();
-      if (cType === 'if') {
-        depth++;
-      } else if (cType === 'end_if' || cType === 'end') {
-        depth--;
-        if (depth === 0) return -1;
-      } else if (cType === 'else') {
-        if (depth === 1) return idx;
-      }
-    }
-  }
-  return -1;
-}
-
-function findMatchingEndIfIndex(actions, ifIndex) {
-  if (ifIndex < 0) return -1;
-  let depth = 0;
-  for (let idx = ifIndex; idx < actions.length; idx++) {
-    const checkItem = actions[idx];
-    if (typeof checkItem === 'object') {
-      const cType = (checkItem.type || '').toLowerCase();
-      if (cType === 'if') {
-        depth++;
-      } else if (cType === 'end_if' || cType === 'end') {
-        depth--;
-        if (depth === 0) return idx;
-      }
-    }
-  }
-  return -1;
-}
-
-function getElseIfInsertionIndex(actions, index) {
-  const ifIndex = findParentIfIndex(actions, index);
-  if (ifIndex < 0) return -1;
-  
-  let depth = 0;
-  for (let idx = ifIndex; idx < actions.length; idx++) {
-    const checkItem = actions[idx];
-    if (typeof checkItem === 'object') {
-      const cType = (checkItem.type || '').toLowerCase();
-      if (cType === 'if') {
-        depth++;
-      } else if (cType === 'end_if' || cType === 'end') {
-        depth--;
-        if (depth === 0) return idx;
-      } else if (cType === 'else') {
-        if (depth === 1) return idx;
-      }
-    }
-  }
-  return -1;
-}
-
-function showConditionPicker(existingIdx, insertIdx, type) {
-  const actionType = type || 'if';
-  const isEdit = existingIdx !== undefined && existingIdx !== null;
-  const isInsert = insertIdx !== undefined && insertIdx !== null;
-  const sheetTitle = actionType === 'else_if' ? 'Else If Condition' : 'If Condition';
-  
-  const btns = CONDITION_DEFS.map(c => ({
-    label: c.title,
-    action: () => {
-      if (c.freeText) {
-        let initialVal = '';
-        if (isEdit) {
-          const act = triggerData(currentKey).actions[existingIdx];
-          initialVal = act.expectedValue || '';
-        }
-        showDialog(`${actionType === 'else_if' ? 'Else If' : 'If'} ${c.title}`, 'App bundle ID (e.g. com.apple.Music):', initialVal, isEdit ? 'Save' : 'Add', val => {
-          if (!val) return;
-          const ifAction = { type: actionType, conditionKey: c.key, conditionTitle: c.title, expectedValue: val, expectedTitle: val };
-          const data = triggerData(currentKey);
-          if (!data.actions) data.actions = [];
-          if (isEdit) {
-            data.actions[existingIdx] = ifAction;
-          } else if (isInsert) {
-            data.actions.splice(insertIdx, 0, ifAction);
-          } else {
-            data.actions.push(ifAction, { type: 'end_if' });
-          }
-          saveConfig(); renderActionList(); closePickerPanel();
+function promptIfCondition(editIdx = null) {
+  const options = CONDITION_DEFS.map(d => ({
+    label: d.title,
+    action() {
+      if (d.freeText) {
+        showDialog(d.title, 'Enter value:', '', 'Next', val => {
+          if (val) promptIfConditionValue(d, val, editIdx);
         });
-      } else if (c.values) {
-        showSheet(`${c.title} is…`, c.values.map(v => ({
-          label: v.title,
-          action: () => {
-            const ifAction = { type: actionType, conditionKey: c.key, conditionTitle: c.title, expectedValue: v.value, expectedTitle: v.title };
-            const data = triggerData(currentKey);
-            if (!data.actions) data.actions = [];
-            if (isEdit) {
-              data.actions[existingIdx] = ifAction;
-            } else if (isInsert) {
-              data.actions.splice(insertIdx, 0, ifAction);
-            } else {
-              data.actions.push(ifAction, { type: 'end_if' });
-            }
-            saveConfig(); renderActionList(); closePickerPanel();
-          }
-        })));
+      } else {
+        promptIfConditionValue(d, null, editIdx);
       }
     }
   }));
-  showSheet(sheetTitle, btns);
+  showSheet('Select Condition Target', options);
 }
 
-// ── Add trigger ───────────────────────────────────────────────────────────────
-function showAddTriggerSheet() {
-  showSheet('New Trigger', [
-    { label:'NFC Tag',           action:() => promptNewTrigger('nfc',        'NFC tag ID or name') },
-    { label:'WiFi Network',      action:() => promptComplexTrigger('wifi') },
-    { label:'Bluetooth Device',  action:() => promptComplexTrigger('bt') },
-    { label:'App Launch',        action:() => promptAppLaunchTrigger() },
-    { label:'Notification',      action:() => promptNotifTrigger() },
-    { label:'Scheduled',         action:() => promptSchedTrigger() },
-    { label:'System Event',      action:() => showAddSystemEventSheet() },
+function promptIfConditionValue(def, customValue, editIdx) {
+  if (def.values) {
+    const options = def.values.map(v => ({
+      label: v.title,
+      action() { finishIfCondition(def, v.value, v.title, editIdx); }
+    }));
+    showSheet(`If ${def.title} is…`, options);
+  } else {
+    finishIfCondition(def, customValue, customValue, editIdx);
+  }
+}
+
+function finishIfCondition(def, value, valueTitle, editIdx) {
+  const item = {
+    type: 'if',
+    condition: `${def.key}:${value}`,
+    conditionName: def.key,
+    conditionTitle: def.title,
+    expectedLabel: value,
+    expectedTitle: valueTitle
+  };
+
+  const actions = triggerData(currentKey).actions || [];
+  if (editIdx !== null) {
+    actions[editIdx] = item;
+  } else {
+    actions.push(item);
+    actions.push({ type: 'end_if' });
+  }
+  triggerData(currentKey).actions = actions;
+  saveConfig();
+  renderActionList();
+}
+
+// ── Ellipsis Menu ─────────────────────────────────────────────────────────────
+function showEllipsisMenu(e) {
+  const items = [
+    { label: 'Import Actions (JSON/Lines)', icon: 'square_arrow_down', action: () => showImportDialog() },
+    { label: 'Export Actions (JSON)', icon: 'square_arrow_up', action: () => exportCurrentActions() },
+    { label: 'Clear All Actions', icon: 'trash_fill', destructive: true, action: () => clearCurrentActions() }
+  ];
+  showContextMenu(e, items);
+}
+
+function clearCurrentActions() {
+  showSheet('Clear Actions', [
+    { label: 'Clear All Actions', destructive: true, action() {
+      triggerData(currentKey).actions = [];
+      saveConfig();
+      renderActionList();
+    }}
   ]);
 }
 
-function showAddSystemEventSheet() {
-  showSheet('New System Event', [
-    { label:'Device Locked',         action:() => createSystemEventTrigger('trigger_device_lock', 'Device Locked') },
-    { label:'Device Unlocked',       action:() => createSystemEventTrigger('trigger_device_unlock', 'Device Unlocked') },
-    { label:'Power Connected',        action:() => createSystemEventTrigger('trigger_power_connect', 'Power Connected') },
-    { label:'Power Disconnected',     action:() => createSystemEventTrigger('trigger_power_disconnect', 'Power Disconnected') },
-    { label:'Media Playing',         action:() => createSystemEventTrigger('trigger_media_play', 'Media Playing') },
-    { label:'Media Paused',          action:() => createSystemEventTrigger('trigger_media_pause', 'Media Paused') },
-    { label:'Media Track Changed',   action:() => createSystemEventTrigger('trigger_media_track_change', 'Media Track Changed') },
-  ]);
+function exportCurrentActions() {
+  const actions = triggerData(currentKey).actions || [];
+  const json = JSON.stringify(actions, null, 2);
+  const text = navigator.clipboard && window.isSecureContext ? json : json;
+  
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => showToast('✓ Actions Copied')).catch(() => showToast('⚠ Copy Failed'));
+  } else {
+    // fallback copy
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    showToast('✓ Actions Copied');
+  }
 }
 
-function createSystemEventTrigger(key, name) {
-  config.triggers[key] = { enabled: true, actions: [], name: name };
-  saveConfig(); renderAll();
-  setTimeout(() => openActionsPanel(key), 400);
+// ── Import Actions Dialog System ───────────────────────────────────────────────
+function showImportDialog() {
+  document.getElementById('import-dialog-textarea').value = '';
+  document.getElementById('import-dialog-backdrop').classList.add('visible');
 }
 
-function promptNewTrigger(prefix, placeholder) {
-  showDialog('New Trigger', placeholder + ':', '', 'Create', val => {
-    if (!val) return;
-    const key = `${prefix}_${val.toLowerCase().replace(/[ \t\n\r]+/g,'_').replace(/[^a-z0-9_]/g,'')}`;
-    config.triggers[key] = { enabled: true, actions: [], name: val };
-    saveConfig(); renderAll();
-  });
+function closeImportDialog() {
+  document.getElementById('import-dialog-backdrop').classList.remove('visible');
 }
 
-// ── App Launch Trigger Dialog ────────────────────────────────────────────────
-let _appPickerData = []; // Cached full list for filtering
+function clearImportTextarea() {
+  document.getElementById('import-dialog-textarea').value = '';
+  document.getElementById('import-dialog-textarea').focus();
+}
 
-async function promptAppLaunchTrigger() {
-  document.getElementById('app-picker-search').value = '';
-  const listEl = document.getElementById('app-picker-list');
-  listEl.innerHTML = '<div class="app-picker-loading" id="app-picker-loading">Loading apps…</div>';
-  document.getElementById('app-launch-dialog-backdrop').classList.add('visible');
-  setTimeout(() => document.getElementById('app-picker-search').focus(), 150);
+function _importDialogBackdropClick(e) {
+  if (e.target === document.getElementById('import-dialog-backdrop')) {
+    closeImportDialog();
+  }
+}
 
+function importDialogOk() {
+  const raw = document.getElementById('import-dialog-textarea').value.trim();
+  if (!raw) { closeImportDialog(); return; }
+
+  let imported = [];
   try {
-    const data = await fetchDevices();
-    _appPickerData = (data && data.apps) ? data.apps : [];
-    renderAppPickerList(_appPickerData);
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) imported = parsed;
+    else if (typeof parsed === 'string') imported = [parsed];
   } catch(e) {
-    listEl.innerHTML = '<div class="app-picker-loading">Could not load apps from device.</div>';
+    // Fall back to line-separated commands
+    imported = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
   }
-}
 
-function closeAppLaunchDialog() {
-  document.getElementById('app-launch-dialog-backdrop').classList.remove('visible');
-  _appPickerData = [];
-}
-
-function filterAppPickerList() {
-  const q = (document.getElementById('app-picker-search').value || '').toLowerCase().trim();
-  const filtered = q
-    ? _appPickerData.filter(a => a.name.toLowerCase().includes(q) || a.bundleId.toLowerCase().includes(q))
-    : _appPickerData;
-  renderAppPickerList(filtered);
-}
-
-function renderAppPickerList(apps) {
-  const listEl = document.getElementById('app-picker-list');
-  if (!apps || apps.length === 0) {
-    listEl.innerHTML = '<div class="app-picker-loading">No apps found.</div>';
+  if (imported.length === 0) {
+    showToast('⚠ No valid actions found');
+    closeImportDialog();
     return;
   }
-  listEl.innerHTML = '';
-  apps.forEach(app => {
-    const row = document.createElement('div');
-    row.className = 'app-picker-row';
-    row.innerHTML = `
-      <div class="app-picker-row-inner">
-        <div class="app-picker-name">${escHtml(app.name)}</div>
-        <div class="app-picker-bid">${escHtml(app.bundleId)}</div>
-      </div>
-      <i class="f7-icons" style="color:#3a3a3c;font-size:14px;flex-shrink:0">chevron_right</i>
-    `;
-    row.addEventListener('click', () => {
-      closeAppLaunchDialog();
-      // Use app name as display name, bundle ID as key suffix
-      const name = app.name;
-      const safeSuffix = app.bundleId; // keep full bundle ID as suffix for exact match in trigger hook
-      const key = `app_launch_${safeSuffix}`;
-      config.triggers[key] = { enabled: true, actions: [], name };
-      saveConfig(); renderAll();
-      setTimeout(() => openActionsPanel(key), 400);
-    });
-    listEl.appendChild(row);
-  });
+
+  const actions = triggerData(currentKey).actions || [];
+  actions.push(...imported);
+  triggerData(currentKey).actions = actions;
+  saveConfig();
+  renderActionList();
+  closeImportDialog();
+  showToast(`✓ Imported ${imported.length} actions`);
 }
 
-// ── Scheduled Trigger Dialog ─────────────────────────────────────────────────
-function promptSchedTrigger(existingKey) {
-  editingTriggerKey = existingKey || null;
-  const data = editingTriggerKey ? config.triggers[editingTriggerKey] : null;
-  const sched = data ? data.schedule : null;
-
-  const now = new Date();
-  const hh = sched ? String(sched.hour).padStart(2,'0') : String(now.getHours()).padStart(2,'0');
-  const mm = sched ? String(sched.minute).padStart(2,'0') : String(now.getMinutes()).padStart(2,'0');
-  
-  document.getElementById('sched-name').value = data ? data.name : '';
-  document.getElementById('sched-time').value = `${hh}:${mm}`;
-  document.getElementById('sched-dialog-ok').textContent = editingTriggerKey ? 'Save' : 'Create';
-  
-  // Pre-check days
-  const dayCbs = document.querySelectorAll('#sched-days input[type=checkbox]');
-  dayCbs.forEach(cb => {
-    if (sched && sched.days) {
-      cb.checked = sched.days.includes(parseInt(cb.value));
-    } else {
-      cb.checked = true; // Default for new
-    }
-  });
-
-  document.getElementById('sched-dialog-backdrop').classList.add('visible');
-  if (!editingTriggerKey) setTimeout(() => document.getElementById('sched-name').focus(), 100);
-}
-
-function closeSchedDialog() {
-  document.getElementById('sched-dialog-backdrop').classList.remove('visible');
-}
-
-function schedDialogOk() {
-  const name = document.getElementById('sched-name').value.trim();
-  const timeVal = document.getElementById('sched-time').value; // "HH:MM"
-  const checkedDays = Array.from(document.querySelectorAll('#sched-days input[type=checkbox]:checked'))
-                           .map(cb => parseInt(cb.value));
-  if (!name) { showToast('⚠ Name required'); return; }
-  if (!timeVal) { showToast('⚠ Time required'); return; }
-  if (checkedDays.length === 0) { showToast('⚠ Select at least one day'); return; }
-  const [hourStr, minStr] = timeVal.split(':');
-  const hour = parseInt(hourStr);
-  const minute = parseInt(minStr);
-
-  if (editingTriggerKey) {
-    // Update existing
-    const data = config.triggers[editingTriggerKey];
-    data.name = name;
-    data.schedule = { hour, minute, days: checkedDays };
-  } else {
-    // Create new
-    const key = `sched_${name.toLowerCase().replace(/[ \t\n\r]+/g,'_').replace(/[^a-z0-9_]/g,'')}`;
-    config.triggers[key] = {
-      enabled: true,
-      actions: [],
-      name: name,
-      schedule: { hour, minute, days: checkedDays }
-    };
-    // Open the new trigger for editing
-    setTimeout(() => openActionsPanel(key), 400);
-  }
-
-  closeSchedDialog();
-  saveConfig(); renderAll();
-}
-
-// ── Notification Trigger Dialog ────────────────────────────────────────────────
-function generateNotifName(bundleId, textMatch) {
-  let appName = 'Any App';
-  if (bundleId) {
-    const bid = bundleId.trim().toLowerCase();
-    const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bid);
-    appName = app ? app.name : bundleId.trim();
-  }
-  
-  if (bundleId) {
-    if (textMatch) return `Notification from ${appName} containing '${textMatch}'`;
-    return `Any Notification from ${appName}`;
-  } else {
-    if (textMatch) return `Any Notification containing '${textMatch}'`;
-    return 'Any Notification';
-  }
-}
-
-function promptNotifTrigger(existingKey) {
-  editingTriggerKey = existingKey || null;
-  let bundleId = '';
-  let textMatch = '';
-  
-  if (editingTriggerKey && config.notificationTriggers) {
-    const entry = config.notificationTriggers.find(t => t.triggerKey === editingTriggerKey);
-    if (entry) {
-      bundleId = entry.bundleId || '';
-      textMatch = entry.textMatch || '';
-    }
-  }
-
-  document.getElementById('notif-bundle').value = bundleId;
-  document.getElementById('notif-text').value = textMatch;
-  document.getElementById('notif-dialog-ok').textContent = editingTriggerKey ? 'Save' : 'Create';
-  document.getElementById('notif-dialog-backdrop').classList.add('visible');
-  
-  refreshDatalists();
-  if (!editingTriggerKey) setTimeout(() => document.getElementById('notif-bundle').focus(), 100);
-}
-
-function closeNotifDialog() {
-  document.getElementById('notif-dialog-backdrop').classList.remove('visible');
-}
-
-function notifDialogOk() {
-  const bundleId = document.getElementById('notif-bundle').value.trim();
-  const textMatch = document.getElementById('notif-text').value.trim();
-  const name = generateNotifName(bundleId, textMatch);
-
-  let key = editingTriggerKey;
-  if (!key) {
-    // Generate unique random key (notif_ + 8 hex chars)
-    const rand = Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
-    key = `notif_${rand}`;
-    config.triggers[key] = { enabled: true, actions: [], name };
-  } else {
-    config.triggers[key].name = name;
-  }
-
-  // Add/update entry in notificationTriggers array (read by backend hook)
-  if (!config.notificationTriggers) config.notificationTriggers = [];
-  
-  // Remove any existing entry for this key
-  config.notificationTriggers = config.notificationTriggers.filter(t => t.triggerKey !== key);
-  
-  const entry = { triggerKey: key, bundleId, enabled: true };
-  if (textMatch) entry.textMatch = textMatch;
-  config.notificationTriggers.push(entry);
-
-  closeNotifDialog();
-  saveConfig(); renderAll();
-  
-  if (!editingTriggerKey) {
-    // Open the new trigger for editing
-    setTimeout(() => openActionsPanel(key), 400); // Wait for dialog close animation
-  }
-}
-
-// ── Complex Trigger (WiFi/BT) ────────────────────────────────────────────────
-let complexTriggerType = null;
-let complexTriggerSegment = 'connect';
-
-async function fetchDevices() {
-  try {
-    const res = await fetch('/api/devices');
-    const data = await res.json();
-    console.log('API: fetchDevices returned:', data);
-    return data;
-  } catch (e) {
-    console.error('API: fetchDevices FAILED:', e);
-    return { wifi: [], bluetooth: [], apps: [] };
-  }
-}
-
-async function refreshDatalists() {
-  console.log('UI: refreshing datalists...');
-  const data = await refreshDatalistsInternal();
-  renderAll();
-  if (currentKey && document.getElementById('actions-panel').classList.contains('active')) {
-    renderActionList();
-  }
-  return data;
-}
-
-async function refreshDatalistsInternal() {
-  const data = await fetchDevices();
-  if (!data) return null;
-
-  const appList = document.getElementById('app-datalist');
-  if (appList && data.apps) {
-    cachedApps = data.apps;
-    try {
-      localStorage.setItem('rc_cached_apps', JSON.stringify(cachedApps));
-    } catch (e) {}
-    appList.innerHTML = '';
-    console.log(`UI: Populating app-datalist with ${data.apps.length} items`);
-    data.apps.forEach(app => {
-      const opt = document.createElement('option');
-      opt.value = app.bundleId;
-      opt.label = app.name; // Use label for better browser support
-      opt.textContent = app.name;
-      appList.appendChild(opt);
-    });
-  }
-
-  const btList = document.getElementById('bt-datalist');
-  if (btList && data.bluetooth) {
-    btList.innerHTML = '';
-    data.bluetooth.forEach(name => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      btList.appendChild(opt);
-    });
-  }
-
-  const wifiList = document.getElementById('wifi-datalist');
-  if (wifiList && data.wifi) {
-    wifiList.innerHTML = '';
-    data.wifi.forEach(name => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      wifiList.appendChild(opt);
-    });
-  }
-
-  const airplayList = document.getElementById('airplay-datalist');
-  if (airplayList && data.airplay) {
-    airplayList.innerHTML = '';
-    data.airplay.filter(n => n !== 'iPhone').forEach(name => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      airplayList.appendChild(opt);
-    });
-  }
-  return data;
-}
-
-function setComplexSegment(seg) {
-  complexTriggerSegment = seg;
-  document.getElementById('complex-seg-connect').style.background = seg === 'connect' ? '#007aff' : 'transparent';
-  document.getElementById('complex-seg-disconnect').style.background = seg === 'disconnect' ? '#007aff' : 'transparent';
-}
-
-async function promptComplexTrigger(type, existingKey) {
-  editingTriggerKey = existingKey || null;
-  complexTriggerType = type;
-  
-  let val = '';
-  let seg = 'connect';
-  
-  if (editingTriggerKey) {
-    const data = config.triggers[editingTriggerKey];
-    val = data.name || '';
-    if (editingTriggerKey.includes('_disconnect_')) seg = 'disconnect';
-  }
-
-  setComplexSegment(seg);
-  document.getElementById('complex-dialog-title').textContent = editingTriggerKey ? (type === 'wifi' ? 'Edit WiFi Trigger' : 'Edit Bluetooth Trigger') : (type === 'wifi' ? 'New WiFi Trigger' : 'New Bluetooth Trigger');
-  document.getElementById('complex-dialog-msg').textContent = type === 'wifi' ? 'Select or type Network SSID' : 'Select or type Device Name';
-  document.getElementById('complex-dialog-input').value = val;
-  document.getElementById('complex-dialog-input').placeholder = type === 'wifi' ? 'Network SSID' : 'Device Name';
-  document.getElementById('complex-dialog-ok').textContent = editingTriggerKey ? 'Save' : 'Create';
-  
-  const datalist = document.getElementById('complex-dialog-datalist');
-  datalist.innerHTML = '';
-  document.getElementById('complex-dialog-backdrop').classList.add('visible');
-
-  // Refresh and use data
-  const data = await refreshDatalists();
-  const list = type === 'wifi' ? (data ? data.wifi : []) : (data ? data.bluetooth : []);
-  if (list && list.length) {
-    list.forEach(name => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      datalist.appendChild(opt);
-    });
-  }
-}
-
-function closeComplexDialog() {
-  document.getElementById('complex-dialog-backdrop').classList.remove('visible');
-}
-
-function complexDialogOk() {
-  const val = document.getElementById('complex-dialog-input').value.trim();
-  if (!val) {
-    closeComplexDialog();
-    return;
-  }
-  
-  const prefix = complexTriggerType; 
-  const newKey = `${prefix}_${complexTriggerSegment}_${val}`;
-
-  if (editingTriggerKey) {
-    // If the key changed (SSID/Device name or segment changed), we must migrate
-    if (editingTriggerKey !== newKey) {
-      config.triggers[newKey] = config.triggers[editingTriggerKey];
-      delete config.triggers[editingTriggerKey];
-      currentKey = newKey; // Update current view
-    }
-    config.triggers[newKey].name = val;
-  } else {
-    // Create new
-    config.triggers[newKey] = { enabled: true, actions: [], name: val };
-    // Open the new trigger for editing
-    setTimeout(() => openActionsPanel(newKey), 400);
-  }
-
-  closeComplexDialog();
-  saveConfig(); renderAll();
-}
-
-// ── Settings ──────────────────────────────────────────────────────────────────
+// ── Settings ─────────────────────────────────────────────────────────────────
 function openSettings() {
   document.getElementById('setting-master').checked = !!config.masterEnabled;
   document.getElementById('setting-nfc').checked    = !!config.nfcEnabled;
@@ -3139,423 +2503,544 @@ function openSettings() {
   document.getElementById('settings-panel').classList.add('active');
   document.getElementById('footer-settings-fixed').style.display = 'block';
 }
+
 function closeSettings() {
   document.getElementById('settings-panel').classList.remove('active');
   document.getElementById('footer-settings-fixed').style.display = 'none';
 }
 
 function exportConfig() {
-  const blob = new Blob([JSON.stringify(config, null, 2)], { type:'application/json' });
+  const json = JSON.stringify(config, null, 2);
+  const blob = new Blob([json], { type:'application/json' });
   const url  = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const d = new Date();
-  a.href = url;
-  a.download = `rc_config_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'rc_triggers_backup.json';
   a.click();
   URL.revokeObjectURL(url);
 }
-function importConfig() { document.getElementById('import-file-input').click(); }
+
+function importConfig() {
+  document.getElementById('import-file-input').click();
+}
+
 function handleImportFile(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const imp = JSON.parse(e.target.result);
-      if (imp.triggers) Object.assign(config.triggers, imp.triggers);
-      if (imp.masterEnabled !== undefined) config.masterEnabled = imp.masterEnabled;
-      if (imp.nfcEnabled !== undefined) config.nfcEnabled = imp.nfcEnabled;
-      if (imp.fixedVolumeButtons !== undefined) config.fixedVolumeButtons = imp.fixedVolumeButtons;
-      saveConfig(); renderAll();
-      showToast('✓ Import successful');
-    } catch { showToast('⚠ Invalid config file'); }
+      const imported = JSON.parse(e.target.result);
+      if (typeof imported !== 'object') throw new Error();
+      config = imported;
+      saveConfig();
+      renderAll();
+      showToast('✓ Configuration Imported');
+    } catch(err) {
+      showToast('⚠ Invalid Backup File');
+    }
   };
   reader.readAsText(file);
-  input.value = '';
 }
 
-// ── Sheet ─────────────────────────────────────────────────────────────────────
+// ── App Launch Trigger Setup ──────────────────────────────────────────────────
+async function promptAppLaunchPicker(callback) {
+  const listEl = document.getElementById('app-picker-list');
+  const loadingEl = document.getElementById('app-picker-loading');
+  document.getElementById('app-picker-search').value = '';
+  document.getElementById('app-launch-dialog-backdrop').classList.add('visible');
+
+  dialogCallback = callback;
+
+  if (cachedApps.length > 0) {
+    renderAppPickerItems(cachedApps);
+  } else {
+    loadingEl.style.display = 'block';
+    listEl.querySelectorAll('.app-picker-row').forEach(r => r.remove());
+  }
+
+  // Fetch fresh app list in background
+  try {
+    const res = await fetch('/api/apps');
+    if (res.ok) {
+      const apps = await res.json();
+      cachedApps = apps;
+      try { localStorage.setItem('rc_cached_apps', JSON.stringify(apps)); } catch(e){}
+      renderAppPickerItems(apps);
+    }
+  } catch(e) {
+    if (cachedApps.length === 0) {
+      loadingEl.textContent = 'Could not load apps from device.';
+    }
+  }
+}
+
+function renderAppPickerItems(apps) {
+  const listEl = document.getElementById('app-picker-list');
+  const loadingEl = document.getElementById('app-picker-loading');
+  loadingEl.style.display = 'none';
+
+  // Remove previous app rows
+  listEl.querySelectorAll('.app-picker-row').forEach(r => r.remove());
+
+  apps.forEach(app => {
+    const row = document.createElement('div');
+    row.className = 'app-picker-row';
+    row.dataset.name = (app.name || '').toLowerCase();
+    row.dataset.bid = (app.bundleId || '').toLowerCase();
+    row.innerHTML = `
+      <div class="app-picker-row-inner">
+        <div class="app-picker-name">${escHtml(app.name)}</div>
+        <div class="app-picker-bid">${escHtml(app.bundleId)}</div>
+      </div>
+      <i class="f7-icons" style="font-size:16px;color:#3a3a3c">chevron_right</i>
+    `;
+    row.onclick = () => selectAppFromPicker(app);
+    listEl.appendChild(row);
+  });
+}
+
+function filterAppPickerList() {
+  const q = document.getElementById('app-picker-search').value.toLowerCase().trim();
+  const rows = document.querySelectorAll('#app-picker-list .app-picker-row');
+  rows.forEach(r => {
+    const match = !q || r.dataset.name.includes(q) || r.dataset.bid.includes(q);
+    r.style.display = match ? 'flex' : 'none';
+  });
+}
+
+function selectAppFromPicker(app) {
+  closeAppLaunchDialog();
+  if (dialogCallback) {
+    dialogCallback(app.bundleId);
+    dialogCallback = null;
+    return;
+  }
+  createAppLaunchTrigger(app.name, app.bundleId);
+}
+
+function closeAppLaunchDialog() {
+  document.getElementById('app-launch-dialog-backdrop').classList.remove('visible');
+  dialogCallback = null;
+}
+
+function createAppLaunchTrigger(name, bundleId) {
+  const key = `app_launch_${bundleId}`;
+  if (!config.triggers[key]) {
+    config.triggers[key] = { enabled: true, actions: [], name: `Launch: ${name}` };
+    saveConfig();
+  }
+  renderAll();
+  openActionsPanel(key);
+}
+
+// ── Add Trigger Sheet System ──────────────────────────────────────────────────
+function showAddTriggerSheet() {
+  showSheet('Add New Trigger', [
+    { label: 'WiFi Network Trigger', action: () => promptComplexTrigger('wifi') },
+    { label: 'Bluetooth Device Trigger', action: () => promptComplexTrigger('bt') },
+    { label: 'Notification Trigger', action: () => promptNotifTrigger() },
+    { label: 'App Launch Trigger', action: () => promptAppLaunchPicker() },
+    { label: 'Scheduled Trigger', action: () => promptSchedTrigger() },
+    { label: 'NFC Tag Trigger', action: () => promptNfcTrigger() },
+  ]);
+}
+
+function promptNfcTrigger() {
+  showDialog('New NFC Tag', 'Tap tag against phone, or enter Tag ID:', '', 'Create', val => {
+    if (!val) return;
+    const key = `nfc_${val.replace(/\s+/g, '_')}`;
+    if (!config.triggers[key]) {
+      config.triggers[key] = { enabled: true, actions: [], name: `NFC: ${val}` };
+      saveConfig();
+    }
+    renderAll();
+    openActionsPanel(key);
+  }, false, true); // enables Record button
+}
+
+// ── Complex Trigger Dialog (WiFi / BT) ───────────────────────────────────────
+let complexType = 'wifi';
+let complexMode = 'connect';
+
+function promptComplexTrigger(type, editKey = null) {
+  complexType = type;
+  editingTriggerKey = editKey;
+  
+  const isEdit = !!editKey;
+  document.getElementById('complex-dialog-title').textContent = isEdit 
+    ? (type === 'wifi' ? 'Edit WiFi Trigger' : 'Edit Bluetooth Trigger')
+    : (type === 'wifi' ? 'New WiFi Trigger' : 'New Bluetooth Trigger');
+  document.getElementById('complex-dialog-msg').textContent = type === 'wifi' ? 'Network SSID or BSSID:' : 'Device Name or MAC Address:';
+  document.getElementById('complex-dialog-input').placeholder = type === 'wifi' ? 'SSID (e.g. MyHomeWifi)' : 'Device Name (e.g. AirPods)';
+
+  if (isEdit) {
+    const isConn = editKey.startsWith(`${type}_connect_`);
+    setComplexSegment(isConn ? 'connect' : 'disconnect');
+    const valuePart = editKey.replace(`${type}_connect_`, '').replace(`${type}_disconnect_`, '');
+    document.getElementById('complex-dialog-input').value = valuePart;
+  } else {
+    setComplexSegment('connect');
+    document.getElementById('complex-dialog-input').value = '';
+  }
+
+  // Populate autocomplete datalist
+  const dl = document.getElementById('complex-dialog-datalist');
+  dl.innerHTML = '';
+  const listId = type === 'wifi' ? 'wifi-datalist' : 'bt-datalist';
+  const src = document.getElementById(listId);
+  if (src) dl.innerHTML = src.innerHTML;
+
+  document.getElementById('complex-dialog-backdrop').classList.add('visible');
+}
+
+function setComplexSegment(mode) {
+  complexMode = mode;
+  const connEl = document.getElementById('complex-seg-connect');
+  const discEl = document.getElementById('complex-seg-disconnect');
+  if (mode === 'connect') {
+    connEl.style.background = '#007aff';
+    discEl.style.background = 'transparent';
+  } else {
+    discEl.style.background = '#007aff';
+    connEl.style.background = 'transparent';
+  }
+}
+
+function closeComplexDialog() {
+  document.getElementById('complex-dialog-backdrop').classList.remove('visible');
+  editingTriggerKey = null;
+}
+
+function complexDialogOk() {
+  const val = document.getElementById('complex-dialog-input').value.trim();
+  if (!val) return;
+  closeComplexDialog();
+
+  const newKey = `${complexType}_${complexMode}_${val.replace(/\s+/g, '_')}`;
+  const actionText = complexMode === 'connect' ? 'Connect' : 'Disconnect';
+  const prefixText = complexType === 'wifi' ? 'WiFi' : 'BT';
+  const newName = `${prefixText} ${actionText}: ${val}`;
+
+  if (editingTriggerKey) {
+    if (editingTriggerKey !== newKey) {
+      // Key changed -> migration
+      const oldData = config.triggers[editingTriggerKey] || { enabled: true, actions: [] };
+      delete config.triggers[editingTriggerKey];
+      config.triggers[newKey] = { ...oldData, name: newName };
+      
+      // Update favorites
+      if (config.favoriteTriggers) {
+        config.favoriteTriggers = config.favoriteTriggers.map(k => k === editingTriggerKey ? newKey : k);
+      }
+    } else {
+      config.triggers[newKey].name = newName;
+    }
+  } else {
+    if (!config.triggers[newKey]) {
+      config.triggers[newKey] = { enabled: true, actions: [], name: newName };
+    }
+  }
+
+  saveConfig();
+  renderAll();
+  openActionsPanel(newKey);
+}
+
+// ── Scheduled Trigger Dialog ───────────────────────────────────────────────────
+function promptSchedTrigger(editKey = null) {
+  editingTriggerKey = editKey;
+  const isEdit = !!editKey;
+  
+  document.querySelector('#sched-dialog-backdrop .dialog-title').textContent = isEdit ? 'Edit Scheduled Trigger' : 'New Scheduled Trigger';
+
+  if (isEdit) {
+    const data = config.triggers[editKey] || {};
+    document.getElementById('sched-name').value = data.name || editKey.replace('sched_', '');
+    document.getElementById('sched-time').value = data.time || '08:00';
+
+    const days = data.days || [1,2,3,4,5,6,7];
+    document.querySelectorAll('#sched-days input').forEach(cb => {
+      cb.checked = days.includes(parseInt(cb.value, 10));
+    });
+  } else {
+    document.getElementById('sched-name').value = '';
+    document.getElementById('sched-time').value = '08:00';
+    document.querySelectorAll('#sched-days input').forEach(cb => cb.checked = true);
+  }
+
+  document.getElementById('sched-dialog-backdrop').classList.add('visible');
+}
+
+function closeSchedDialog() {
+  document.getElementById('sched-dialog-backdrop').classList.remove('visible');
+  editingTriggerKey = null;
+}
+
+function schedDialogOk() {
+  const name = document.getElementById('sched-name').value.trim() || 'Scheduled';
+  const time = document.getElementById('sched-time').value || '08:00';
+  const days = Array.from(document.querySelectorAll('#sched-days input:checked')).map(cb => parseInt(cb.value, 10));
+
+  closeSchedDialog();
+
+  const keyBase = editingTriggerKey ? editingTriggerKey : `sched_${Date.now()}`;
+  
+  if (editingTriggerKey) {
+    const oldData = config.triggers[editingTriggerKey] || { enabled: true, actions: [] };
+    config.triggers[keyBase] = { ...oldData, name, time, days };
+  } else {
+    config.triggers[keyBase] = { enabled: true, actions: [], name, time, days };
+  }
+
+  saveConfig();
+  renderAll();
+  openActionsPanel(keyBase);
+}
+
+// ── Notification Trigger Dialog ───────────────────────────────────────────────
+function promptNotifTrigger(editKey = null) {
+  editingTriggerKey = editKey;
+  const isEdit = !!editKey;
+  
+  document.querySelector('#notif-dialog-backdrop .dialog-title').textContent = isEdit ? 'Edit Notification Trigger' : 'New Notification Trigger';
+
+  if (isEdit) {
+    const notifTriggers = config.notificationTriggers || [];
+    const entry = notifTriggers.find(t => t.triggerKey === editKey);
+    
+    document.getElementById('notif-bundle').value = entry ? (entry.bundleId || '') : '';
+    document.getElementById('notif-override-bundle').value = entry ? (entry.overrideBundleId || '') : '';
+    document.getElementById('notif-text').value = entry ? (entry.textMatch || '') : '';
+  } else {
+    document.getElementById('notif-bundle').value = '';
+    document.getElementById('notif-override-bundle').value = '';
+    document.getElementById('notif-text').value = '';
+  }
+
+  document.getElementById('notif-dialog-backdrop').classList.add('visible');
+}
+
+function closeNotifDialog() {
+  document.getElementById('notif-dialog-backdrop').classList.remove('visible');
+  editingTriggerKey = null;
+}
+
+function notifDialogOk() {
+  const bundleId = document.getElementById('notif-bundle').value.trim();
+  const overrideBundleId = document.getElementById('notif-override-bundle').value.trim();
+  const textMatch = document.getElementById('notif-text').value.trim();
+
+  closeNotifDialog();
+
+  let name = 'Any Notification';
+  if (bundleId) {
+    const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId.toLowerCase());
+    const appName = app ? app.name : bundleId;
+    name = textMatch ? `Notification from ${appName} containing '${textMatch}'` : `Any Notification from ${appName}`;
+  } else if (overrideBundleId) {
+    name = textMatch ? `Notification from ${overrideBundleId} containing '${textMatch}'` : `Any Notification from ${overrideBundleId}`;
+  } else if (textMatch) {
+    name = `Any Notification containing '${textMatch}'`;
+  }
+
+  const triggerKey = editingTriggerKey ? editingTriggerKey : `notif_${Date.now()}`;
+
+  // Update notificationTriggers array
+  if (!config.notificationTriggers) config.notificationTriggers = [];
+  config.notificationTriggers = config.notificationTriggers.filter(t => t.triggerKey !== triggerKey);
+  
+  const notifEntry = { triggerKey, bundleId, textMatch, enabled: true, name };
+  if (overrideBundleId) notifEntry.overrideBundleId = overrideBundleId;
+  config.notificationTriggers.push(notifEntry);
+
+  if (editingTriggerKey) {
+    const oldData = config.triggers[editingTriggerKey] || { enabled: true, actions: [] };
+    config.triggers[triggerKey] = { ...oldData, name };
+  } else {
+    config.triggers[triggerKey] = { enabled: true, actions: [], name };
+  }
+
+  saveConfig();
+  renderAll();
+  openActionsPanel(triggerKey);
+}
+
+// ── Refresh Datalists (Deduplicated autocomplete) ────────────────────────────
+async function refreshDatalists() {
+  try {
+    const [appsRes, btRes, wifiRes, airplayRes] = await Promise.all([
+      fetch('/api/apps').catch(() => null),
+      fetch('/api/bt-devices').catch(() => null),
+      fetch('/api/wifi-networks').catch(() => null),
+      fetch('/api/airplay-devices').catch(() => null)
+    ]);
+
+    if (appsRes && appsRes.ok) {
+      const apps = await appsRes.json();
+      cachedApps = apps;
+      try { localStorage.setItem('rc_cached_apps', JSON.stringify(apps)); } catch(e){}
+      populateDatalist('app-datalist', apps.map(a => ({ value: a.bundleId, text: a.name })));
+    }
+    if (btRes && btRes.ok) {
+      const devices = await btRes.json();
+      populateDatalist('bt-datalist', devices.map(d => ({ value: d.name || d.address })));
+    }
+    if (wifiRes && wifiRes.ok) {
+      const networks = await wifiRes.json();
+      populateDatalist('wifi-datalist', networks.map(n => ({ value: n.ssid })));
+    }
+    if (airplayRes && airplayRes.ok) {
+      const receivers = await airplayRes.json();
+      populateDatalist('airplay-datalist', receivers.map(r => ({ value: r.name })));
+    }
+  } catch(e) {}
+}
+
+function populateDatalist(id, items) {
+  const dl = document.getElementById(id);
+  if (!dl) return;
+  dl.innerHTML = '';
+  const seen = new Set();
+  items.forEach(item => {
+    if (!item.value || seen.has(item.value)) return;
+    seen.add(item.value);
+    const opt = document.createElement('option');
+    opt.value = item.value;
+    if (item.text) opt.textContent = item.text;
+    dl.appendChild(opt);
+  });
+}
+
+// ── Generic Sheet System ──────────────────────────────────────────────────────
 function showSheet(title, buttons) {
   document.getElementById('sheet-title').textContent = title;
   const container = document.getElementById('sheet-buttons');
   container.innerHTML = '';
-  buttons.forEach(btn => {
-    const b = document.createElement('button');
-    b.className = 'sheet-btn' + (btn.destructive ? ' destructive' : '');
-    b.textContent = btn.label;
-    b.addEventListener('click', () => {
-      closeSheet();
-      // Delay action until after the sheet close animation finishes,
-      // so no ghost-touch can dismiss a freshly-opened dialog on iOS.
-      if (btn.action) setTimeout(btn.action, 350);
-    });
-    container.appendChild(b);
+  buttons.forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'sheet-btn' + (b.destructive ? ' destructive' : '');
+    btn.textContent = b.label;
+    btn.onclick = () => { closeSheet(); b.action(); };
+    container.appendChild(btn);
   });
   document.getElementById('sheet-backdrop').classList.add('visible');
-  requestAnimationFrame(() => document.getElementById('sheet').classList.add('open'));
-}
-function closeSheet() {
-  document.getElementById('sheet').classList.remove('open');
-  setTimeout(() => document.getElementById('sheet-backdrop').classList.remove('visible'), 320);
+  document.getElementById('sheet').classList.add('open');
 }
 
-// ── Dialog ────────────────────────────────────────────────────────────────────
-let dialogRecordInterval = null;
-let originalDialogMsg = '';
+function closeSheet() {
+  document.getElementById('sheet-backdrop').classList.remove('visible');
+  document.getElementById('sheet').classList.remove('open');
+}
+
+// ── Generic Dialog System ──────────────────────────────────────────────────────
+function showDialog(title, msg, defaultVal, okLabel, callback, isNumber = false, showRecordBtn = false) {
+  document.getElementById('dialog-title').textContent = title;
+  document.getElementById('dialog-msg').textContent   = msg;
+  const input = document.getElementById('dialog-input');
+  input.value = defaultVal || '';
+  input.type  = isNumber ? 'number' : 'text';
+  document.getElementById('dialog-ok').textContent = okLabel || 'OK';
+  
+  const recBtn = document.getElementById('dialog-record');
+  recBtn.style.display = showRecordBtn ? 'inline-block' : 'none';
+
+  dialogCallback = callback;
+  
+  // Set modal width based on content type
+  const box = document.querySelector('#dialog-backdrop .dialog-box');
+  if (isNumber || showRecordBtn) box.classList.remove('wide');
+  else box.classList.add('wide');
+  
+  document.getElementById('dialog-backdrop').classList.add('visible');
+  setTimeout(() => input.focus(), 100);
+
+  // Clear autocomplete
+  const auto = document.getElementById('dialog-autocomplete');
+  auto.innerHTML = ''; auto.style.display = 'none';
+
+  // Setup input listeners for autocomplete if needed
+  setupDialogAutocomplete(title, input, auto);
+}
+
+function closeDialog() {
+  document.getElementById('dialog-backdrop').classList.remove('visible');
+  dialogCallback = null;
+}
 
 function _dialogBackdropClick(e) {
   if (e.target === document.getElementById('dialog-backdrop')) closeDialog();
 }
 
-function showDialog(title, msg, defaultVal, okLabel, callback, inputType='text', listId=null) {
-  document.getElementById('dialog-title').textContent = title;
-
-  const msgEl = document.getElementById('dialog-msg');
-  msgEl.textContent = msg || '';
-  msgEl.style.display = (msgEl.textContent ? 'block' : 'none');
-
-  const input = document.getElementById('dialog-input');
-  input.value = defaultVal || '';
-
-  if (inputType === 'number') {
-    input.type = 'text';
-    input.inputMode = 'numeric';
-    input.pattern = '[0-9]*';
-  } else {
-    input.type = 'text';
-    input.inputMode = '';
-    input.pattern = '';
-  }
-
-  const autocompleteContainer = document.getElementById('dialog-autocomplete');
-  const dialogBox = document.querySelector('.dialog-box');
-
-  if (listId === 'app-datalist') {
-    // Disable native datalist autocomplete and use custom iOS-style selection
-    input.removeAttribute('list');
-    dialogBox.classList.add('wide');
-    autocompleteContainer.style.display = 'block';
-
-    const updateMatches = () => {
-      const query = input.value.trim().toLowerCase();
-      const matches = (cachedApps || []).filter(app =>
-        (app.name || '').toLowerCase().includes(query) ||
-        (app.bundleId || '').toLowerCase().includes(query)
-      );
-
-      autocompleteContainer.innerHTML = '';
-      matches.forEach(app => {
-        const item = document.createElement('div');
-        item.className = 'autocomplete-item';
-
-        const nameDiv = document.createElement('div');
-        nameDiv.className = 'autocomplete-name';
-        nameDiv.textContent = app.name;
-
-        const subDiv = document.createElement('div');
-        subDiv.className = 'autocomplete-subtitle';
-        subDiv.textContent = app.bundleId;
-
-        item.appendChild(nameDiv);
-        item.appendChild(subDiv);
-
-        item.addEventListener('click', () => {
-          input.value = app.bundleId;
-          dialogOk();
-        });
-
-        autocompleteContainer.appendChild(item);
-      });
-    };
-
-    input.addEventListener('input', updateMatches);
-    updateMatches();
-
-    input._autocompleteCleanup = () => {
-      input.removeEventListener('input', updateMatches);
-      dialogBox.classList.remove('wide');
-      autocompleteContainer.style.display = 'none';
-      autocompleteContainer.innerHTML = '';
-    };
-  } else {
-    if (input._autocompleteCleanup) {
-      input._autocompleteCleanup();
-      input._autocompleteCleanup = null;
-    }
-    if (listId) input.setAttribute('list', listId);
-    else input.removeAttribute('list');
-  }
-
-  document.getElementById('dialog-ok').textContent = okLabel || 'OK';
-  dialogCallback = callback;
-
-  const recordBtn = document.getElementById('dialog-record');
-  recordBtn.style.display = (title.includes('Tap') || title.includes('Hold')) ? 'inline-block' : 'none';
-
-  document.getElementById('dialog-backdrop').classList.add('visible');
-  setTimeout(() => input.focus(), 150);
-}
-function closeDialog() {
-  document.getElementById('dialog-backdrop').classList.remove('visible');
-  dialogCallback = null;
-  const input = document.getElementById('dialog-input');
-  if (input._autocompleteCleanup) {
-    input._autocompleteCleanup();
-    input._autocompleteCleanup = null;
-  }
-  if (dialogRecordInterval) {
-    clearInterval(dialogRecordInterval);
-    dialogRecordInterval = null;
-  }
-  const msgEl = document.getElementById('dialog-msg');
-  if (originalDialogMsg) {
-    msgEl.textContent = originalDialogMsg;
-    msgEl.style.color = '';
-    originalDialogMsg = '';
-  }
-}
-
-// ── Import/Export Action Sequences ──
-function _importDialogBackdropClick(e) {
-  if (e.target === document.getElementById('import-dialog-backdrop')) closeImportDialog();
-}
-function showImportDialog() {
-  const textarea = document.getElementById('import-dialog-textarea');
-  if (currentKey) {
-    const activeTrigger = triggerData(currentKey);
-    const actions = activeTrigger.actions || [];
-    if (actions.length > 0) {
-      textarea.value = JSON.stringify(actions, null, 2);
-    } else {
-      textarea.value = '';
-    }
-  } else {
-    textarea.value = '';
-  }
-  document.getElementById('import-dialog-backdrop').classList.add('visible');
-  setTimeout(() => textarea.focus(), 150);
-}
-function clearImportTextarea() {
-  const textarea = document.getElementById('import-dialog-textarea');
-  textarea.value = '';
-  textarea.focus();
-}
-function closeImportDialog() {
-  document.getElementById('import-dialog-backdrop').classList.remove('visible');
-}
-function importDialogOk() {
-  const textarea = document.getElementById('import-dialog-textarea');
-  const text = textarea.value.trim();
-  if (!text) {
-    closeImportDialog();
-    return;
-  }
-  
-  let newCommands = null;
-  if (text.startsWith('[') && text.endsWith(']')) {
-    try {
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        newCommands = parsed;
-      }
-    } catch (e) {}
-  }
-  
-  if (!newCommands) {
-    newCommands = text.split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
-  }
-  
-  if (newCommands && newCommands.length > 0) {
-    const validCmds = [];
-    newCommands.forEach(cmd => {
-      if (typeof cmd === 'string') {
-        const clean = cmd.trim();
-        if (clean) validCmds.push(clean);
-      } else if (cmd && typeof cmd === 'object') {
-        validCmds.push(cmd);
-      }
-    });
-    
-    if (validCmds.length > 0) {
-      const activeTrigger = triggerData(currentKey);
-      if (activeTrigger) {
-        activeTrigger.actions = validCmds; // Always replace
-        saveConfig();
-        renderActionList();
-        closeImportDialog();
-        showToast(`✓ Replaced with ${validCmds.length} action(s)`);
-      } else {
-        closeImportDialog();
-        showToast('⚠ Error: No active trigger');
-      }
-    } else {
-      showToast('⚠ Error: No valid commands found');
-    }
-  } else {
-    showToast('⚠ Error: Could not parse input');
-  }
-}
-
-function showEllipsisMenu(event) {
-  const rect = event.currentTarget.getBoundingClientRect();
-  const items = [
-    {
-      label: 'Import Actions',
-      icon: 'square_arrow_down',
-      action: () => showImportDialog()
-    },
-    {
-      label: 'Export Actions',
-      icon: 'square_arrow_up',
-      action: () => exportActions()
-    }
-  ];
-  
-  const fakeEvent = {
-    preventDefault: () => {},
-    clientX: rect.left,
-    clientY: rect.bottom + 8
-  };
-  showContextMenu(fakeEvent, items);
-}
-
-function copyToClipboard(text) {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    return navigator.clipboard.writeText(text);
-  } else {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    try {
-      document.execCommand('copy');
-    } catch (err) {
-      console.error('Fallback clipboard copy failed', err);
-    }
-    document.body.removeChild(textarea);
-    return Promise.resolve();
-  }
-}
-
-function exportActions() {
-  if (!currentKey) {
-    showToast('⚠ No active trigger selected');
-    return;
-  }
-  const actions = triggerData(currentKey).actions || [];
-  if (actions.length === 0) {
-    showToast('Sequence is empty');
-    return;
-  }
-  const jsonStr = JSON.stringify(actions, null, 2);
-  copyToClipboard(jsonStr).then(() => {
-    showToast('✓ Sequence copied to clipboard');
-  }).catch(() => {
-    showToast('Failed to copy sequence');
-  });
-}
-async function dialogRecord() {
-  const msgEl = document.getElementById('dialog-msg');
-  if (!originalDialogMsg) {
-    originalDialogMsg = msgEl.textContent;
-  }
-  
-  msgEl.textContent = 'Starting record on device...';
-  msgEl.style.color = '#ff9500';
-  
-  try {
-    await fetch('/api/command?cmd=taprecord', { method: 'POST' });
-  } catch (e) {
-    msgEl.textContent = 'Failed to start recording';
-    msgEl.style.color = '#ff3b30';
-    return;
-  }
-  
-  if (dialogRecordInterval) clearInterval(dialogRecordInterval);
-  
-  dialogRecordInterval = setInterval(async () => {
-    try {
-      const res = await fetch('/api/taprecordstatus');
-      const data = await res.json();
-      if (data.ok) {
-        if (data.status === 'counting') {
-          msgEl.textContent = `Recording tap in ${data.seconds}s...`;
-          msgEl.style.color = '#ff9500';
-        } else if (data.status === 'waiting') {
-          msgEl.textContent = 'TAP ON DEVICE SCREEN NOW!';
-          msgEl.style.color = '#34c759';
-        } else if (data.status === 'recorded') {
-          clearInterval(dialogRecordInterval);
-          dialogRecordInterval = null;
-          
-          let val = '';
-          const title = document.getElementById('dialog-title').textContent;
-          if (title.includes('Hold')) {
-            val = `${Math.round(data.x)} ${Math.round(data.y)} 800`;
-          } else {
-            val = `${Math.round(data.x)} ${Math.round(data.y)}`;
-          }
-          
-          const cb = dialogCallback;
-          closeDialog();
-          if (cb) cb(val);
-          showToast('✓ Coordinate recorded and added');
-        } else if (data.status === 'timeout') {
-          clearInterval(dialogRecordInterval);
-          dialogRecordInterval = null;
-          msgEl.textContent = 'Recording timed out.';
-          msgEl.style.color = '#ff3b30';
-          setTimeout(() => {
-            if (!dialogRecordInterval && originalDialogMsg) {
-              msgEl.textContent = originalDialogMsg;
-              msgEl.style.color = '';
-              originalDialogMsg = '';
-            }
-          }, 3000);
-        }
-      }
-    } catch (e) {
-      clearInterval(dialogRecordInterval);
-      dialogRecordInterval = null;
-      msgEl.textContent = 'Error checking status.';
-      msgEl.style.color = '#ff3b30';
-      setTimeout(() => {
-        if (!dialogRecordInterval && originalDialogMsg) {
-          msgEl.textContent = originalDialogMsg;
-          msgEl.style.color = '';
-          originalDialogMsg = '';
-        }
-      }, 3000);
-    }
-  }, 500);
-}
 function dialogOk() {
   const val = document.getElementById('dialog-input').value.trim();
-  const cb = dialogCallback;
   closeDialog();
-  if (cb) cb(val);
+  if (dialogCallback) dialogCallback(val);
 }
-document.getElementById('dialog-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') dialogOk();
-  if (e.key === 'Escape') closeDialog();
-});
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
-let _toastTimer;
+function dialogRecord() {
+  showToast('📡 Tap NFC tag against phone now…');
+  fetch('/api/record-nfc', { method: 'POST' }).then(r => r.json()).then(data => {
+    if (data.id) {
+      document.getElementById('dialog-input').value = data.id;
+      showToast('✓ NFC Tag Recorded');
+    }
+  }).catch(() => showToast('⚠ Record Failed'));
+}
+
+function setupDialogAutocomplete(title, input, autoEl) {
+  const lowTitle = title.toLowerCase();
+  let listSource = [];
+
+  if (lowTitle.includes('app')) {
+    listSource = cachedApps.map(a => ({ name: a.name, sub: a.bundleId, val: a.bundleId }));
+  } else if (lowTitle.includes('bluetooth')) {
+    const opts = Array.from(document.querySelectorAll('#bt-datalist option'));
+    listSource = opts.map(o => ({ name: o.value, sub: '', val: o.value }));
+  } else if (lowTitle.includes('airplay')) {
+    const opts = Array.from(document.querySelectorAll('#airplay-datalist option'));
+    listSource = opts.map(o => ({ name: o.value, sub: '', val: o.value }));
+  }
+
+  if (listSource.length === 0) return;
+
+  const renderAuto = (query) => {
+    const q = query.toLowerCase().trim();
+    if (!q) { autoEl.style.display = 'none'; return; }
+    const matches = listSource.filter(i => i.name.toLowerCase().includes(q) || i.sub.toLowerCase().includes(q)).slice(0, 5);
+    if (matches.length === 0) { autoEl.style.display = 'none'; return; }
+
+    autoEl.innerHTML = '';
+    matches.forEach(m => {
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.innerHTML = `
+        <div class="autocomplete-name">${escHtml(m.name)}</div>
+        ${m.sub ? `<div class="autocomplete-subtitle">${escHtml(m.sub)}</div>` : ''}
+      `;
+      item.onclick = () => {
+        input.value = m.val;
+        autoEl.style.display = 'none';
+      };
+      autoEl.appendChild(item);
+    });
+    autoEl.style.display = 'block';
+  };
+
+  input.oninput = () => renderAuto(input.value);
+}
+
+// ── Toast System ─────────────────────────────────────────────────────────────
+let toastTimer = null;
 function showToast(msg) {
-  clearTimeout(_toastTimer);
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  _toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-loadData();
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', loadData);
 </script>
 </body>
 </html>

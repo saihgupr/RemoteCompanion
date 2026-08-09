@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **SneakyCam Integration**: Added native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS Companion App, and Web UI using system Darwin notifications (`com.spark.SneakyCam.takephoto` and `com.spark.SneakyCam.startstopvideo`).
+- **Web UI Modal Action Editors**: Dedicated popup modals for editing **Terminal Actions** (with root privilege toggle) and **HUD Toast Notifications** (with title/subtitle/icon inputs, SF Symbol preset chips, and a live HUD toast preview).
+- **Web UI Action Copy & Paste**: Added **Copy** and **Paste** options to the right-click context menu for action sequence items.
+- **Web UI Live System Log Viewer**: Real-time streaming log viewer console panel in the Web UI backed by a new `/api/logs` HTTP endpoint in the tweak web server.
 - **Power Event Triggers**:
   - Added **Power Connected** (`trigger_power_connect`) and **Power Disconnected** (`trigger_power_disconnect`) system event triggers.
   - Automatically listens to Cocoa Touch `UIDeviceBatteryStateDidChangeNotification`, `UIDeviceBatteryLevelDidChangeNotification`, Darwin power source notifications (`com.apple.system.powersources.*`), and hooks `SBUIController` in SpringBoard for instant trigger execution when connecting or disconnecting AC power/chargers.

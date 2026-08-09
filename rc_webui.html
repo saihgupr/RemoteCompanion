@@ -741,6 +741,50 @@
       background: #3a3a3c; transition: background 0.15s, color 0.15s;
     }
     .day-pill input:checked + span { background: #007aff; color: #fff; }
+    /* Toast preset chips & custom dialog toggles */
+    .toast-preset-chip {
+      background: rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: #fff;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    .toast-preset-chip:hover { background: rgba(255,255,255,0.2); }
+    .toast-preset-chip:active { transform: scale(0.95); }
+
+    .toggle-switch {
+      position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background-color: rgba(120,120,128,0.32); transition: .25s; border-radius: 24px;
+    }
+    .toggle-slider:before {
+      position: absolute; content: ""; height: 20px; width: 20px; left: 2px; bottom: 2px;
+      background-color: white; transition: .25s; border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .toggle-switch input:checked + .toggle-slider { background-color: #34c759; }
+    .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+    /* Live Log Viewer Styling */
+    .log-viewer-wrap {
+      background: #121214; border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px; padding: 12px; font-family: monospace; font-size: 12px;
+      color: #e5e5ea; height: 440px; overflow-y: auto; text-align: left;
+      white-space: pre-wrap; word-break: break-word; line-height: 1.5;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.6);
+    }
+    .log-entry { margin-bottom: 4px; border-bottom: 0.5px solid rgba(255,255,255,0.05); padding-bottom: 2px; }
+    .log-entry .log-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-weight: 600; font-size: 10px; margin-right: 6px; }
+    .log-tag.info { background: rgba(10,132,255,0.2); color: #64d2ff; }
+    .log-tag.exec { background: rgba(52,199,89,0.2); color: #30d158; }
+    .log-tag.warn { background: rgba(255,159,10,0.2); color: #ffd60a; }
+    .log-tag.err  { background: rgba(255,69,58,0.2);  color: #ff453a; }
   </style>
 </head>
 <body>
@@ -753,6 +797,9 @@
     </div>
     <div class="rc-navbar-center" id="navbar-small-title">RemoteCompanion</div>
     <div class="rc-navbar-right">
+      <button class="nav-btn" onclick="toggleLogPanel()" title="Live System Logs">
+        <i class="f7-icons">terminal</i>
+      </button>
       <button class="nav-btn" onclick="showAddTriggerSheet()" title="Add Trigger">
         <i class="f7-icons">plus</i>
       </button>
@@ -1026,6 +1073,95 @@
   </div>
 </div>
 
+<!-- ══ TERMINAL ACTION DIALOG ══════════════════════════════════════════ -->
+<div class="dialog-backdrop" id="terminal-dialog-backdrop">
+  <div class="dialog-box" style="max-width: 480px; width: 90%;">
+    <div class="dialog-title" id="terminal-dialog-title">Terminal Action</div>
+    <div class="dialog-msg" style="padding-bottom: 8px;">Enter shell command to execute on device:</div>
+    <div style="position: relative; margin: 0 16px 12px; width: calc(100% - 32px); box-sizing: border-box;">
+      <textarea class="dialog-input" id="terminal-dialog-textarea" rows="4" placeholder="killall SpringBoard" style="height:100px; text-align:left; resize:vertical; font-family:monospace; font-size:13px; margin:0; width:100%; box-sizing:border-box; padding: 10px;"></textarea>
+    </div>
+    <div style="margin: 0 16px 16px; display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.06); padding: 10px 14px; border-radius: 10px;">
+      <div style="display:flex; flex-direction:column; text-align:left;">
+        <span style="font-size:14px; font-weight:600; color:#fff;">Root Privileges</span>
+        <span style="font-size:12px; color:#8e8e93;">Run command as root user (`root`)</span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="terminal-dialog-root-toggle">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closeTerminalDialog()" style="color:#ff3b30;">Cancel</button>
+      <button onclick="terminalDialogOk()" style="font-weight:600;">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TOAST ACTION DIALOG ═════════════════════════════════════════════ -->
+<div class="dialog-backdrop" id="toast-dialog-backdrop">
+  <div class="dialog-box" style="max-width: 440px; width: 90%;">
+    <div class="dialog-title" id="toast-dialog-title">Toast Notification</div>
+    <div class="dialog-msg" style="padding-bottom: 8px;">Configure HUD toast alert displayed on device:</div>
+    <div style="padding:0 14px 12px; display:flex; flex-direction:column; gap:10px;">
+      <input class="dialog-input" id="toast-title-input" type="text" placeholder="Title (e.g. Silent Vibrate)" autocorrect="off" autocapitalize="words" spellcheck="false" style="margin:0; width:100%" oninput="updateToastPreview()">
+      <input class="dialog-input" id="toast-subtitle-input" type="text" placeholder="Subtitle (optional, e.g. ON)" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0; width:100%" oninput="updateToastPreview()">
+      <input class="dialog-input" id="toast-icon-input" type="text" placeholder="SF Symbol Icon (optional, e.g. bell.fill)" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0; width:100%" oninput="updateToastPreview()">
+      
+      <!-- Preset Icon Selector Chips -->
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top: 2px;" id="toast-icon-presets">
+        <span class="toast-preset-chip" onclick="setToastIconPreset('bell.fill')">🔔 bell</span>
+        <span class="toast-preset-chip" onclick="setToastIconPreset('bell.slash.fill')">🔕 bell.slash</span>
+        <span class="toast-preset-chip" onclick="setToastIconPreset('checkmark.circle.fill')">✅ checkmark</span>
+        <span class="toast-preset-chip" onclick="setToastIconPreset('xmark.circle.fill')">❌ xmark</span>
+        <span class="toast-preset-chip" onclick="setToastIconPreset('star.fill')">⭐ star</span>
+        <span class="toast-preset-chip" onclick="setToastIconPreset('speaker.wave.3.fill')">🔊 speaker</span>
+        <span class="toast-preset-chip" onclick="setToastIconPreset('camera.fill')">📷 camera</span>
+      </div>
+
+      <!-- Live Toast Preview Box -->
+      <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; display: flex; align-items: center; justify-content: center; margin-top: 4px;">
+        <div id="toast-live-preview" style="background: #1c1c1e; border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; padding: 8px 16px; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); max-width: 100%;">
+          <i class="f7-icons" id="toast-preview-icon" style="font-size: 20px; color: #0a84ff;">text_bubble</i>
+          <div style="display:flex; flex-direction:column; text-align:left;">
+            <span id="toast-preview-title" style="font-size: 14px; font-weight: 600; color: #fff;">Toast Title</span>
+            <span id="toast-preview-subtitle" style="font-size: 12px; color: #8e8e93;">Subtitle</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closeToastDialog()" style="color:#ff3b30;">Cancel</button>
+      <button onclick="toastDialogOk()" style="font-weight:600;">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LIVE LOGS PANEL ════════════════════════════════════════════════════ -->
+<div class="rc-panel" id="logs-panel">
+  <div class="panel-navbar">
+    <button class="panel-back" onclick="closeLogPanel()">
+      <i class="f7-icons">xmark</i> Close
+    </button>
+    <div class="panel-title">System & Trigger Logs</div>
+    <button class="panel-action" onclick="fetchLiveLogs()" title="Refresh Logs" style="color:#007aff">
+      <i class="f7-icons">arrow_clockwise</i>
+    </button>
+  </div>
+  <div class="panel-content" style="padding: 16px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+      <div class="search-wrap" style="flex:1; margin:0 12px 0 0;">
+        <input class="search-input" type="search" placeholder="Filter logs…" id="log-filter-input" oninput="renderLogsUI()">
+      </div>
+      <button onclick="clearLogDisplay()" style="background:rgba(255,59,48,0.15); color:#ff453a; border:none; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer;">Clear</button>
+    </div>
+    
+    <div class="log-viewer-wrap" id="log-container">
+      <div style="color:#8e8e93; text-align:center; padding-top:40px;">Fetching logs…</div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ TOAST ══════════════════════════════════════════════════════════════ -->
 <div class="toast" id="toast"></div>
 
@@ -1192,7 +1328,7 @@ const CMD_NAMES = {
   'bluetooth on':'Bluetooth On','bluetooth off':'Bluetooth Off','bluetooth toggle':'Bluetooth Toggle',
   'airplane on':'Airplane On','airplane off':'Airplane Off','airplane toggle':'Airplane Toggle',
   'haptic':'Haptic Feedback','screenshot':'Screenshot',
-  'sneakycam photo':'SneakyCam Photo','sneakycam video':'SneakyCam Video',
+  'sneakycam photo':'SneakyCam Photo','sneakycam takephoto':'SneakyCam Photo','sneakycam video':'SneakyCam Video','sneakycam startstopvideo':'SneakyCam Video','sneakycam record':'SneakyCam Video',
   'lock':'Lock Device','unlock':'Unlock Device',
   'dnd on':'Do Not Disturb On','dnd off':'Do Not Disturb Off','dnd toggle':'Do Not Disturb Toggle',
   'audiomix on':'AudioMix On','audiomix off':'AudioMix Off','audiomix toggle':'AudioMix Toggle',
@@ -1225,8 +1361,10 @@ function nameForCmd(cmd) {
   if (toggleInfo) {
     return `${toggleInfo.name} ${toggleInfo.currentDisplaySuffix}`;
   }
-  const lowCmd = cmd.toLowerCase();
+  const lowCmd = cmd.toLowerCase().trim();
   if (CMD_NAMES[lowCmd]) return CMD_NAMES[lowCmd];
+  if (lowCmd.startsWith('sneakycam photo') || lowCmd === 'sneakycam takephoto') return 'SneakyCam Photo';
+  if (lowCmd.startsWith('sneakycam video') || lowCmd === 'sneakycam record' || lowCmd === 'sneakycam startstopvideo') return 'SneakyCam Video';
   if (lowCmd.startsWith('flashlight ')) return `Flashlight ${cmd.slice(11)}%`;
   if (lowCmd.startsWith('lua:'))          return `Lua: ${cmd.slice(4)}`;
   if (lowCmd.startsWith('delay '))        return `Delay ${cmd.slice(6)}s`;
@@ -1288,7 +1426,9 @@ function iconForCmd(cmd) {
     'sneakycam photo':'camera_fill','sneakycam video':'video_fill',
     'mute':'speaker_slash_fill','mute on':'speaker_slash_fill','mute off':'speaker_3_fill','mute toggle':'speaker_slash_fill',
   };
-  const lowCmd = cmd.toLowerCase();
+  const lowCmd = cmd.toLowerCase().trim();
+  if (lowCmd.startsWith('sneakycam photo') || lowCmd === 'sneakycam takephoto') return { icon:'camera_fill', cls:'icon-purple' };
+  if (lowCmd.startsWith('sneakycam video') || lowCmd === 'sneakycam record' || lowCmd === 'sneakycam startstopvideo') return { icon:'video_fill', cls:'icon-indigo' };
   if (map[lowCmd]) return { icon:map[lowCmd], cls:'icon-dark' };
   const toggleInfo = parseToggleCmd(cmd);
   if (toggleInfo) return { icon:toggleInfo.icon, cls:'icon-dark' };
@@ -2013,8 +2153,12 @@ function renderActionList() {
       const items = [
         { label: 'Run Action Now', icon: 'play_fill', action: () => runSingleAction(action) },
         { label: 'Edit Action', icon: 'pencil', action: () => editAction(idx) },
-        { label: 'Delete Action', icon: 'trash_fill', destructive: true, action: () => removeAction(idx) }
+        { label: 'Copy Action', icon: 'doc_on_doc', action: () => copyAction(idx) }
       ];
+      if (g_copiedAction !== null) {
+        items.push({ label: 'Paste Action Below', icon: 'doc_on_clipboard_fill', action: () => pasteAction(idx + 1) });
+      }
+      items.push({ label: 'Delete Action', icon: 'trash_fill', destructive: true, action: () => removeAction(idx) });
       showContextMenu(e, items);
     });
 
@@ -2165,6 +2309,240 @@ function removeAction(idx) {
   renderActionList();
 }
 
+// Global state for action clipboard & modals
+let g_copiedAction = null;
+let g_editingTerminalIdx = null;
+let g_editingToastIdx = null;
+
+function copyAction(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  if (actions[idx] !== undefined) {
+    g_copiedAction = JSON.parse(JSON.stringify(actions[idx]));
+    showToast('✓ Action Copied');
+  }
+}
+
+function pasteAction(insertIdx) {
+  if (g_copiedAction === null) return;
+  const actions = triggerData(currentKey).actions || [];
+  const cloned = JSON.parse(JSON.stringify(g_copiedAction));
+  if (insertIdx >= 0 && insertIdx <= actions.length) {
+    actions.splice(insertIdx, 0, cloned);
+  } else {
+    actions.push(cloned);
+  }
+  saveConfig();
+  renderActionList();
+  showToast('✓ Action Pasted');
+}
+
+// ── Terminal Action Modal ──
+function promptTerminalModal(initialCmd = '', editIdx = null) {
+  g_editingTerminalIdx = editIdx;
+  const title = (editIdx !== null) ? 'Edit Terminal Command' : 'Terminal Action';
+  document.getElementById('terminal-dialog-title').textContent = title;
+  
+  let rawCmd = initialCmd || '';
+  let isRoot = false;
+  
+  if (rawCmd.toLowerCase().startsWith('root ')) {
+    isRoot = true;
+    rawCmd = rawCmd.slice(5);
+  } else if (rawCmd.toLowerCase().startsWith('exec ')) {
+    isRoot = false;
+    rawCmd = rawCmd.slice(5);
+  }
+  
+  document.getElementById('terminal-dialog-textarea').value = rawCmd;
+  document.getElementById('terminal-dialog-root-toggle').checked = isRoot;
+  
+  document.getElementById('terminal-dialog-backdrop').classList.add('visible');
+  setTimeout(() => document.getElementById('terminal-dialog-textarea').focus(), 100);
+}
+
+function closeTerminalDialog() {
+  document.getElementById('terminal-dialog-backdrop').classList.remove('visible');
+  g_editingTerminalIdx = null;
+}
+
+function terminalDialogOk() {
+  const cmdText = document.getElementById('terminal-dialog-textarea').value.trim();
+  if (!cmdText) {
+    closeTerminalDialog();
+    return;
+  }
+  const isRoot = document.getElementById('terminal-dialog-root-toggle').checked;
+  const formattedCmd = `${isRoot ? 'root' : 'exec'} ${cmdText}`;
+  
+  const actions = triggerData(currentKey).actions || [];
+  if (g_editingTerminalIdx !== null && g_editingTerminalIdx < actions.length) {
+    actions[g_editingTerminalIdx] = formattedCmd;
+  } else {
+    addActionToCurrent(formattedCmd);
+  }
+  
+  closeTerminalDialog();
+  saveConfig();
+  renderActionList();
+}
+
+// ── Toast Action Modal ──
+function promptToastModal(initialCmd = '', editIdx = null) {
+  g_editingToastIdx = editIdx;
+  const title = (editIdx !== null) ? 'Edit Toast Notification' : 'Toast Notification';
+  document.getElementById('toast-dialog-title').textContent = title;
+  
+  let tTitle = '';
+  let tSub = '';
+  let tIcon = '';
+  
+  if (initialCmd && initialCmd.toLowerCase().startsWith('toast ')) {
+    const argStr = initialCmd.slice(6).trim();
+    const match = argStr.match(/^"([^"]+)"(?:\s+"([^"]+)")?(?:\s+"([^"]+)")?/);
+    if (match) {
+      tTitle = match[1] || '';
+      tSub = match[2] || '';
+      tIcon = match[3] || '';
+    } else {
+      tTitle = argStr;
+    }
+  }
+  
+  document.getElementById('toast-title-input').value = tTitle;
+  document.getElementById('toast-subtitle-input').value = tSub;
+  document.getElementById('toast-icon-input').value = tIcon;
+  
+  updateToastPreview();
+  document.getElementById('toast-dialog-backdrop').classList.add('visible');
+  setTimeout(() => document.getElementById('toast-title-input').focus(), 100);
+}
+
+function setToastIconPreset(iconName) {
+  document.getElementById('toast-icon-input').value = iconName;
+  updateToastPreview();
+}
+
+function updateToastPreview() {
+  const tTitle = document.getElementById('toast-title-input').value.trim() || 'Toast Title';
+  const tSub = document.getElementById('toast-subtitle-input').value.trim();
+  const tIcon = document.getElementById('toast-icon-input').value.trim() || 'text_bubble';
+  
+  document.getElementById('toast-preview-title').textContent = tTitle;
+  const subEl = document.getElementById('toast-preview-subtitle');
+  if (tSub) {
+    subEl.textContent = tSub;
+    subEl.style.display = 'block';
+  } else {
+    subEl.style.display = 'none';
+  }
+  
+  let f7Icon = tIcon.replaceAll('.', '_');
+  document.getElementById('toast-preview-icon').textContent = f7Icon || 'text_bubble';
+}
+
+function closeToastDialog() {
+  document.getElementById('toast-dialog-backdrop').classList.remove('visible');
+  g_editingToastIdx = null;
+}
+
+function toastDialogOk() {
+  const tTitle = document.getElementById('toast-title-input').value.trim();
+  if (!tTitle) {
+    closeToastDialog();
+    return;
+  }
+  const tSub = document.getElementById('toast-subtitle-input').value.trim();
+  const tIcon = document.getElementById('toast-icon-input').value.trim();
+  
+  let formattedCmd = '';
+  if (tSub || tIcon) {
+    formattedCmd = `toast "${tTitle}" "${tSub}" "${tIcon}"`;
+  } else {
+    formattedCmd = `toast ${tTitle}`;
+  }
+  
+  const actions = triggerData(currentKey).actions || [];
+  if (g_editingToastIdx !== null && g_editingToastIdx < actions.length) {
+    actions[g_editingToastIdx] = formattedCmd;
+  } else {
+    addActionToCurrent(formattedCmd);
+  }
+  
+  closeToastDialog();
+  saveConfig();
+  renderActionList();
+}
+
+// ── Live Log Viewer Panel ──
+let g_logInterval = null;
+let g_rawLogs = '';
+
+function toggleLogPanel() {
+  const panel = document.getElementById('logs-panel');
+  if (panel.classList.contains('active')) closeLogPanel();
+  else openLogPanel();
+}
+
+function openLogPanel() {
+  document.getElementById('logs-panel').classList.add('active');
+  fetchLiveLogs();
+  if (!g_logInterval) g_logInterval = setInterval(fetchLiveLogs, 2000);
+}
+
+function closeLogPanel() {
+  document.getElementById('logs-panel').classList.remove('active');
+  if (g_logInterval) {
+    clearInterval(g_logInterval);
+    g_logInterval = null;
+  }
+}
+
+function fetchLiveLogs() {
+  fetch('/api/logs').then(r => r.json()).then(data => {
+    g_rawLogs = data.logs || '';
+    renderLogsUI();
+  }).catch(() => {
+    const container = document.getElementById('log-container');
+    if (container) container.innerHTML = '<div style="color:#ff453a; text-align:center; padding-top:20px;">⚠ Log stream offline or server unavailable</div>';
+  });
+}
+
+function clearLogDisplay() {
+  g_rawLogs = '';
+  const container = document.getElementById('log-container');
+  if (container) container.innerHTML = '<div style="color:#8e8e93; text-align:center; padding-top:40px;">Logs cleared</div>';
+}
+
+function renderLogsUI() {
+  const container = document.getElementById('log-container');
+  if (!container) return;
+  if (!g_rawLogs) {
+    container.innerHTML = '<div style="color:#8e8e93; text-align:center; padding-top:40px;">No log entries recorded</div>';
+    return;
+  }
+  const filter = (document.getElementById('log-filter-input').value || '').toLowerCase().trim();
+  const lines = g_rawLogs.split('\n').filter(l => l.trim().length > 0);
+  
+  let html = '';
+  lines.forEach(line => {
+    if (filter && !line.toLowerCase().includes(filter)) return;
+    let tag = 'info';
+    let tagLabel = 'INFO';
+    if (line.includes('ERROR') || line.includes('CRITICAL') || line.includes('FAILED')) {
+      tag = 'err'; tagLabel = 'ERR';
+    } else if (line.includes('WARN') || line.includes('WARNING')) {
+      tag = 'warn'; tagLabel = 'WARN';
+    } else if (line.includes('Executing') || line.includes('Triggered') || line.includes('SUCCESS')) {
+      tag = 'exec'; tagLabel = 'EXEC';
+    }
+    
+    html += `<div class="log-entry"><span class="log-tag ${tag}">${tagLabel}</span>${escHtml(line)}</div>`;
+  });
+  
+  container.innerHTML = html || '<div style="color:#8e8e93; text-align:center; padding-top:20px;">No matching log lines</div>';
+  container.scrollTop = container.scrollHeight;
+}
+
 function editAction(idx) {
   const actions = triggerData(currentKey).actions || [];
   const act = actions[idx];
@@ -2187,23 +2565,9 @@ function editAction(idx) {
         saveConfig(); renderActionList();
       }, true);
     } else if (low.startsWith('toast ')) {
-      showDialog('Edit Toast Message', 'Text to display:', act.slice(6), 'Save', val => {
-        if (!val) return;
-        actions[idx] = `toast ${val}`;
-        saveConfig(); renderActionList();
-      });
-    } else if (low.startsWith('exec ')) {
-      showDialog('Edit Command', 'Terminal command:', act.slice(5), 'Save', val => {
-        if (!val) return;
-        actions[idx] = `exec ${val}`;
-        saveConfig(); renderActionList();
-      });
-    } else if (low.startsWith('root ')) {
-      showDialog('Edit Root Command', 'Root terminal command:', act.slice(5), 'Save', val => {
-        if (!val) return;
-        actions[idx] = `root ${val}`;
-        saveConfig(); renderActionList();
-      });
+      promptToastModal(act, idx);
+    } else if (low.startsWith('exec ') || low.startsWith('root ')) {
+      promptTerminalModal(act, idx);
     } else if (low.startsWith('shortcut:')) {
       showDialog('Edit Shortcut', 'Name:', act.slice(9), 'Save', val => {
         if (!val) return;

@@ -2721,8 +2721,13 @@ static void handle_web_client(int clientSock) {
                 response = @"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Invalid JSON\"}";
             }
         }
-    } else if ([url hasPrefix:@"/api/trigger/"] && [method isEqualToString:@"POST"]) {
+    } else if ([url hasPrefix:@"/api/trigger/"]) {
         NSString *key = [[url substringFromIndex:13] stringByRemovingPercentEncoding];
+        // Strip any trailing query string if present
+        NSRange qMark = [key rangeOfString:@"?"];
+        if (qMark.location != NSNotFound) {
+            key = [key substringToIndex:qMark.location];
+        }
         RCExecuteTrigger(key);
         response = @"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"success\":true}";
     } else if ([url hasPrefix:@"/api/command"] && [method isEqualToString:@"POST"]) {
@@ -2754,6 +2759,24 @@ static void handle_web_client(int clientSock) {
             }
         }
         NSData *jsonData = [NSJSONSerialization dataWithJSONObject:appArray options:0 error:nil];
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        response = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n%@",
+                    (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+    } else if ([url isEqualToString:@"/api/logs"] && [method isEqualToString:@"GET"]) {
+        NSString *logPath = @"/tmp/remotecommand.log";
+        NSString *logContent = @"";
+        if ([[NSFileManager defaultManager] fileExistsAtPath:logPath]) {
+            NSError *err = nil;
+            NSString *fullLog = [NSString stringWithContentsOfFile:logPath encoding:NSUTF8StringEncoding error:&err];
+            if (fullLog) {
+                NSArray<NSString *> *lines = [fullLog componentsSeparatedByString:@"\n"];
+                NSUInteger count = lines.count;
+                NSUInteger startIdx = (count > 150) ? (count - 150) : 0;
+                NSArray<NSString *> *recentLines = [lines subarrayWithRange:NSMakeRange(startIdx, count - startIdx)];
+                logContent = [recentLines componentsJoinedByString:@"\n"];
+            }
+        }
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:@{@"logs": logContent ?: @""} options:0 error:nil];
         NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         response = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n%@",
                     (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
@@ -2856,12 +2879,22 @@ static NSString *handle_command(NSString *cmd) {
 
     // SneakyCam Controls
     if ([lowCmd isEqualToString:@"sneakycam photo"] || [lowCmd isEqualToString:@"sneakycam takephoto"]) {
+        SRLog(@"[SneakyCam] Triggering Photo Notification...");
         notify_post("com.spark.SneakyCam.takephoto");
+        notify_post("com.spark.sneakycam.takephoto");
+        notify_post("com.spark.SneakyCam.takePhoto");
+        FILE *p = popen("/var/jb/usr/bin/notifyutil -p com.spark.SneakyCam.takephoto 2>/dev/null || /usr/bin/notifyutil -p com.spark.SneakyCam.takephoto 2>/dev/null || notifyutil -p com.spark.SneakyCam.takephoto 2>/dev/null", "r");
+        if (p) pclose(p);
         rc_show_hud_toast(@"SneakyCam", @"Photo Triggered", @"camera.fill");
         return @"SneakyCam: Photo trigger sent";
     }
     if ([lowCmd isEqualToString:@"sneakycam video"] || [lowCmd isEqualToString:@"sneakycam record"] || [lowCmd isEqualToString:@"sneakycam startstopvideo"]) {
+        SRLog(@"[SneakyCam] Triggering Video Notification...");
         notify_post("com.spark.SneakyCam.startstopvideo");
+        notify_post("com.spark.sneakycam.startstopvideo");
+        notify_post("com.spark.SneakyCam.startStopVideo");
+        FILE *p = popen("/var/jb/usr/bin/notifyutil -p com.spark.SneakyCam.startstopvideo 2>/dev/null || /usr/bin/notifyutil -p com.spark.SneakyCam.startstopvideo 2>/dev/null || notifyutil -p com.spark.SneakyCam.startstopvideo 2>/dev/null", "r");
+        if (p) pclose(p);
         rc_show_hud_toast(@"SneakyCam", @"Video Toggled", @"video.fill");
         return @"SneakyCam: Video trigger sent";
     }
@@ -3239,6 +3272,17 @@ static NSString *handle_command(NSString *cmd) {
         return result.length > 0 ? result : @"Command Executed (No Output)";
     }
 
+    // Trigger Key Execution Fallback
+    if ([lowCmd hasPrefix:@"trigger:"]) {
+        NSString *trigKey = [[trimmed substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        RCExecuteTrigger(trigKey);
+        return [NSString stringWithFormat:@"Trigger '%@' executed", trigKey];
+    }
+    if (g_triggerConfig && g_triggerConfig[@"triggers"] && g_triggerConfig[@"triggers"][trimmed]) {
+        RCExecuteTrigger(trimmed);
+        return [NSString stringWithFormat:@"Trigger '%@' executed", trimmed];
+    }
+
     return [NSString stringWithFormat:@"Unknown Command: %@", trimmed];
 }
 
@@ -3301,4 +3345,22 @@ static void setup_background_hid_listener() {
     _IOHIDEventSystemClientDispatchEvent = (void (*)(IOHIDEventSystemClientRef, IOHIDEventRef))dlsym(handle, "IOHIDEventSystemClientDispatchEvent");
 
     SRLog(@"Background HID Listener Initialized.");
+}
+
+%ctor {
+    @autoreleasepool {
+        SRLog(@"[RemoteCompanion] Initializing Tweak Constructor...");
+        load_trigger_config();
+        start_web_server();
+        start_server();
+        setup_background_hid_listener();
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            config_changed_callback,
+            CFSTR("com.pizzaman.rc.configchanged"),
+            NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately
+        );
+    }
 }

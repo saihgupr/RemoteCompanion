@@ -686,7 +686,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return @"Unknown Action";
     }
 
-    NSString *cmd = (NSString *)cmdId;
+    NSString *cmd = [[(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
     NSDictionary *names = @{
         @"play": @"Play",
         @"pause": @"Pause",
@@ -789,7 +789,12 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"queue artist": @"Queue Artist",
         @"shuffleall": @"Shuffle All Songs",
         @"shuffle all songs": @"Shuffle All Songs",
-        @"suffle all songs": @"Shuffle All Songs"
+        @"suffle all songs": @"Shuffle All Songs",
+        @"sneakycam photo": @"SneakyCam Photo",
+        @"sneakycam takephoto": @"SneakyCam Photo",
+        @"sneakycam video": @"SneakyCam Video",
+        @"sneakycam record": @"SneakyCam Video",
+        @"sneakycam startstopvideo": @"SneakyCam Video"
     };
     
     NSString *result = names[cmd];
@@ -921,7 +926,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if (![cmdId isKindOfClass:[NSString class]]) {
         return @"questionmark";
     }
-    NSString *cmd = (NSString *)cmdId;
+    NSString *cmd = [[(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    if ([cmd hasPrefix:@"sneakycam photo"] || [cmd isEqualToString:@"sneakycam takephoto"]) return @"camera.aperture";
+    if ([cmd hasPrefix:@"sneakycam video"] || [cmd isEqualToString:@"sneakycam record"] || [cmd isEqualToString:@"sneakycam startstopvideo"]) return @"video.fill";
     if ([cmd hasPrefix:@"toast"]) return @"text.bubble.fill";
     if ([cmd hasPrefix:@"root "] || [cmd hasPrefix:@"exec-root "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";

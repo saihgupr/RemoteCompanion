@@ -5,7 +5,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > [!IMPORTANT]
 > **What’s New in v3.5.0**
 > - **Power Event Triggers**: Trigger actions on AC power connection and disconnection (`trigger_power_connect` and `trigger_power_disconnect`).
-> - **SneakyCam Integration**: Native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS App, and Web UI.
+> - **SneakyCam Integration**: Native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS App, and Web UI (dynamically displayed if SneakyCam is installed).
 > - **Web UI Modal Action Editors**: Dedicated popup modals for editing **Terminal Actions** (with root toggle) and **HUD Toast Notifications** (with live HUD preview).
 > - **Web UI Context Menu Copy & Paste**: Right-click context menu options to Copy and Paste actions in sequence.
 > - **Web UI Live System Log Viewer**: Stream real-time device logs directly in the Web UI dashboard backed by `/api/logs`.

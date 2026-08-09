@@ -1527,6 +1527,22 @@ const CONDITION_DEFS = [
   { key:'front_app',   title:'Front App is', values:null, freeText:true },
 ];
 
+async function loadCapabilities() {
+  try {
+    const res = await fetch('/api/capabilities');
+    if (res.ok) {
+      const caps = await res.json();
+      if (caps && caps.sneakycam === false) {
+        ACTION_SECTIONS.forEach(sec => {
+          sec.actions = sec.actions.filter(a => !a.cmd.startsWith('sneakycam'));
+        });
+      }
+    }
+  } catch(e) {
+    console.error("Failed to load capabilities", e);
+  }
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
 async function loadData() {
   try {
@@ -1537,6 +1553,7 @@ async function loadData() {
     if (!config.favoriteTriggers) config.favoriteTriggers = [];
     document.getElementById('conn-banner').classList.remove('visible');
     hasLoadedData = true;
+    await loadCapabilities();
     renderAll();
     loadVersion();
     refreshDatalists();

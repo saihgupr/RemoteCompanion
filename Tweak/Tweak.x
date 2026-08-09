@@ -2063,6 +2063,31 @@ static void handle_wifi_notification(CFNotificationCenterRef center, void *obser
     });
 }
 
+static BOOL is_sneakycam_installed() {
+    NSArray *paths = @[
+        @"/Library/MobileSubstrate/DynamicLibraries/SneakyCam.dylib",
+        @"/Library/MobileSubstrate/DynamicLibraries/sneakycam.dylib",
+        @"/Library/MobileSubstrate/DynamicLibraries/SneakyCam.plist",
+        @"/Library/MobileSubstrate/DynamicLibraries/sneakycam.plist",
+        @"/usr/lib/TweakInject/SneakyCam.dylib",
+        @"/usr/lib/TweakInject/sneakycam.dylib",
+        @"/var/jb/Library/MobileSubstrate/DynamicLibraries/SneakyCam.dylib",
+        @"/var/jb/Library/MobileSubstrate/DynamicLibraries/sneakycam.dylib",
+        @"/var/jb/Library/MobileSubstrate/DynamicLibraries/SneakyCam.plist",
+        @"/var/jb/Library/MobileSubstrate/DynamicLibraries/sneakycam.plist",
+        @"/var/jb/usr/lib/TweakInject/SneakyCam.dylib",
+        @"/var/jb/usr/lib/TweakInject/sneakycam.dylib",
+        @"/var/mobile/Library/Preferences/com.spark.sneakycam.plist",
+        @"/var/mobile/Library/Preferences/com.spark.SneakyCam.plist",
+        @"/var/jb/var/mobile/Library/Preferences/com.spark.sneakycam.plist"
+    ];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *path in paths) {
+        if ([fm fileExistsAtPath:path]) return YES;
+    }
+    return NO;
+}
+
 // Power State Globals & Helpers
 static BOOL g_powerStateInitialized = NO;
 static BOOL g_lastPowerConnectedState = NO;
@@ -6830,8 +6855,13 @@ static void start_web_server() {
         }
         NSData *jsonData = [NSJSONSerialization dataWithJSONObject:@{@"logs": logContent ?: @""} options:0 error:nil];
         NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-        responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n%@",
-                    (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+    } else if ([path isEqualToString:@"/api/capabilities"] && [method isEqualToString:@"GET"]) {
+        NSDictionary *caps = @{
+            @"sneakycam": @(is_sneakycam_installed())
+        };
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:caps options:0 error:nil];
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
                                 NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];

@@ -99,34 +99,59 @@
             @{ @"name": @"Disconnect AirPlay", @"command": @"airplay disconnect", @"icon": @"airplayaudio.badge.exclamationmark" }
         ],
         // System
-        @[
-            @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
-            @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
-            @{ @"name": @"SneakyCam Photo", @"command": @"sneakycam photo", @"icon": @"camera.aperture" },
-            @{ @"name": @"SneakyCam Video", @"command": @"sneakycam video", @"icon": @"video.fill" },
-            @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
-            @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
-            @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },
-            @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
-            @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
-            @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
-            @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
-            @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
-            @{ @"name": @"App Switcher", @"command": @"switcher", @"icon": @"square.stack.3d.up.fill" },
-            @{ @"name": @"Previous App", @"command": @"previous app", @"icon": @"arrow.uturn.backward" },
-            @{ @"name": @"Control Center", @"command": @"open control center", @"icon": @"gear" },
-            @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
-            @{ @"name": @"Soft Reboot (ldrestart)", @"command": @"ldrestart", @"icon": @"arrow.clockwise" },
-            @{ @"name": @"Userspace Reboot", @"command": @"userspace-reboot", @"icon": @"arrow.clockwise.circle" },
-            @{ @"name": @"Refresh Icon Cache (uicache)", @"command": @"uicache", @"icon": @"square.grid.2x2" },
-
-            
-            // System Vibration
-            @{ @"name": @"Silent Vibration", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
-            @{ @"name": @"Ring Vibration", @"command": @"vibration ring-toggle", @"icon": @"bell" },
- 
-            @{ @"name": @"Low Power Mode", @"command": @"low power toggle", @"icon": @"battery.25" }
-        ],
+        ({
+            NSMutableArray *sys = [NSMutableArray arrayWithArray:@[
+                @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
+                @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" }
+            ]];
+            NSArray *sneakyPaths = @[
+                @"/Library/MobileSubstrate/DynamicLibraries/SneakyCam.dylib",
+                @"/Library/MobileSubstrate/DynamicLibraries/sneakycam.dylib",
+                @"/Library/MobileSubstrate/DynamicLibraries/SneakyCam.plist",
+                @"/Library/MobileSubstrate/DynamicLibraries/sneakycam.plist",
+                @"/usr/lib/TweakInject/SneakyCam.dylib",
+                @"/usr/lib/TweakInject/sneakycam.dylib",
+                @"/var/jb/Library/MobileSubstrate/DynamicLibraries/SneakyCam.dylib",
+                @"/var/jb/Library/MobileSubstrate/DynamicLibraries/sneakycam.dylib",
+                @"/var/jb/Library/MobileSubstrate/DynamicLibraries/SneakyCam.plist",
+                @"/var/jb/Library/MobileSubstrate/DynamicLibraries/sneakycam.plist",
+                @"/var/jb/usr/lib/TweakInject/SneakyCam.dylib",
+                @"/var/jb/usr/lib/TweakInject/sneakycam.dylib",
+                @"/var/mobile/Library/Preferences/com.spark.sneakycam.plist",
+                @"/var/mobile/Library/Preferences/com.spark.SneakyCam.plist",
+                @"/var/jb/var/mobile/Library/Preferences/com.spark.sneakycam.plist"
+            ];
+            BOOL sneakyInstalled = NO;
+            NSFileManager *fm = [NSFileManager defaultManager];
+            for (NSString *p in sneakyPaths) {
+                if ([fm fileExistsAtPath:p]) { sneakyInstalled = YES; break; }
+            }
+            if (sneakyInstalled) {
+                [sys addObject:@{ @"name": @"SneakyCam Photo", @"command": @"sneakycam photo", @"icon": @"camera.aperture" }];
+                [sys addObject:@{ @"name": @"SneakyCam Video", @"command": @"sneakycam video", @"icon": @"video.fill" }];
+            }
+            [sys addObjectsFromArray:@[
+                @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
+                @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
+                @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },
+                @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
+                @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
+                @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
+                @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
+                @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
+                @{ @"name": @"App Switcher", @"command": @"switcher", @"icon": @"square.stack.3d.up.fill" },
+                @{ @"name": @"Previous App", @"command": @"previous app", @"icon": @"arrow.uturn.backward" },
+                @{ @"name": @"Control Center", @"command": @"open control center", @"icon": @"gear" },
+                @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
+                @{ @"name": @"Soft Reboot (ldrestart)", @"command": @"ldrestart", @"icon": @"arrow.clockwise" },
+                @{ @"name": @"Userspace Reboot", @"command": @"userspace-reboot", @"icon": @"arrow.clockwise.circle" },
+                @{ @"name": @"Refresh Icon Cache (uicache)", @"command": @"uicache", @"icon": @"square.grid.2x2" },
+                @{ @"name": @"Silent Vibration", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
+                @{ @"name": @"Ring Vibration", @"command": @"vibration ring-toggle", @"icon": @"bell" },
+                @{ @"name": @"Low Power Mode", @"command": @"low power toggle", @"icon": @"battery.25" }
+            ]];
+            sys;
+        }),
         // Audio (ANC & AudioMix)
         @[
             @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },

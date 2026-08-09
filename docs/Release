@@ -8,12 +8,12 @@ Components: main
 Architectures: iphoneos-arm iphoneos-arm64
 Description: A modern Activator replacement for rootless jailbreaks. Bind triggers to system actions, Siri automation, and custom TCP commands.
 MD5Sum:
- d456ca68c2085ad86c77a2f17088a646 27294 Packages
- 8fcdf8d7cb6bc54d9b031220c0cadab1 4702 Packages.gz
- a90dfdb812ac3a19ef50f52543876617 4450 Packages.bz2
- eb307a8ed575ef632926d36ec1cf0432 4002 Packages.zst
+ d9cf0197c68140c7deb756d362703593 28914 Packages
+ 97ce6509ad7dc441fdd7ab5f761ec0cd 4905 Packages.gz
+ 486913084cbccf7f3ca44c6f3296cd36 4643 Packages.bz2
+ 627a4e0ca5b21c34495a652c349c6cdf 4165 Packages.zst
 SHA256:
- ed1f66b059e30380479017f486fe6d4ce03551d0383d8591ecf30988331b388d 27294 Packages
- bd38693721a1b723b08808d6dcfff4cafcc85f48c91fe16e301aa4191821d2bf 4702 Packages.gz
- 8773c865a2f83b1892966553a4a78e2ac9961d9998e4d31d70ad80397b2fc58c 4450 Packages.bz2
- 4378a817087866ffbffca5a031c268f52845fd2aa43155ce94392643e14e3a65 4002 Packages.zst
+ d984a92f45392c520560938a095ca086a164c339bdd2fb92d9d04523b7d94ec1 28914 Packages
+ 48239de9b34e5a78c935fbae6dc987f2216c68191a2e9499a3a661f4a41fa0a6 4905 Packages.gz
+ d9f9924b75c4b7bb8ecfac5ead071169cbd43db6939a9e8f892c73c681265fae 4643 Packages.bz2
+ 8d43a6cf1fce08e197cba91ded34ce74a2876f6220a52034de78032aadc79395 4165 Packages.zst

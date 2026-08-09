@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-08-09
+
 ### Added
 - **SneakyCam Integration**: Added native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS Companion App, and Web UI using system Darwin notifications (`com.spark.SneakyCam.takephoto` and `com.spark.SneakyCam.startstopvideo`).
 - **Web UI Modal Action Editors**: Dedicated popup modals for editing **Terminal Actions** (with root privilege toggle) and **HUD Toast Notifications** (with title/subtitle/icon inputs, SF Symbol preset chips, and a live HUD toast preview).

@@ -3,16 +3,12 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.4.0**
-> - **Proximity Sensor & Pocket Detection**: Bind actions based on device coverage/pocket states, auto-enabling during power button holds for zero standby battery drain.
-> - **Dynamic Web UI Port Selection**: Scans sequentially (8080-8099) to bind the first available port, preventing conflicts with other background web servers.
-> - **Action Sequence Play Button & Else If Blocks**: Test/simulate sequences instantly with a play button in the iOS app, and build nested, sequential `else_if` logic blocks.
-> - **Native-Style HUD Toasts**: Dropdown spring-physics toasts to confirm toggled states system-wide, featuring robust handling to resolve rapid-fire click conflicts.
-> - **Cellular Data Control**: Enable, disable, or query cellular data natively via CLI commands, Web UI triggers, and action workflow condition evaluations.
-> - **Action Sequence Import/Export**: You can now export, import, and share your custom action sequences (via a new ellipsis menu) with options to append or replace them.
-> - **AI Scripting Guide**: Generate custom action sequences from plain English using any AI assistant with a pre-configured prompt and reference documentation in [SCRIPTING.md](SCRIPTING.md).
-> - **Kill App & AudioMix Actions**: Force-close apps natively with a high-fidelity iOS-style autocomplete UI, and toggle/query KingPuffdaddi's AudioMix tweak state.
-> - **Double Tap Status Bar Trigger**: Bind actions to a double tap on the status bar, adding a new gesture-based hardware trigger option.
+> **What’s New in v3.5.0**
+> - **Power Event Triggers**: Trigger actions on AC power connection and disconnection (`trigger_power_connect` and `trigger_power_disconnect`).
+> - **SneakyCam Integration**: Native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS App, and Web UI.
+> - **Web UI Modal Action Editors**: Dedicated popup modals for editing **Terminal Actions** (with root toggle) and **HUD Toast Notifications** (with live HUD preview).
+> - **Web UI Context Menu Copy & Paste**: Right-click context menu options to Copy and Paste actions in sequence.
+> - **Web UI Live System Log Viewer**: Stream real-time device logs directly in the Web UI dashboard backed by `/api/logs`.
 
 
 <p align="center">

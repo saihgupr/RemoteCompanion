@@ -1431,11 +1431,11 @@ static float get_flash_brightness() {
     return 1.0f;
 }
 
-// Forward declarations for gesture management functions
-static BOOL should_register_edge_gestures();
-static void register_edge_gestures();
-static void unregister_edge_gestures();
-static void update_edge_gestures();
+// Gesture management helper functions
+static BOOL should_register_edge_gestures() { return NO; }
+static void register_edge_gestures() {}
+static void unregister_edge_gestures() {}
+static void update_edge_gestures() {}
 static void start_schedule_timer();
 
 static void config_changed_callback(CFNotificationCenterRef center, void *observer,
@@ -2524,15 +2524,15 @@ static void perform_hold(double x, double y, uint32_t durationMs) {
 
 static void perform_swipe(double startX, double startY, double endX, double endY, uint32_t steps, uint32_t durationMs) {
     dispatch_async(rc_touch_queue(), ^{
-        if (steps == 0) steps = 20;
-        uint32_t stepDelayUs = (durationMs * 1000) / steps;
+        uint32_t totalSteps = (steps == 0) ? 20 : steps;
+        uint32_t stepDelayUs = (durationMs * 1000) / totalSteps;
 
         rc_inject_touch(startX, startY, 1 | 4, 1);
         usleep(stepDelayUs);
 
-        for (uint32_t i = 1; i < steps; i++) {
-            double curX = startX + (endX - startX) * ((double)i / steps);
-            double curY = startY + (endY - startY) * ((double)i / steps);
+        for (uint32_t i = 1; i < totalSteps; i++) {
+            double curX = startX + (endX - startX) * ((double)i / totalSteps);
+            double curY = startY + (endY - startY) * ((double)i / totalSteps);
             rc_inject_touch(curX, curY, 4, 1);
             usleep(stepDelayUs);
         }
@@ -2854,6 +2854,18 @@ static NSString *handle_command(NSString *cmd) {
         return @"AudioMix OFF";
     }
 
+    // SneakyCam Controls
+    if ([lowCmd isEqualToString:@"sneakycam photo"] || [lowCmd isEqualToString:@"sneakycam takephoto"]) {
+        notify_post("com.spark.SneakyCam.takephoto");
+        rc_show_hud_toast(@"SneakyCam", @"Photo Triggered", @"camera.fill");
+        return @"SneakyCam: Photo trigger sent";
+    }
+    if ([lowCmd isEqualToString:@"sneakycam video"] || [lowCmd isEqualToString:@"sneakycam record"] || [lowCmd isEqualToString:@"sneakycam startstopvideo"]) {
+        notify_post("com.spark.SneakyCam.startstopvideo");
+        rc_show_hud_toast(@"SneakyCam", @"Video Toggled", @"video.fill");
+        return @"SneakyCam: Video trigger sent";
+    }
+
     // Silent Vibration Toggle
     if ([lowCmd isEqualToString:@"vibration silent-toggle"]) {
         BOOL cur = get_system_vibration(YES);
@@ -3063,7 +3075,7 @@ static NSString *handle_command(NSString *cmd) {
             if (descriptorClass && runnerClass) {
                 id descriptor = [[descriptorClass alloc] initWithName:shortcutName];
                 id client = [[runnerClass alloc] initWithWorkflowDescriptor:descriptor input:nil parseInput:YES output:nil completion:nil];
-                [client start];
+                [client performSelector:@selector(start)];
             }
         });
         return [NSString stringWithFormat:@"Shortcut Started: %@", shortcutName];

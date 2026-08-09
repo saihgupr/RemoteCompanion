@@ -102,6 +102,8 @@
         @[
             @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
             @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
+            @{ @"name": @"SneakyCam Photo", @"command": @"sneakycam photo", @"icon": @"camera.aperture" },
+            @{ @"name": @"SneakyCam Video", @"command": @"sneakycam video", @"icon": @"video.fill" },
             @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
             @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
             @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },

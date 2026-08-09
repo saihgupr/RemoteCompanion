@@ -1192,6 +1192,7 @@ const CMD_NAMES = {
   'bluetooth on':'Bluetooth On','bluetooth off':'Bluetooth Off','bluetooth toggle':'Bluetooth Toggle',
   'airplane on':'Airplane On','airplane off':'Airplane Off','airplane toggle':'Airplane Toggle',
   'haptic':'Haptic Feedback','screenshot':'Screenshot',
+  'sneakycam photo':'SneakyCam Photo','sneakycam video':'SneakyCam Video',
   'lock':'Lock Device','unlock':'Unlock Device',
   'dnd on':'Do Not Disturb On','dnd off':'Do Not Disturb Off','dnd toggle':'Do Not Disturb Toggle',
   'audiomix on':'AudioMix On','audiomix off':'AudioMix Off','audiomix toggle':'AudioMix Toggle',
@@ -1284,6 +1285,7 @@ function iconForCmd(cmd) {
     'open control center':'gear',
     'low power on':'battery_25','low power off':'battery_100',
     'screenshot':'camera_fill','haptic':'hand_raised_fill',
+    'sneakycam photo':'camera_fill','sneakycam video':'video_fill',
     'mute':'speaker_slash_fill','mute on':'speaker_slash_fill','mute off':'speaker_3_fill','mute toggle':'speaker_slash_fill',
   };
   const lowCmd = cmd.toLowerCase();
@@ -1345,6 +1347,8 @@ const ACTION_SECTIONS = [
   { title:'System', actions:[
     { name:'Haptic Feedback',   cmd:'haptic',        icon:'hand_raised_fill' },
     { name:'Screenshot',        cmd:'screenshot',    icon:'camera_fill' },
+    { name:'SneakyCam Photo',   cmd:'sneakycam photo', icon:'camera_fill' },
+    { name:'SneakyCam Video',   cmd:'sneakycam video', icon:'video_fill' },
     { name:'Run Shortcut…',     cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'Open App…',         cmd:'__OPEN_APP__',  icon:'square_grid_2x2_fill', needs_input:true },
     { name:'Kill App…',         cmd:'__KILL_APP__',  icon:'xmark_circle_fill', needs_input:true },

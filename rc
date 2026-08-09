@@ -50,6 +50,7 @@ if [ -z "$1" ]; then
     echo "  is-locked         - Check if device is locked"
     echo "  dnd on/off/debug   - Toggle Do Not Disturb or inspect state"
     echo "  audiomix on/off/toggle/status - Control AudioMix tweak"
+    echo "  sneakycam photo/video - Trigger SneakyCam photo or toggle video"
     echo "  toast \"Title\" [\"Subtitle\"] [\"Icon\"] - Display HUD toast notification"
     echo "  blacklist <list|add|remove|reset> - Manage app exclusion"
     echo "  log               - Stream device logs"

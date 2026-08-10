@@ -6840,22 +6840,23 @@ static void start_web_server() {
                                         }
                                     }
                                 } else if ([path isEqualToString:@"/api/logs"] && [method isEqualToString:@"GET"]) {
-        NSString *logPath = @"/tmp/remotecommand.log";
-        NSString *logContent = @"";
-        if ([[NSFileManager defaultManager] fileExistsAtPath:logPath]) {
-            NSError *err = nil;
-            NSString *fullLog = [NSString stringWithContentsOfFile:logPath encoding:NSUTF8StringEncoding error:&err];
-            if (fullLog) {
-                NSArray<NSString *> *lines = [fullLog componentsSeparatedByString:@"\n"];
-                NSUInteger count = lines.count;
-                NSUInteger startIdx = (count > 150) ? (count - 150) : 0;
-                NSArray<NSString *> *recentLines = [lines subarrayWithRange:NSMakeRange(startIdx, count - startIdx)];
-                logContent = [recentLines componentsJoinedByString:@"\n"];
-            }
-        }
-        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:@{@"logs": logContent ?: @""} options:0 error:nil];
-        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-    } else if ([path isEqualToString:@"/api/capabilities"] && [method isEqualToString:@"GET"]) {
+                                    NSString *logPath = @"/tmp/remotecommand.log";
+                                    NSString *logContent = @"";
+                                    if ([[NSFileManager defaultManager] fileExistsAtPath:logPath]) {
+                                        NSError *err = nil;
+                                        NSString *fullLog = [NSString stringWithContentsOfFile:logPath encoding:NSUTF8StringEncoding error:&err];
+                                        if (fullLog) {
+                                            NSArray<NSString *> *lines = [fullLog componentsSeparatedByString:@"\n"];
+                                            NSUInteger count = lines.count;
+                                            NSUInteger startIdx = (count > 150) ? (count - 150) : 0;
+                                            NSArray<NSString *> *recentLines = [lines subarrayWithRange:NSMakeRange(startIdx, count - startIdx)];
+                                            logContent = [recentLines componentsJoinedByString:@"\n"];
+                                        }
+                                    }
+                                    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:@{@"logs": logContent ?: @""} options:0 error:nil];
+                                    NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                } else if ([path isEqualToString:@"/api/capabilities"] && [method isEqualToString:@"GET"]) {
         NSDictionary *caps = @{
             @"sneakycam": @(is_sneakycam_installed())
         };

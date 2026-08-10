@@ -161,8 +161,8 @@
         ],
         // Home Assistant
         @[
-            @{ @"name": @"Control Home Assistant Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" },
-            @{ @"name": @"Custom HA Service Call...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" }
+            @{ @"name": @"Select Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" },
+            @{ @"name": @"Call Service...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" }
         ],
         // Scripting & Logic
         @[

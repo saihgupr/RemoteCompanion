@@ -771,105 +771,206 @@
     .toggle-switch input:checked + .toggle-slider { background-color: #34c759; }
     .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
 
-    /* Live Log Viewer Styling */
+    /* Live Log Viewer Styling - iOS Native Design Language */
+    #logs-panel {
+      background: #121214 !important;
+    }
+
     .log-pulse-dot {
       display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-      background-color: #30d158; box-shadow: 0 0 8px #30d158;
+      background-color: #30d158; box-shadow: 0 0 8px rgba(48, 209, 88, 0.6);
       animation: logPulse 1.8s infinite;
     }
     .log-pulse-dot.paused { background-color: #ff9500; box-shadow: none; animation: none; }
     @keyframes logPulse {
       0% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(0.85); }
+      50% { opacity: 0.35; transform: scale(0.85); }
       100% { opacity: 1; transform: scale(1); }
     }
 
+    /* iOS Inset Stats Bar Cards */
     .log-stats-bar {
       display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 2px;
     }
     .log-stat-item {
-      background: #1c1c1e; border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 10px; padding: 8px 6px; text-align: center; cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
+      background: #1c1c1e;
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 10px 6px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none; -webkit-user-select: none;
+      transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
     }
-    .log-stat-item:hover { background: #2c2c2e; }
-    .log-stat-item:active { transform: scale(0.97); }
-    .log-stat-value { display: block; font-size: 16px; font-weight: 700; color: #fff; }
+    .log-stat-item:hover { background: #2c2c2e; border-color: rgba(255, 255, 255, 0.2); }
+    .log-stat-item:active { transform: scale(0.96); }
+    .log-stat-value {
+      display: block;
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+    }
     .log-stat-label {
-      display: block; font-size: 9px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.05em; color: #8e8e93; margin-top: 1px;
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #8e8e93;
+      margin-top: 4px;
     }
     .log-stat-item.exec .log-stat-value { color: #30d158; }
     .log-stat-item.err .log-stat-value { color: #ff453a; }
     .log-stat-item.http .log-stat-value { color: #64d2ff; }
 
     .log-toolbar { display: flex; flex-direction: column; gap: 8px; }
+
+    /* iOS Segmented Control Picker */
     .log-category-tabs {
-      display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;
+      display: flex; gap: 2px; padding: 3px;
+      background: rgba(118, 118, 128, 0.24);
+      border-radius: 10px;
+      overflow-x: auto;
       -webkit-overflow-scrolling: touch;
     }
     .log-tab {
-      background: rgba(120,120,128,0.18); border: 1px solid transparent; color: #8e8e93;
-      border-radius: 16px; padding: 5px 12px; font-size: 12px; font-weight: 600;
-      cursor: pointer; white-space: nowrap; transition: all 0.15s ease;
+      flex: 1; border: none; background: transparent; color: #8e8e93;
+      border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 600;
+      font-family: inherit; cursor: pointer; white-space: nowrap; text-align: center;
+      transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
+      user-select: none; -webkit-user-select: none;
     }
-    .log-tab:hover { color: #fff; background: rgba(120,120,128,0.3); }
-    .log-tab.active { background: #007aff; color: #fff; border-color: rgba(255,255,255,0.2); box-shadow: 0 2px 8px rgba(0,122,255,0.3); }
-    .log-tab.active.exec { background: #30d158; color: #000; box-shadow: 0 2px 8px rgba(48,209,88,0.3); }
-    .log-tab.active.err { background: #ff453a; color: #fff; box-shadow: 0 2px 8px rgba(255,69,58,0.3); }
-    .log-tab.active.http { background: #64d2ff; color: #000; box-shadow: 0 2px 8px rgba(100,210,255,0.3); }
-    .log-tab.active.sys { background: #bf5af2; color: #fff; box-shadow: 0 2px 8px rgba(191,90,242,0.3); }
+    .log-tab:hover { color: #ffffff; }
+    .log-tab.active {
+      background: #3a3a3c;
+      color: #ffffff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0.5px 1px rgba(0, 0, 0, 0.2);
+    }
+    .log-tab.active.exec {
+      background: rgba(48, 209, 88, 0.2);
+      color: #30d158;
+      border: 0.5px solid rgba(48, 209, 88, 0.4);
+      box-shadow: none;
+    }
+    .log-tab.active.err {
+      background: rgba(255, 69, 58, 0.2);
+      color: #ff453a;
+      border: 0.5px solid rgba(255, 69, 58, 0.4);
+      box-shadow: none;
+    }
+    .log-tab.active.http {
+      background: rgba(100, 210, 255, 0.2);
+      color: #64d2ff;
+      border: 0.5px solid rgba(100, 210, 255, 0.4);
+      box-shadow: none;
+    }
+    .log-tab.active.sys {
+      background: rgba(191, 90, 242, 0.2);
+      color: #bf5af2;
+      border: 0.5px solid rgba(191, 90, 242, 0.4);
+      box-shadow: none;
+    }
 
-    .log-search-row { display: flex; align-items: center; gap: 8px; }
+    /* iOS Toolbar & Search Row */
+    .log-search-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+    .log-search-row .search-wrap { flex: 1; position: relative; margin: 0; }
+    .log-search-row .search-wrap i.search-icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      font-size: 15px; color: #8e8e93; pointer-events: none;
+    }
+    .log-search-row .search-input {
+      width: 100%; height: 36px;
+      background: rgba(118, 118, 128, 0.18);
+      border: 0.5px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 0 12px 0 32px;
+      font-size: 13px; color: #ffffff; font-family: inherit;
+      outline: none; transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .log-search-row .search-input:focus {
+      background: rgba(118, 118, 128, 0.25);
+      border-color: #007aff;
+    }
     .log-action-btn {
-      background: #2c2c2e; border: 1px solid rgba(255,255,255,0.1); color: #fff;
-      border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600;
-      cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap;
-      transition: background 0.15s;
+      height: 36px;
+      background: #1c1c1e;
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      border-radius: 10px; padding: 0 12px; font-size: 13px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;
+      transition: background 0.15s ease, transform 0.1s ease;
+      user-select: none; -webkit-user-select: none;
     }
-    .log-action-btn:hover { background: #3a3a3c; }
-    .log-action-btn.danger { background: rgba(255,69,58,0.15); color: #ff453a; border-color: rgba(255,69,58,0.3); }
-    .log-action-btn.danger:hover { background: rgba(255,69,58,0.25); }
+    .log-action-btn i { font-size: 16px; }
+    .log-action-btn:hover { background: #2c2c2e; }
+    .log-action-btn:active { transform: scale(0.96); background: #3a3a3c; }
+    .log-action-btn.danger {
+      background: rgba(255, 69, 58, 0.15);
+      color: #ff453a;
+      border-color: rgba(255, 69, 58, 0.3);
+    }
+    .log-action-btn.danger:hover { background: rgba(255, 69, 58, 0.22); }
+    .log-action-btn.danger:active { transform: scale(0.96); background: rgba(255, 69, 58, 0.32); }
 
+    /* iOS Inset Console / Log Viewer Container */
     .log-viewer-wrap {
-      background: #0d0d0f; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
-      padding: 8px; font-family: "SF Mono", Menlo, Monaco, Consolas, monospace; font-size: 12px;
-      color: #e5e5ea; text-align: left; line-height: 1.5; box-shadow: inset 0 2px 10px rgba(0,0,0,0.7);
-      flex: 1; overflow-y: auto; height: 100%; min-height: 300px;
+      background: #09090b;
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 6px;
+      font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      color: #e5e5ea;
+      text-align: left;
+      line-height: 1.5;
+      box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.6);
+      flex: 1; overflow-y: auto; height: 100%; min-height: 280px;
     }
+
+    /* iOS Grouped Row Entries */
     .log-row {
-      display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px;
-      border-bottom: 1px solid rgba(255,255,255,0.04); border-radius: 6px; transition: background 0.1s;
+      display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px;
+      border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      transition: background 0.1s ease;
     }
-    .log-row:hover { background: rgba(255,255,255,0.04); }
+    .log-row:hover { background: rgba(255, 255, 255, 0.05); }
     .log-row:last-child { border-bottom: none; }
 
     .log-time-pill {
-      font-size: 11px; color: #8e8e93; background: rgba(255,255,255,0.06);
-      padding: 2px 6px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; margin-top: 1px;
+      font-size: 11px; font-weight: 500; color: #8e8e93;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px; border-radius: 5px; flex-shrink: 0; white-space: nowrap; margin-top: 1px;
+      border: 0.5px solid rgba(255, 255, 255, 0.04);
     }
-    .log-tag-badge {
-      font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
-      flex-shrink: 0; letter-spacing: 0.04em; margin-top: 1px; white-space: nowrap;
-    }
-    .log-tag-badge.exec { background: rgba(52,199,89,0.2); color: #30d158; border: 0.5px solid rgba(52,199,89,0.3); }
-    .log-tag-badge.err  { background: rgba(255,69,58,0.2);  color: #ff453a; border: 0.5px solid rgba(255,69,58,0.3); }
-    .log-tag-badge.warn { background: rgba(255,159,10,0.2); color: #ffd60a; border: 0.5px solid rgba(255,159,10,0.3); }
-    .log-tag-badge.http { background: rgba(10,132,255,0.2); color: #64d2ff; border: 0.5px solid rgba(10,132,255,0.3); }
-    .log-tag-badge.sys  { background: rgba(175,82,222,0.2); color: #bf5af2; border: 0.5px solid rgba(175,82,222,0.3); }
-    .log-tag-badge.info { background: rgba(142,142,147,0.2); color: #98989d; border: 0.5px solid rgba(142,142,147,0.3); }
 
-    .log-msg-text { flex: 1; word-break: break-word; color: #d1d1d6; }
+    /* iOS Status Pill Badges */
+    .log-tag-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px;
+      flex-shrink: 0; letter-spacing: 0.03em; margin-top: 1px; white-space: nowrap;
+      text-transform: uppercase;
+    }
+    .log-tag-badge.exec { background: rgba(48, 209, 88, 0.16); color: #30d158; border: 0.5px solid rgba(48, 209, 88, 0.3); }
+    .log-tag-badge.err  { background: rgba(255, 69, 58, 0.16);  color: #ff453a; border: 0.5px solid rgba(255, 69, 58, 0.3); }
+    .log-tag-badge.warn { background: rgba(255, 214, 10, 0.16); color: #ffd60a; border: 0.5px solid rgba(255, 214, 10, 0.3); }
+    .log-tag-badge.http { background: rgba(100, 210, 255, 0.16); color: #64d2ff; border: 0.5px solid rgba(100, 210, 255, 0.3); }
+    .log-tag-badge.sys  { background: rgba(191, 90, 242, 0.16); color: #bf5af2; border: 0.5px solid rgba(191, 90, 242, 0.3); }
+    .log-tag-badge.info { background: rgba(142, 142, 147, 0.16); color: #98989d; border: 0.5px solid rgba(142, 142, 147, 0.3); }
+
+    .log-msg-text { flex: 1; word-break: break-word; color: #e5e5ea; font-size: 12px; font-family: "SF Mono", Menlo, Monaco, Consolas, monospace; }
     .log-msg-text .hl-target { color: #64d2ff; font-weight: 600; }
     .log-msg-text .hl-success { color: #30d158; font-weight: 600; }
     .log-msg-text .hl-error { color: #ff453a; font-weight: 600; }
 
+    /* iOS Log Footer */
     .log-footer-bar {
       display: flex; align-items: center; justify-content: space-between;
-      font-size: 11px; color: #8e8e93; padding: 4px 4px 0;
+      font-size: 12px; color: #8e8e93; padding: 6px 4px 2px;
     }
-    .log-autoscroll-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
-    .log-autoscroll-toggle input { accent-color: #007aff; }
+    .log-autoscroll-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; -webkit-user-select: none; }
+    .log-autoscroll-toggle input { accent-color: #007aff; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -1223,7 +1324,7 @@
 </div>
 
 <!-- ══ LIVE LOGS PANEL ════════════════════════════════════════════════════ -->
-<div class="rc-panel" id="logs-panel" style="display:flex; flex-direction:column; background:#000;">
+<div class="rc-panel" id="logs-panel" style="display:flex; flex-direction:column;">
   <div class="panel-navbar">
     <button class="panel-back" onclick="closeLogPanel()">
       <i class="f7-icons">xmark</i> Close
@@ -1276,6 +1377,7 @@
 
       <div class="log-search-row">
         <div class="search-wrap" style="flex:1; margin:0;">
+          <i class="f7-icons search-icon">search</i>
           <input class="search-input" type="search" placeholder="Search log entries..." id="log-filter-input" oninput="renderLogsUI()">
         </div>
         <button class="log-action-btn" onclick="copyLogDisplay()" title="Copy Logs to Clipboard">

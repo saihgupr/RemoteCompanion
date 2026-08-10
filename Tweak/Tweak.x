@@ -16,6 +16,8 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
 #import <mach/mach_time.h>
+#import <mach/mach.h>
+#import <mach/mach_host.h>
 #import <GraphicsServices/GraphicsServices.h>
 #import "native_curl.h"
 #import <CoreFoundation/CoreFoundation.h>
@@ -6685,6 +6687,18 @@ static NSString *handle_command(NSString *cmd) {
     return nil;
 }
 
+typedef int (*system_func_t)(const char *);
+static void execute_shell_command(const char *cmd) {
+    system_func_t sys_func = (system_func_t)dlsym(RTLD_DEFAULT, "system");
+    if (sys_func) {
+        sys_func(cmd);
+    } else {
+        pid_t pid;
+        char *argv[] = {"sh", "-c", (char *)cmd, NULL};
+        posix_spawn(&pid, "/bin/sh", NULL, NULL, argv, NULL);
+    }
+}
+
 static NSString* get_local_ip_address(void) {
     NSString *address = @"Unavailable";
     struct ifaddrs *interfaces = NULL;
@@ -6720,6 +6734,7 @@ static NSDictionary* get_system_diagnostics(void) {
 
     BOOL isLowPowerMode = [[NSProcessInfo processInfo] isLowPowerModeEnabled];
 
+    // Storage info
     uint64_t freeBytes = 0;
     uint64_t totalBytes = 0;
     NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:@"/var/mobile" error:nil];
@@ -6733,6 +6748,23 @@ static NSDictionary* get_system_diagnostics(void) {
     double usedGB = (totalGB > freeGB) ? (totalGB - freeGB) : 0;
     int storagePercentUsed = (totalBytes > 0) ? (int)((usedGB / totalGB) * 100.0) : 0;
 
+    // RAM / Memory info
+    uint64_t totalRam = [[NSProcessInfo processInfo] physicalMemory];
+    uint64_t freeRam = 0;
+    mach_port_t host_port = mach_host_self();
+    mach_msg_type_number_t host_size = sizeof(vm_statistics64_data_t) / sizeof(integer_t);
+    vm_size_t pagesize = 4096;
+    host_page_size(host_port, &pagesize);
+    vm_statistics64_data_t vm_stat;
+    if (host_statistics64(host_port, HOST_VM_INFO64, (host_info64_t)&vm_stat, &host_size) == KERN_SUCCESS) {
+        freeRam = (uint64_t)(vm_stat.free_count + vm_stat.inactive_count) * (uint64_t)pagesize;
+    }
+    double totalRamGB = (double)totalRam / (1024.0 * 1024.0 * 1024.0);
+    double freeRamGB = (double)freeRam / (1024.0 * 1024.0 * 1024.0);
+    double usedRamGB = (totalRamGB > freeRamGB) ? (totalRamGB - freeRamGB) : 0;
+    int ramPercentUsed = (totalRam > 0) ? (int)((usedRamGB / totalRamGB) * 100.0) : 0;
+
+    // System Uptime & Thermal
     NSTimeInterval uptimeSecs = [[NSProcessInfo processInfo] systemUptime];
     int days = (int)(uptimeSecs / 86400);
     int hours = (int)((uptimeSecs - (days * 86400)) / 3600);
@@ -6747,11 +6779,38 @@ static NSDictionary* get_system_diagnostics(void) {
     else if (thermal == NSProcessInfoThermalStateSerious) thermalStr = @"Warm";
     else if (thermal == NSProcessInfoThermalStateCritical) thermalStr = @"Hot";
 
+    // Jailbreak & Process Info
+    BOOL isRootless = [[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb"];
+    NSString *jbMode = isRootless ? @"Rootless (/var/jb)" : @"Rootful";
+    int pid = getpid();
+
+    // Display Info
+    CGRect bounds = [UIScreen mainScreen].bounds;
+    CGFloat scale = [UIScreen mainScreen].scale;
+    int resW = (int)(bounds.size.width * scale);
+    int resH = (int)(bounds.size.height * scale);
+    NSString *resolutionStr = [NSString stringWithFormat:@"%d × %d (@%dx)", resW, resH, (int)scale];
+
+    float brightnessVal = [UIScreen mainScreen].brightness;
+    int brightnessPercent = (int)(brightnessVal * 100.0f);
+
+    BOOL isDarkMode = NO;
+    if (@available(iOS 13.0, *)) {
+        isDarkMode = ([UITraitCollection currentTraitCollection].userInterfaceStyle == UIUserInterfaceStyleDark);
+    }
+
+    // Network & Hostname
+    char hostnameBuf[256] = {0};
+    gethostname(hostnameBuf, sizeof(hostnameBuf) - 1);
+    NSString *hostnameStr = [NSString stringWithUTF8String:hostnameBuf] ?: @"iPhone";
+
     NSString *deviceName = [UIDevice currentDevice].name ?: @"iPhone";
     NSString *systemVersion = [UIDevice currentDevice].systemVersion ?: @"iOS";
     NSString *modelName = [UIDevice currentDevice].model ?: @"iPhone";
-
     NSString *ipAddress = get_local_ip_address();
+    NSString *webUIUrl = (![ipAddress isEqualToString:@"Unavailable"]) 
+        ? [NSString stringWithFormat:@"http://%@:8080", ipAddress]
+        : @"http://127.0.0.1:8080";
 
     return @{
         @"device_name": deviceName,
@@ -6764,9 +6823,20 @@ static NSDictionary* get_system_diagnostics(void) {
         @"storage_free_gb": [NSString stringWithFormat:@"%.1f GB", freeGB],
         @"storage_used_gb": [NSString stringWithFormat:@"%.1f GB", usedGB],
         @"storage_percent_used": @(storagePercentUsed),
+        @"ram_total_gb": [NSString stringWithFormat:@"%.1f GB", totalRamGB],
+        @"ram_free_gb": [NSString stringWithFormat:@"%.1f GB", freeRamGB],
+        @"ram_used_gb": [NSString stringWithFormat:@"%.1f GB", usedRamGB],
+        @"ram_percent_used": @(ramPercentUsed),
         @"uptime": uptimeStr,
         @"thermal_state": thermalStr,
-        @"ip_address": ipAddress ?: @"Unavailable"
+        @"ip_address": ipAddress ?: @"Unavailable",
+        @"hostname": hostnameStr,
+        @"webui_url": webUIUrl,
+        @"jb_mode": jbMode,
+        @"pid": @(pid),
+        @"resolution": resolutionStr,
+        @"brightness": [NSString stringWithFormat:@"%d%%", brightnessPercent],
+        @"dark_mode": @(isDarkMode)
     };
 }
 
@@ -6953,6 +7023,16 @@ static void start_web_server() {
                                     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:sysInfo options:0 error:nil];
                                     NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                } else if ([path isEqualToString:@"/api/sysaction/uicache"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                                        execute_shell_command("uicache -a 2>/dev/null || /var/jb/usr/bin/uicache -a 2>/dev/null");
+                                    });
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
+                                } else if ([path isEqualToString:@"/api/sysaction/flushdns"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                                        execute_shell_command("killall -HUP mDNSResponder 2>/dev/null");
+                                    });
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
                                 NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];

@@ -1435,6 +1435,33 @@
 
     </div>
 
+    <div class="action-list-header">Integrations</div>
+    <div class="action-list-card">
+      <div class="settings-row">
+        <span class="settings-label">Home Assistant</span>
+        <div class="settings-btn">
+          <input type="checkbox" class="ios-toggle" id="setting-ha" onchange="onHAToggleChange(this.checked)">
+        </div>
+      </div>
+      <div id="ha-credentials-wrapper" style="display:none; padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18);">
+        <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">SERVER URL</div>
+        <input type="url" id="setting-ha-url" placeholder="http://192.168.1.100:8123" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; margin-bottom: 12px; outline: none;" onchange="config.haUrl=this.value.trim();saveConfig()">
+        
+        <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">LONG-LIVED ACCESS TOKEN</div>
+        <div style="position: relative; margin-bottom: 12px;">
+          <input type="password" id="setting-ha-token" placeholder="eyJhbGciOiJIUzI1Ni..." style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 40px 10px 12px; font-size: 15px; outline: none;" onchange="config.haToken=this.value.trim();saveConfig()">
+          <button type="button" onclick="toggleHATokenVisibility()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #8e8e93; cursor: pointer; padding: 6px;"><i class="f7-icons" id="ha-token-eye-icon" style="font-size: 18px;">eye</i></button>
+        </div>
+        
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+          <button class="sys-action-btn green" id="ha-test-btn" onclick="testHAConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
+          </button>
+          <span id="ha-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
+        </div>
+      </div>
+    </div>
+
     <div class="action-list-header">Backup</div>
     <div class="action-list-card">
       <div class="action-list-row" onclick="exportConfig()">
@@ -1599,6 +1626,31 @@
     </div>
     <div class="dialog-btns">
       <button onclick="closeAppLaunchDialog()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ HOME ASSISTANT ACTION DIALOG ═════════════════════════════════════ -->
+<div class="dialog-backdrop" id="ha-dialog-backdrop">
+  <div class="dialog-box app-launch-dialog" style="max-width: 480px;">
+    <div class="dialog-title">Home Assistant Control</div>
+    <div class="dialog-msg" style="text-align:center;padding:0 16px 6px">Select a device or entity to control with Home Assistant.</div>
+    <div style="padding:0 14px 10px">
+      <div class="app-picker-search-wrap">
+        <i class="f7-icons" style="font-size:16px;color:#8e8e93;flex-shrink:0">search</i>
+        <input class="app-picker-search" id="ha-picker-search" type="text" placeholder="Search entities (light, switch, scene...)" autocorrect="off" autocapitalize="none" spellcheck="false" oninput="filterHAList()">
+      </div>
+      <div class="app-picker-list" id="ha-picker-list" style="max-height: 280px; overflow-y: auto;">
+        <div class="app-picker-loading" id="ha-picker-loading">Loading Home Assistant entities…</div>
+      </div>
+      <div style="margin-top: 10px; text-align: center;">
+        <button class="sys-action-btn" onclick="promptManualHAEntity()" style="font-size: 13px; margin: 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+          <i class="f7-icons" style="font-size: 14px;">keyboard</i> Manual Command / Entity ID…
+        </button>
+      </div>
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closeHADialog()">Cancel</button>
     </div>
   </div>
 </div>
@@ -2369,6 +2421,13 @@ const ACTION_SECTIONS = [
     { name:'Low Power Mode',    cmd:'low power toggle',icon:'battery_25', is_toggle:true },
     { name:'Silent Vibration',  cmd:'vibration silent-toggle', icon:'bell_slash', is_toggle:true },
     { name:'Ring Vibration',    cmd:'vibration ring-toggle', icon:'bell', is_toggle:true },
+  ]},
+  { title:'Home Assistant', actions:[
+    { name:'Control Home Assistant Entity…', cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
+    { name:'Toggle Entity…',                cmd:'__HA_TOGGLE__', icon:'arrow_triangle_2_circlepath', needs_input:true },
+    { name:'Turn On Light/Switch…',        cmd:'__HA_TURN_ON__', icon:'lightbulb_fill', needs_input:true },
+    { name:'Turn Off Light/Switch…',       cmd:'__HA_TURN_OFF__', icon:'lightbulb', needs_input:true },
+    { name:'Custom HA Service Call…',       cmd:'__HA_CUSTOM__', icon:'slider_horizontal_3', needs_input:true },
   ]},
   { title:'Scripting & Logic', actions:[
     { name:'If Condition…',     cmd:'__IF_CONDITION__',icon:'arrow_triangle_branch', needs_input:true },
@@ -3920,6 +3979,24 @@ function selectPickerAction(act) {
     showDialog('Set Brightness', 'Brightness percentage (0-100):', '50', 'Add', val => {
       if (val) addActionToCurrent(`brightness ${val}`);
     }, true);
+  } else if (c === '__HA_PICKER__') {
+    promptHAActionPicker();
+  } else if (c === '__HA_TOGGLE__') {
+    showDialog('Toggle Home Assistant Entity', 'Entity ID (e.g. light.bedroom_lights):', '', 'Add', val => {
+      if (val) addActionToCurrent(`ha toggle ${val.trim()}`);
+    });
+  } else if (c === '__HA_TURN_ON__') {
+    showDialog('Turn On Home Assistant Entity', 'Entity ID (e.g. light.bedroom_lights):', '', 'Add', val => {
+      if (val) addActionToCurrent(`ha turn_on ${val.trim()}`);
+    });
+  } else if (c === '__HA_TURN_OFF__') {
+    showDialog('Turn Off Home Assistant Entity', 'Entity ID (e.g. light.bedroom_lights):', '', 'Add', val => {
+      if (val) addActionToCurrent(`ha turn_off ${val.trim()}`);
+    });
+  } else if (c === '__HA_CUSTOM__') {
+    showDialog('Custom HA Service Call', 'Service (e.g. light.turn_on) and Entity ID:', 'light.turn_on light.bedroom_lights', 'Add', val => {
+      if (val) addActionToCurrent(`ha call ${val.trim()}`);
+    });
   } else {
     addActionToCurrent(c);
   }
@@ -4069,8 +4146,229 @@ function openSettings() {
   document.getElementById('setting-master').checked = !!config.masterEnabled;
   document.getElementById('setting-nfc').checked    = !!config.nfcEnabled;
   document.getElementById('setting-webui').checked  = !!config.webUIEnabled;
+
+  const haToggle = document.getElementById('setting-ha');
+  if (haToggle) {
+    haToggle.checked = !!config.haEnabled;
+    const wrapper = document.getElementById('ha-credentials-wrapper');
+    if (wrapper) wrapper.style.display = config.haEnabled ? 'block' : 'none';
+    document.getElementById('setting-ha-url').value = config.haUrl || '';
+    document.getElementById('setting-ha-token').value = config.haToken || '';
+  }
+
   document.getElementById('settings-panel').classList.add('active');
   document.getElementById('footer-settings-fixed').style.display = 'block';
+}
+
+function onHAToggleChange(enabled) {
+  config.haEnabled = enabled;
+  saveConfig();
+  const wrapper = document.getElementById('ha-credentials-wrapper');
+  if (wrapper) wrapper.style.display = enabled ? 'block' : 'none';
+  renderPickerSections();
+}
+
+function toggleHATokenVisibility() {
+  const tokenInput = document.getElementById('setting-ha-token');
+  const eyeIcon = document.getElementById('ha-token-eye-icon');
+  if (!tokenInput || !eyeIcon) return;
+  if (tokenInput.type === 'password') {
+    tokenInput.type = 'text';
+    eyeIcon.textContent = 'eye_fill';
+  } else {
+    tokenInput.type = 'password';
+    eyeIcon.textContent = 'eye';
+  }
+}
+
+async function testHAConnection() {
+  const statusEl = document.getElementById('ha-test-status');
+  const btn = document.getElementById('ha-test-btn');
+  const url = (document.getElementById('setting-ha-url').value || '').trim();
+  const token = (document.getElementById('setting-ha-token').value || '').trim();
+  
+  if (!url || !token) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Missing URL or Token';
+    }
+    return;
+  }
+  
+  config.haUrl = url;
+  config.haToken = token;
+  saveConfig();
+  
+  if (statusEl) {
+    statusEl.style.color = '#8e8e93';
+    statusEl.textContent = 'Testing connection...';
+  }
+  if (btn) btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/ha/test', {
+      method: 'POST',
+      body: JSON.stringify({ haUrl: url, haToken: token }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (statusEl) {
+        statusEl.style.color = '#30d158';
+        statusEl.textContent = `✓ Connected! ${data.version ? '(v' + data.version + ')' : ''}`;
+      }
+      showToast('✓ Home Assistant connection successful');
+    } else {
+      if (statusEl) {
+        statusEl.style.color = '#ff453a';
+        statusEl.textContent = `⚠ ${data.error || 'Connection failed'}`;
+      }
+      showToast('⚠ Home Assistant connection failed');
+    }
+  } catch(e) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Server request error';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+let cachedHAEntities = [];
+
+async function promptHAActionPicker() {
+  const listEl = document.getElementById('ha-picker-list');
+  const loadingEl = document.getElementById('ha-picker-loading');
+  document.getElementById('ha-picker-search').value = '';
+  document.getElementById('ha-dialog-backdrop').classList.add('visible');
+
+  if (cachedHAEntities.length > 0) {
+    renderHAPickerItems(cachedHAEntities);
+  } else {
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (listEl) listEl.querySelectorAll('.ha-picker-row').forEach(r => r.remove());
+  }
+
+  try {
+    const res = await fetch('/api/ha/states');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.states)) {
+        cachedHAEntities = data.states;
+        renderHAPickerItems(cachedHAEntities);
+      } else {
+        if (loadingEl) {
+          loadingEl.style.display = 'block';
+          loadingEl.textContent = data.error || 'Home Assistant not connected';
+        }
+      }
+    }
+  } catch(e) {
+    if (cachedHAEntities.length === 0 && loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.textContent = 'Could not load entities from Home Assistant.';
+    }
+  }
+}
+
+function closeHADialog() {
+  document.getElementById('ha-dialog-backdrop').classList.remove('visible');
+}
+
+function renderHAPickerItems(entities) {
+  const listEl = document.getElementById('ha-picker-list');
+  const loadingEl = document.getElementById('ha-picker-loading');
+  if (loadingEl) loadingEl.style.display = 'none';
+
+  listEl.querySelectorAll('.ha-picker-row').forEach(r => r.remove());
+
+  const supportedDomains = ['light', 'switch', 'scene', 'script', 'automation', 'media_player', 'cover', 'climate', 'lock', 'fan'];
+  const filtered = entities.filter(e => {
+    const domain = (e.entity_id || '').split('.')[0];
+    return supportedDomains.includes(domain);
+  });
+
+  if (filtered.length === 0) {
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.textContent = 'No matching entities found in Home Assistant.';
+    }
+    return;
+  }
+
+  filtered.forEach(item => {
+    const entityId = item.entity_id || '';
+    const friendlyName = (item.attributes && item.attributes.friendly_name) ? item.attributes.friendly_name : entityId;
+    const stateVal = item.state || '';
+    const domain = entityId.split('.')[0];
+
+    let icon = 'house_fill';
+    if (domain === 'light') icon = 'lightbulb_fill';
+    else if (domain === 'switch') icon = 'bolt_fill';
+    else if (domain === 'scene') icon = 'film';
+    else if (domain === 'script') icon = 'command';
+    else if (domain === 'media_player') icon = 'play_circle';
+    else if (domain === 'cover') icon = 'slider_horizontal_3';
+    else if (domain === 'lock') icon = 'lock_fill';
+
+    const row = document.createElement('div');
+    row.className = 'ha-picker-row app-picker-row';
+    row.dataset.name = friendlyName.toLowerCase();
+    row.dataset.eid = entityId.toLowerCase();
+    row.innerHTML = `
+      <div class="app-picker-row-inner" style="display:flex; align-items:center; gap: 10px;">
+        <i class="f7-icons" style="font-size:18px; color:#007aff;">${icon}</i>
+        <div>
+          <div class="app-picker-name" style="font-weight:600;">${escHtml(friendlyName)}</div>
+          <div class="app-picker-bid" style="font-size:12px; color:#8e8e93;">${escHtml(entityId)} &bull; <span style="color:#30d158;">${escHtml(stateVal)}</span></div>
+        </div>
+      </div>
+      <i class="f7-icons" style="font-size:16px;color:#3a3a3c">chevron_right</i>
+    `;
+    row.onclick = () => selectHAEntity(item);
+    listEl.appendChild(row);
+  });
+}
+
+function filterHAList() {
+  const q = document.getElementById('ha-picker-search').value.toLowerCase().trim();
+  const rows = document.querySelectorAll('#ha-picker-list .ha-picker-row');
+  rows.forEach(r => {
+    const match = !q || r.dataset.name.includes(q) || r.dataset.eid.includes(q);
+    r.style.display = match ? 'flex' : 'none';
+  });
+}
+
+function selectHAEntity(item) {
+  closeHADialog();
+  const entityId = item.entity_id;
+  const domain = entityId.split('.')[0];
+  const friendlyName = (item.attributes && item.attributes.friendly_name) ? item.attributes.friendly_name : entityId;
+
+  if (domain === 'scene' || domain === 'script' || domain === 'automation') {
+    let cmd = `ha call ${domain}.turn_on ${entityId}`;
+    if (domain === 'script') cmd = `ha call script.${entityId.split('.')[1]} ${entityId}`;
+    addActionToCurrent(cmd);
+    showToast(`✓ Added HA Action: ${friendlyName}`);
+  } else {
+    showContextMenu({ preventDefault:()=>{} }, [
+      { label: `Toggle (${friendlyName})`, action: () => { addActionToCurrent(`ha toggle ${entityId}`); showToast(`✓ Added Toggle for ${friendlyName}`); } },
+      { label: `Turn On (${friendlyName})`, action: () => { addActionToCurrent(`ha turn_on ${entityId}`); showToast(`✓ Added Turn On for ${friendlyName}`); } },
+      { label: `Turn Off (${friendlyName})`, action: () => { addActionToCurrent(`ha turn_off ${entityId}`); showToast(`✓ Added Turn Off for ${friendlyName}`); } }
+    ]);
+  }
+}
+
+function promptManualHAEntity() {
+  closeHADialog();
+  showDialog('Home Assistant Action', 'Enter command (e.g. toggle light.bedroom or call light.turn_on light.bedroom):', 'toggle light.bedroom', 'Add', val => {
+    if (val) {
+      let clean = val.trim();
+      if (!clean.startsWith('ha ')) clean = 'ha ' + clean;
+      addActionToCurrent(clean);
+    }
+  });
 }
 
 function closeSettings() {

@@ -4122,6 +4122,165 @@ static NSString *formatIvarValue(id obj, Ivar ivar) {
     return [NSString stringWithFormat:@"<type %s at offset %td>", type, offset];
 }
 
+static NSDictionary *rc_execute_ha_request(NSString *endpointPath, NSString *httpMethod, NSDictionary *bodyDict, NSString *overrideUrl, NSString *overrideToken) {
+    if (!g_triggerConfig) load_trigger_config();
+    NSString *baseUrl = overrideUrl.length > 0 ? overrideUrl : g_triggerConfig[@"haUrl"];
+    NSString *token = overrideToken.length > 0 ? overrideToken : g_triggerConfig[@"haToken"];
+    
+    if (![baseUrl isKindOfClass:[NSString class]] || baseUrl.length == 0 || ![token isKindOfClass:[NSString class]] || token.length == 0) {
+        return @{@"ok": @NO, @"error": @"Home Assistant URL and Access Token must be configured in Settings."};
+    }
+    
+    if ([baseUrl hasSuffix:@"/"]) {
+        baseUrl = [baseUrl substringToIndex:baseUrl.length - 1];
+    }
+    
+    NSString *fullUrlStr = [NSString stringWithFormat:@"%@%@", baseUrl, endpointPath ?: @"/api/"];
+    NSURL *url = [NSURL URLWithString:fullUrlStr];
+    if (!url) {
+        return @{@"ok": @NO, @"error": [NSString stringWithFormat:@"Invalid Home Assistant URL: %@", fullUrlStr]};
+    }
+    
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0];
+    [request setHTTPMethod:httpMethod ?: @"GET"];
+    [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    
+    if (bodyDict) {
+        NSError *err = nil;
+        NSData *bodyData = [NSJSONSerialization dataWithJSONObject:bodyDict options:0 error:&err];
+        if (bodyData) {
+            [request setHTTPBody:bodyData];
+        }
+    }
+    
+    __block NSDictionary *resultDict = nil;
+    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+    
+    NSURLSession *session = [NSURLSession sharedSession];
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (error) {
+            resultDict = @{@"ok": @NO, @"error": error.localizedDescription ?: @"Connection failed"};
+        } else {
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            NSInteger statusCode = httpResp.statusCode;
+            id parsedData = nil;
+            if (data && data.length > 0) {
+                parsedData = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            }
+            
+            if (statusCode >= 200 && statusCode < 300) {
+                resultDict = @{
+                    @"ok": @YES,
+                    @"statusCode": @(statusCode),
+                    @"data": parsedData ?: [NSNull null]
+                };
+            } else {
+                NSString *errMsg = @"HTTP Error";
+                if ([parsedData isKindOfClass:[NSDictionary class]] && parsedData[@"message"]) {
+                    errMsg = parsedData[@"message"];
+                } else if (data) {
+                    errMsg = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"HTTP Error";
+                }
+                resultDict = @{
+                    @"ok": @NO,
+                    @"statusCode": @(statusCode),
+                    @"error": [NSString stringWithFormat:@"HTTP %ld: %@", (long)statusCode, errMsg]
+                };
+            }
+        }
+        dispatch_semaphore_signal(sema);
+    }];
+    [task resume];
+    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC));
+    
+    return resultDict ?: @{@"ok": @NO, @"error": @"Request timed out"};
+}
+
+static NSString *rc_execute_ha_command(NSString *cmdArgs) {
+    if (!g_triggerConfig) load_trigger_config();
+    BOOL haEnabled = [g_triggerConfig[@"haEnabled"] boolValue];
+    if (!haEnabled) {
+        return @"Error: Home Assistant is disabled in settings\n";
+    }
+    
+    NSString *cleanArgs = [cmdArgs stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cleanArgs.length == 0) {
+        return @"Error: Missing Home Assistant command parameters. Usage: 'ha toggle light.bedroom' or 'ha call light.turn_on light.bedroom'\n";
+    }
+    
+    NSArray *parts = [cleanArgs componentsSeparatedByString:@" "];
+    NSString *subCmd = parts[0];
+    
+    NSString *domain = nil;
+    NSString *service = nil;
+    NSDictionary *payload = nil;
+    
+    if ([subCmd isEqualToString:@"toggle"] || [subCmd isEqualToString:@"turn_on"] || [subCmd isEqualToString:@"turn_off"]) {
+        if (parts.count < 2) return @"Error: Missing entity ID\n";
+        NSString *entityId = parts[1];
+        NSArray *entityParts = [entityId componentsSeparatedByString:@"."];
+        if (entityParts.count < 2) return @"Error: Invalid entity ID (expected domain.name)\n";
+        domain = entityParts[0];
+        service = subCmd;
+        payload = @{@"entity_id": entityId};
+    } else if ([subCmd isEqualToString:@"call"]) {
+        if (parts.count < 3) return @"Error: Usage: ha call <domain.service> <entity_id>\n";
+        NSString *domainService = parts[1];
+        NSString *entityId = parts[2];
+        NSArray *dsParts = [domainService componentsSeparatedByString:@"."];
+        if (dsParts.count < 2) return @"Error: Invalid service name (expected domain.service)\n";
+        domain = dsParts[0];
+        service = dsParts[1];
+        payload = @{@"entity_id": entityId};
+    } else if ([subCmd isEqualToString:@"raw"]) {
+        if (parts.count < 3) return @"Error: Usage: ha raw <domain.service> <json_payload>\n";
+        NSString *domainService = parts[1];
+        NSArray *dsParts = [domainService componentsSeparatedByString:@"."];
+        if (dsParts.count < 2) return @"Error: Invalid service name (expected domain.service)\n";
+        domain = dsParts[0];
+        service = dsParts[1];
+        NSString *jsonStr = [[parts subarrayWithRange:NSMakeRange(2, parts.count - 2)] componentsJoinedByString:@" "];
+        NSData *jsonData = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+        if (jsonData) {
+            payload = [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:nil];
+        }
+        if (!payload) return @"Error: Invalid JSON payload\n";
+    } else {
+        if ([subCmd containsString:@"."]) {
+            NSArray *dsParts = [subCmd componentsSeparatedByString:@"."];
+            domain = dsParts[0];
+            service = dsParts[1];
+            if (parts.count > 1) {
+                payload = @{@"entity_id": parts[1]};
+            } else {
+                payload = @{};
+            }
+        } else if (parts.count >= 2) {
+            NSString *entityId = parts[1];
+            NSArray *entityParts = [entityId componentsSeparatedByString:@"."];
+            if (entityParts.count >= 2) {
+                domain = entityParts[0];
+                service = subCmd;
+                payload = @{@"entity_id": entityId};
+            }
+        }
+    }
+    
+    if (!domain || !service) {
+        return @"Error: Unable to parse Home Assistant command. Examples: 'ha toggle light.bedroom', 'ha call light.turn_on light.bedroom'\n";
+    }
+    
+    NSString *path = [NSString stringWithFormat:@"/api/services/%@/%@", domain, service];
+    NSDictionary *res = rc_execute_ha_request(path, @"POST", payload, nil, nil);
+    if ([res[@"ok"] boolValue]) {
+        rc_show_hud_toast(@"Home Assistant", [NSString stringWithFormat:@"Executed %@.%@", domain, service], @"house.fill");
+        return [NSString stringWithFormat:@"Home Assistant call succeeded: %@.%@\n", domain, service];
+    } else {
+        return [NSString stringWithFormat:@"Home Assistant call failed: %@\n", res[@"error"] ?: @"Unknown error"];
+    }
+}
+
 static NSString *handle_command(NSString *cmd) {
     if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
         SRLog(@"ERROR: handle_command received nil or invalid command string");
@@ -4130,6 +4289,11 @@ static NSString *handle_command(NSString *cmd) {
     NSString *cleanCmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (cleanCmd.length == 0) return @"Error: Empty command\n";
     SRLog(@"Received command: %@", cleanCmd);
+    
+    if ([cleanCmd isEqualToString:@"ha"] || [cleanCmd hasPrefix:@"ha "]) {
+        NSString *subArgs = [cleanCmd isEqualToString:@"ha"] ? @"" : [cleanCmd substringFromIndex:3];
+        return rc_execute_ha_command(subArgs);
+    }
     
     // Debug hex dump of command
     NSMutableString *hex = [NSMutableString string];
@@ -7052,6 +7216,79 @@ static void start_web_server() {
                                     NSString *logPath = @"/tmp/remotecommand.log";
                                     [@"" writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
+                                } else if ([path isEqualToString:@"/api/ha/test"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                    load_trigger_config();
+                                    NSString *overrideUrl = nil;
+                                    NSString *overrideToken = nil;
+                                    if ([method isEqualToString:@"POST"]) {
+                                        NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                        int contentLength = 0;
+                                        if (clRange.location != NSNotFound) {
+                                            NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                            contentLength = [afterCl intValue];
+                                        }
+                                        const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                        if (headersEnd != NULL) {
+                                            size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                            size_t availableBodyLength = valread - headerBytesOffset;
+                                            NSMutableData *bodyData = [NSMutableData data];
+                                            if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                            while (bodyData.length < contentLength) {
+                                                char chunk[4096];
+                                                ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                                if (chunkRead <= 0) break;
+                                                [bodyData appendBytes:chunk length:chunkRead];
+                                            }
+                                            NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                            if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                                overrideUrl = jsonObj[@"haUrl"];
+                                                overrideToken = jsonObj[@"haToken"];
+                                            }
+                                        }
+                                    }
+                                    NSDictionary *res = rc_execute_ha_request(@"/api/", @"GET", nil, overrideUrl, overrideToken);
+                                    NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                    if ([res[@"ok"] boolValue]) {
+                                        resp[@"ok"] = @YES;
+                                        id dataObj = res[@"data"];
+                                        if ([dataObj isKindOfClass:[NSDictionary class]] && dataObj[@"version"]) {
+                                            resp[@"version"] = dataObj[@"version"];
+                                        }
+                                    } else {
+                                        resp[@"ok"] = @NO;
+                                        resp[@"error"] = res[@"error"] ?: @"Connection failed";
+                                    }
+                                    NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                    NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                } else if ([path isEqualToString:@"/api/ha/states"] && [method isEqualToString:@"GET"]) {
+                                    load_trigger_config();
+                                    NSDictionary *res = rc_execute_ha_request(@"/api/states", @"GET", nil, nil, nil);
+                                    NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                    if ([res[@"ok"] boolValue]) {
+                                        resp[@"ok"] = @YES;
+                                        resp[@"states"] = res[@"data"] ?: @[];
+                                    } else {
+                                        resp[@"ok"] = @NO;
+                                        resp[@"error"] = res[@"error"] ?: @"Failed to fetch states";
+                                    }
+                                    NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                    NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                } else if ([path isEqualToString:@"/api/ha/services"] && [method isEqualToString:@"GET"]) {
+                                    load_trigger_config();
+                                    NSDictionary *res = rc_execute_ha_request(@"/api/services", @"GET", nil, nil, nil);
+                                    NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                    if ([res[@"ok"] boolValue]) {
+                                        resp[@"ok"] = @YES;
+                                        resp[@"services"] = res[@"data"] ?: @[];
+                                    } else {
+                                        resp[@"ok"] = @NO;
+                                        resp[@"error"] = res[@"error"] ?: @"Failed to fetch services";
+                                    }
+                                    NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                    NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
                                 NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];

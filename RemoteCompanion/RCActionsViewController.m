@@ -185,6 +185,14 @@ static id g_actionClipboard = nil;
                                              handler:^(__kindof UIAction * _Nonnull action) {
         [weakSelf exportActions];
     }]];
+    UIAction *clearAction = [UIAction actionWithTitle:@"Clear All Actions" 
+                                                image:[UIImage systemImageNamed:@"trash"] 
+                                           identifier:nil 
+                                              handler:^(__kindof UIAction * _Nonnull action) {
+        [weakSelf clearAllActions];
+    }];
+    clearAction.attributes = UIMenuElementAttributesDestructive;
+    [menuActions addObject:clearAction];
     
     UIMenu *shareMenu = [UIMenu menuWithTitle:@"" children:menuActions];
     UIBarButtonItem *moreButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis.circle"] menu:shareMenu];
@@ -503,6 +511,24 @@ static id g_actionClipboard = nil;
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (void)clearAllActions {
+    if (self.actions.count == 0) return;
+    
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Clear All Actions"
+                                                                   message:@"Are you sure you want to clear all actions from this trigger?"
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Clear All Actions" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        [self.actions removeAllObjects];
+        [[RCConfigManager sharedManager] setActions:self.actions forTrigger:self.triggerKey];
+        [self.tableView reloadData];
+    }]];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    
+    alert.popoverPresentationController.barButtonItem = self.navigationItem.rightBarButtonItems.firstObject;
+    [self presentViewController:alert animated:YES completion:nil];
+}
 
 - (void)addAction {
 

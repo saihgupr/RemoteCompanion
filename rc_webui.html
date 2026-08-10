@@ -3185,8 +3185,10 @@ function renderActionNameHtml(action, idx) {
   }
   const toggleInfo = parseToggleCmd(action);
   if (toggleInfo) {
+    const charLen = toggleInfo.currentDisplaySuffix ? toggleInfo.currentDisplaySuffix.length : 2;
+    const selectWidth = (charLen + 1.8) + 'ch';
     let html = `<span>${escHtml(toggleInfo.name)}</span> `;
-    html += `<select onchange="updateToggleAction(${idx}, this.value)" onclick="event.stopPropagation()" style="background:#2c2c2e;color:#0a84ff;border:none;border-radius:6px;padding:2px 6px;font-size:14px;font-family:inherit;outline:none;cursor:pointer;">`;
+    html += `<select onchange="updateToggleAction(${idx}, this.value)" onclick="event.stopPropagation()" style="appearance:none;-webkit-appearance:none;-moz-appearance:none;background:#2c2c2e;color:#0a84ff;border:none;border-radius:6px;padding:2px 4px;font-size:14px;font-weight:600;font-family:inherit;outline:none;cursor:pointer;text-align:center;text-align-last:center;width:${selectWidth};box-sizing:border-box;">`;
     toggleInfo.suffixes.forEach((s, i) => {
       const sel = s === toggleInfo.currentSuffix ? 'selected' : '';
       html += `<option value="${s}" ${sel}>${escHtml(toggleInfo.displaySuffixes[i])}</option>`;
@@ -4089,8 +4091,8 @@ function finishIfCondition(def, value, valueTitle, editIdx) {
 // ── Ellipsis Menu ─────────────────────────────────────────────────────────────
 function showEllipsisMenu(e) {
   const items = [
-    { label: 'Import Actions (JSON/Lines)', icon: 'square_arrow_down', action: () => showImportDialog() },
-    { label: 'Export Actions (JSON)', icon: 'square_arrow_up', action: () => exportCurrentActions() },
+    { label: 'Import Actions', icon: 'square_arrow_down', action: () => showImportDialog() },
+    { label: 'Export Actions', icon: 'square_arrow_up', action: () => exportCurrentActions() },
     { label: 'Clear All Actions', icon: 'trash_fill', destructive: true, action: () => clearCurrentActions() }
   ];
   showContextMenu(e, items);

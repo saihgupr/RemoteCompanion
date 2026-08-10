@@ -66,21 +66,50 @@
     
     _sections = @[
         // Media
-        @[
-            @{ @"name": @"Play", @"command": @"play", @"icon": @"play.fill" },
-            @{ @"name": @"Pause", @"command": @"pause", @"icon": @"pause.fill" },
-            @{ @"name": @"Play/Pause", @"command": @"playpause", @"icon": @"playpause.fill" },
-            @{ @"name": @"Next Track", @"command": @"next", @"icon": @"forward.fill" },
-            @{ @"name": @"Previous Track", @"command": @"prev", @"icon": @"backward.fill" },
-            @{ @"name": @"Volume Up", @"command": @"volume up", @"icon": @"speaker.wave.3.fill" },
-            @{ @"name": @"Volume Down", @"command": @"volume down", @"icon": @"speaker.wave.1.fill" },
-            @{ @"name": @"Set Volume...", @"command": @"__SET_VOLUME__", @"icon": @"speaker.wave.3.fill" },
-            @{ @"name": @"Set Brightness...", @"command": @"__SET_BRIGHTNESS__", @"icon": @"sun.max.fill" },
-            @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" },
-            @{ @"name": @"Queue Current Album", @"command": @"queue album", @"icon": @"music.note.list" },
-            @{ @"name": @"Queue Artist", @"command": @"queue artist", @"icon": @"music.mic" },
-            @{ @"name": @"Shuffle All Songs", @"command": @"shuffle all songs", @"icon": @"shuffle" }
-        ],
+        ({
+            NSMutableArray *media = [NSMutableArray arrayWithArray:@[
+                @{ @"name": @"Play", @"command": @"play", @"icon": @"play.fill" },
+                @{ @"name": @"Pause", @"command": @"pause", @"icon": @"pause.fill" },
+                @{ @"name": @"Play/Pause", @"command": @"playpause", @"icon": @"playpause.fill" },
+                @{ @"name": @"Next Track", @"command": @"next", @"icon": @"forward.fill" },
+                @{ @"name": @"Previous Track", @"command": @"prev", @"icon": @"backward.fill" },
+                @{ @"name": @"Volume Up", @"command": @"volume up", @"icon": @"speaker.wave.3.fill" },
+                @{ @"name": @"Volume Down", @"command": @"volume down", @"icon": @"speaker.wave.1.fill" },
+                @{ @"name": @"Set Volume...", @"command": @"__SET_VOLUME__", @"icon": @"speaker.wave.3.fill" },
+                @{ @"name": @"Set Brightness...", @"command": @"__SET_BRIGHTNESS__", @"icon": @"sun.max.fill" },
+                @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" }
+            ]];
+            NSArray *audioStreamPaths = @[
+                @"/Applications/AudioReceiver.app",
+                @"/Applications/AudioStream.app",
+                @"/var/jb/Applications/AudioReceiver.app",
+                @"/var/jb/Applications/AudioStream.app"
+            ];
+            BOOL audioStreamInstalled = NO;
+            NSFileManager *fm = [NSFileManager defaultManager];
+            for (NSString *p in audioStreamPaths) {
+                if ([fm fileExistsAtPath:p]) { audioStreamInstalled = YES; break; }
+            }
+            if (!audioStreamInstalled) {
+                Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+                if (proxyClass) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                    id proxy = [proxyClass performSelector:@selector(applicationProxyForIdentifier:) withObject:@"com.saihgupr.audiostream"];
+                    if (proxy) {
+                        NSString *name = [proxy performSelector:@selector(localizedName)];
+                        if (name.length > 0) audioStreamInstalled = YES;
+                    }
+#pragma clang diagnostic pop
+                }
+            }
+            if (audioStreamInstalled) {
+                [media addObject:@{ @"name": @"Queue Current Album", @"command": @"queue album", @"icon": @"music.note.list" }];
+                [media addObject:@{ @"name": @"Queue Artist", @"command": @"queue artist", @"icon": @"music.mic" }];
+                [media addObject:@{ @"name": @"Shuffle All Songs", @"command": @"shuffle all songs", @"icon": @"shuffle" }];
+            }
+            media;
+        }),
         // Device Controls
         @[
             @{ @"name": @"Appearance", @"command": @"appearance toggle", @"icon": @"moon.fill" },

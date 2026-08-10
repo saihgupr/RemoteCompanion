@@ -2230,7 +2230,7 @@ function nameForKey(key) {
 const CMD_NAMES = {
   'play':'Play','pause':'Pause','playpause':'Play/Pause','next':'Next Track','prev':'Previous Track',
   'volume up':'Volume Up','volume down':'Volume Down',
-  'queuealbum':'Queue Current Album','queueartist':'Queue Artist (Shuffle)','shuffleall':'Shuffle All Songs',
+  'queuealbum':'Queue Current Album','queue album':'Queue Current Album','queueartist':'Queue Artist (Shuffle)','queue artist':'Queue Artist (Shuffle)','shuffleall':'Shuffle All Songs','shuffle all songs':'Shuffle All Songs',
   'flashlight':'Flashlight Toggle','flashlight on':'Flashlight On','flashlight off':'Flashlight Off','flashlight toggle':'Flashlight Toggle',
   'appearance dark':'Appearance Dark','appearance light':'Appearance Light','appearance toggle':'Appearance Toggle',
   'rotate lock':'Rotate Lock','rotate unlock':'Rotate Unlock','rotate toggle':'Rotate Toggle',
@@ -2361,7 +2361,7 @@ function iconForCmd(cmd) {
     'play':'play_fill','pause':'pause_fill','playpause':'playpause_fill',
     'next':'forward_fill','prev':'backward_fill',
     'volume up':'speaker_3_fill','volume down':'speaker_1_fill',
-    'queuealbum':'music_note_list','queueartist':'music_mic','shuffleall':'shuffle',
+    'queuealbum':'music_note_list','queue album':'music_note_list','queueartist':'music_mic','queue artist':'music_mic','shuffleall':'shuffle','shuffle all songs':'shuffle',
     'flashlight':'bolt_fill','flashlight on':'bolt_fill','flashlight off':'bolt_slash_fill','flashlight toggle':'bolt_fill',
     'appearance dark':'moon_fill','appearance light':'sun_max_fill','appearance toggle':'moon_fill',
     'wifi on':'wifi','wifi off':'wifi_slash','wifi toggle':'wifi',
@@ -2491,6 +2491,12 @@ async function loadCapabilities() {
       if (caps && caps.sneakycam === false) {
         ACTION_SECTIONS.forEach(sec => {
           sec.actions = sec.actions.filter(a => !a.cmd.startsWith('sneakycam'));
+        });
+      }
+      if (caps && caps.audiostream === false) {
+        const audioStreamCmds = ['queuealbum', 'queue album', 'queueartist', 'queue artist', 'shuffleall', 'shuffle all songs'];
+        ACTION_SECTIONS.forEach(sec => {
+          sec.actions = sec.actions.filter(a => !audioStreamCmds.includes(a.cmd));
         });
       }
     }

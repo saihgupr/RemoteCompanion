@@ -2091,6 +2091,31 @@ static BOOL is_sneakycam_installed() {
     return NO;
 }
 
+static BOOL is_audiostream_installed() {
+    NSArray *paths = @[
+        @"/Applications/AudioReceiver.app",
+        @"/Applications/AudioStream.app",
+        @"/var/jb/Applications/AudioReceiver.app",
+        @"/var/jb/Applications/AudioStream.app"
+    ];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *path in paths) {
+        if ([fm fileExistsAtPath:path]) return YES;
+    }
+    Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+    if (proxyClass) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        id proxy = [proxyClass performSelector:@selector(applicationProxyForIdentifier:) withObject:@"com.saihgupr.audiostream"];
+        if (proxy) {
+            NSString *name = [proxy performSelector:@selector(localizedName)];
+            if (name.length > 0) return YES;
+        }
+#pragma clang diagnostic pop
+    }
+    return NO;
+}
+
 // Power State Globals & Helpers
 static BOOL g_powerStateInitialized = NO;
 static BOOL g_lastPowerConnectedState = NO;
@@ -7192,7 +7217,8 @@ static void start_web_server() {
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
                                 } else if ([path isEqualToString:@"/api/capabilities"] && [method isEqualToString:@"GET"]) {
                                     NSDictionary *caps = @{
-                                        @"sneakycam": @(is_sneakycam_installed())
+                                        @"sneakycam": @(is_sneakycam_installed()),
+                                        @"audiostream": @(is_audiostream_installed())
                                     };
                                     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:caps options:0 error:nil];
                                     NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];

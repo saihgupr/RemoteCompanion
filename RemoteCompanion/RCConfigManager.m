@@ -1079,6 +1079,12 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"switcher": @"square.stack.3d.up.fill",
         @"previous app": @"arrow.uturn.backward",
         @"last app": @"arrow.uturn.backward",
+        @"queuealbum": @"music.note.list",
+        @"queue album": @"music.note.list",
+        @"queueartist": @"music.mic",
+        @"queue artist": @"music.mic",
+        @"shuffleall": @"shuffle",
+        @"shuffle all songs": @"shuffle",
         // Touch gestures
         @"swipeU": @"arrow.up.circle.fill",
         @"swipeUp": @"arrow.up.circle.fill",
@@ -1087,10 +1093,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"swipeL": @"arrow.left.circle.fill",
         @"swipeLeft": @"arrow.left.circle.fill",
         @"swipeR": @"arrow.right.circle.fill",
-        @"swipeRight": @"arrow.right.circle.fill",
-        @"queuealbum": @"music.note.list",
-        @"queueartist": @"music.mic",
-        @"shuffleall": @"shuffle"
+        @"swipeRight": @"arrow.right.circle.fill"
     };
     
     NSString *result = icons[cmd];

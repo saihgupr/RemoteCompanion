@@ -40,8 +40,8 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 </p>
 
 <p align="center">
-  <img src="images/healthdiagnosis.png" width="380" alt="Device Diagnostics & Health" />
-  <img src="images/livelogs.png" width="380" alt="System & Trigger Logs" />
+  <img src="images/logs.png" width="380" alt="System & Trigger Logs" />
+  <img src="images/health.png" width="380" alt="Device Diagnostics & Health" />
 </p>
 
 > [!TIP]

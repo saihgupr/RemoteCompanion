@@ -39,6 +39,11 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
   <img src="images/webui.png" width="600" alt="Web UI Interface" />
 </p>
 
+<p align="center">
+  <img src="images/healthdiagnosis.png" width="380" alt="Device Diagnostics & Health" />
+  <img src="images/livelogs.png" width="380" alt="System & Trigger Logs" />
+</p>
+
 > [!TIP]
 > **To Enable**: Toggle **Web UI** in the RemoteCompanion Settings (Gear icon) or use the command `rc webui on`.
 

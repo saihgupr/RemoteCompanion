@@ -9,6 +9,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Web UI Modal Action Editors**: Dedicated popup modals for editing **Terminal Actions** (with root toggle) and **HUD Toast Notifications** (with live HUD preview).
 > - **Web UI Context Menu Copy & Paste**: Right-click context menu options to Copy and Paste actions in sequence.
 > - **Web UI Live System Log Viewer**: Stream real-time device logs directly in the Web UI dashboard backed by `/api/logs`.
+> - **iOS-Native Device Diagnostics & Health UI**: Redesigned Web UI diagnostics panel styled after the iOS app's visual language with inset grouped table cards, gradient icons, and real-time hardware meters.
 
 
 <p align="center">
@@ -47,6 +48,7 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - **Remote Testing**: Trigger actions and troubleshoot sequences directly from your browser with live execution buttons.
 - **One-Tap API Integration**: Every trigger has a dedicated **Copy API Link** button providing a direct URL to fire that trigger from any network-connected hardware or custom scripts.
 - **API Link Copying**: In the Web UI, you can swipe any trigger and tap the **Copy** icon to instantly get the full API URL (including your device's IP).
+- **Device Diagnostics & Health Dashboard**: Native iOS-styled inset grouped dashboard monitoring battery, storage, RAM, thermal state, uptime, and quick maintenance actions (Respring, UICache, Flush DNS, Clear Logs).
 - **Negligible Battery Impact**: The Web UI server is extremely efficient, consuming zero CPU cycles when idle. It uses a background thread with a blocking `accept()` loop that sits dormant until a connection is made.
 - **Configuration Management**: Import and export your entire trigger database for easy backups and migration between devices.
 

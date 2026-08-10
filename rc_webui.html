@@ -836,51 +836,52 @@
       -webkit-overflow-scrolling: touch;
     }
     .log-tab {
-      flex: 1; border: none; background: transparent; color: #8e8e93;
-      border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 600;
+      flex: 1; border: 0.5px solid transparent; background: transparent; color: #8e8e93;
+      border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 600; line-height: 1.2;
       font-family: inherit; cursor: pointer; white-space: nowrap; text-align: center;
-      transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
-      user-select: none; -webkit-user-select: none;
+      transition: background 0.15s cubic-bezier(0.2, 0, 0, 1), color 0.15s ease, border-color 0.15s ease;
+      user-select: none; -webkit-user-select: none; box-sizing: border-box;
     }
     .log-tab:hover { color: #ffffff; }
     .log-tab.active {
       background: #3a3a3c;
       color: #ffffff;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0.5px 1px rgba(0, 0, 0, 0.2);
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     }
     .log-tab.active.exec {
       background: rgba(48, 209, 88, 0.2);
       color: #30d158;
-      border: 0.5px solid rgba(48, 209, 88, 0.4);
+      border-color: rgba(48, 209, 88, 0.4);
       box-shadow: none;
     }
     .log-tab.active.err {
       background: rgba(255, 69, 58, 0.2);
       color: #ff453a;
-      border: 0.5px solid rgba(255, 69, 58, 0.4);
+      border-color: rgba(255, 69, 58, 0.4);
       box-shadow: none;
     }
     .log-tab.active.http {
       background: rgba(100, 210, 255, 0.2);
       color: #64d2ff;
-      border: 0.5px solid rgba(100, 210, 255, 0.4);
+      border-color: rgba(100, 210, 255, 0.4);
       box-shadow: none;
     }
     .log-tab.active.sys {
       background: rgba(191, 90, 242, 0.2);
       color: #bf5af2;
-      border: 0.5px solid rgba(191, 90, 242, 0.4);
+      border-color: rgba(191, 90, 242, 0.4);
       box-shadow: none;
     }
 
-    /* iOS Toolbar & Search Row */
-    .log-search-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
-    .log-search-row .search-wrap { flex: 1; position: relative; margin: 0; }
-    .log-search-row .search-wrap i.search-icon {
+    /* iOS Toolbar & Search Row (Unified 1-Line Search + Actions) */
+    .log-search-row { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 2px; }
+    .log-search-wrap { flex: 1; min-width: 0; position: relative; margin: 0; padding: 0; background: transparent; }
+    .log-search-wrap i.search-icon {
       position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
       font-size: 15px; color: #8e8e93; pointer-events: none;
     }
-    .log-search-row .search-input {
+    .log-search-wrap .search-input {
       width: 100%; height: 36px;
       background: rgba(118, 118, 128, 0.18);
       border: 0.5px solid rgba(255, 255, 255, 0.08);
@@ -889,7 +890,7 @@
       font-size: 13px; color: #ffffff; font-family: inherit;
       outline: none; transition: background 0.15s ease, border-color 0.15s ease;
     }
-    .log-search-row .search-input:focus {
+    .log-search-wrap .search-input:focus {
       background: rgba(118, 118, 128, 0.25);
       border-color: #007aff;
     }
@@ -901,7 +902,7 @@
       border-radius: 10px; padding: 0 12px; font-size: 13px; font-weight: 600;
       cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;
       transition: background 0.15s ease, transform 0.1s ease;
-      user-select: none; -webkit-user-select: none;
+      user-select: none; -webkit-user-select: none; flex-shrink: 0;
     }
     .log-action-btn i { font-size: 16px; }
     .log-action-btn:hover { background: #2c2c2e; }
@@ -929,15 +930,32 @@
       flex: 1; overflow-y: auto; height: 100%; min-height: 280px;
     }
 
-    /* iOS Grouped Row Entries */
-    .log-row {
-      display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px;
+    /* iOS Grouped Row Entries & Expandable Drawer */
+    .log-row-container {
+      display: flex; flex-direction: column;
       border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
       border-radius: 8px;
+    }
+    .log-row-container:last-child { border-bottom: none; }
+    .log-row {
+      display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px;
+      border-radius: 8px; cursor: pointer; user-select: none; -webkit-user-select: none;
       transition: background 0.1s ease;
     }
     .log-row:hover { background: rgba(255, 255, 255, 0.05); }
-    .log-row:last-child { border-bottom: none; }
+    .log-row-expand-icon {
+      font-size: 11px; color: #8e8e93; flex-shrink: 0; margin-top: 3px;
+      transition: transform 0.2s ease;
+    }
+    .log-row-container.expanded .log-row-expand-icon { transform: rotate(90deg); color: #ffffff; }
+    .log-row-details {
+      display: none; padding: 8px 12px 10px 32px; font-size: 11px;
+      background: rgba(0, 0, 0, 0.4); border-radius: 0 0 8px 8px;
+      border-top: 0.5px solid rgba(255, 255, 255, 0.05);
+      color: #8e8e93; font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .log-row-container.expanded .log-row-details { display: block; }
 
     .log-time-pill {
       font-size: 11px; font-weight: 500; color: #8e8e93;
@@ -967,10 +985,14 @@
     /* iOS Log Footer */
     .log-footer-bar {
       display: flex; align-items: center; justify-content: space-between;
-      font-size: 12px; color: #8e8e93; padding: 6px 4px 2px;
+      font-size: 12px; color: #8e8e93; padding: 8px 6px 2px;
+      border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+      margin-top: 2px;
     }
-    .log-autoscroll-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; -webkit-user-select: none; }
-    .log-autoscroll-toggle input { accent-color: #007aff; cursor: pointer; }
+    .log-autoscroll-label {
+      font-size: 13px; font-weight: 500; color: #e5e5ea;
+      user-select: none; -webkit-user-select: none;
+    }
   </style>
 </head>
 <body>
@@ -1369,14 +1391,14 @@
     <div class="log-toolbar">
       <div class="log-category-tabs">
         <button class="log-tab active" data-cat="ALL" onclick="setLogCategoryFilter('ALL')">All Logs</button>
-        <button class="log-tab exec" data-cat="EXEC" onclick="setLogCategoryFilter('EXEC')">⚡ Executions</button>
-        <button class="log-tab err" data-cat="ERR" onclick="setLogCategoryFilter('ERR')">🔴 Errors</button>
-        <button class="log-tab http" data-cat="HTTP" onclick="setLogCategoryFilter('HTTP')">🌐 API Calls</button>
-        <button class="log-tab sys" data-cat="SYS" onclick="setLogCategoryFilter('SYS')">⚙️ System</button>
+        <button class="log-tab exec" data-cat="EXEC" onclick="setLogCategoryFilter('EXEC')">Executions</button>
+        <button class="log-tab err" data-cat="ERR" onclick="setLogCategoryFilter('ERR')">Errors</button>
+        <button class="log-tab http" data-cat="HTTP" onclick="setLogCategoryFilter('HTTP')">API Calls</button>
+        <button class="log-tab sys" data-cat="SYS" onclick="setLogCategoryFilter('SYS')">System</button>
       </div>
 
       <div class="log-search-row">
-        <div class="search-wrap" style="flex:1; margin:0;">
+        <div class="log-search-wrap">
           <i class="f7-icons search-icon">search</i>
           <input class="search-input" type="search" placeholder="Search log entries..." id="log-filter-input" oninput="renderLogsUI()">
         </div>
@@ -1396,11 +1418,14 @@
 
     <!-- Log Footer Bar -->
     <div class="log-footer-bar">
-      <span id="log-last-updated">Updated: --</span>
-      <label class="log-autoscroll-toggle">
-        <input type="checkbox" id="log-autoscroll-chk" checked>
-        <span>Auto-scroll to bottom</span>
-      </label>
+      <span id="log-last-updated" style="font-size:12px; color:#8e8e93; font-weight:500;">Updated: --</span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span class="log-autoscroll-label">Auto-scroll to bottom</span>
+        <label class="toggle-switch" title="Auto-scroll to bottom">
+          <input type="checkbox" id="log-autoscroll-chk" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
     </div>
 
   </div>
@@ -2805,11 +2830,65 @@ function copyLogDisplay() {
     showToast('No logs to copy');
     return;
   }
-  navigator.clipboard.writeText(g_rawLogs).then(() => {
-    showToast('📋 Logs copied to clipboard!');
-  }).catch(() => {
-    showToast('Failed to copy logs');
+
+  const filterInput = document.getElementById('log-filter-input');
+  const search = (filterInput ? filterInput.value : '').toLowerCase().trim();
+  const rawLines = g_rawLogs.split('\n').filter(l => l.trim().length > 0);
+
+  const matchedLines = [];
+
+  rawLines.forEach(line => {
+    const parsed = parseLogLine(line);
+
+    if (g_logCategoryFilter !== 'ALL' && parsed.catKey !== g_logCategoryFilter.toLowerCase()) {
+      return;
+    }
+
+    if (search && !line.toLowerCase().includes(search)) {
+      return;
+    }
+
+    matchedLines.push(line);
   });
+
+  if (matchedLines.length === 0) {
+    showToast('No matching logs to copy');
+    return;
+  }
+
+  const textToCopy = matchedLines.join('\n');
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      showToast('Copied ' + matchedLines.length + ' log entries');
+    }).catch(() => {
+      fallbackCopyText(textToCopy, matchedLines.length);
+    });
+  } else {
+    fallbackCopyText(textToCopy, matchedLines.length);
+  }
+}
+
+function fallbackCopyText(text, count) {
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    if (successful) {
+      showToast('Copied ' + count + ' log entries');
+    } else {
+      showToast('Failed to copy logs');
+    }
+  } catch (err) {
+    showToast('Failed to copy logs');
+  }
 }
 
 function clearLogDisplay() {
@@ -2907,7 +2986,19 @@ function renderLogsUI() {
 
     const timePill = parsed.timeStr ? `<span class="log-time-pill">${escHtml(parsed.timeStr)}</span>` : '';
 
-    html += `<div class="log-row">${timePill}<span class="log-tag-badge ${parsed.catKey}">${parsed.cat}</span><span class="log-msg-text">${safeMsg}</span></div>`;
+    html += `<div class="log-row-container">
+      <div class="log-row" onclick="toggleLogRowDetail(this)">
+        ${timePill}
+        <span class="log-tag-badge ${parsed.catKey}">${parsed.cat}</span>
+        <span class="log-msg-text">${safeMsg}</span>
+        <i class="f7-icons log-row-expand-icon">chevron_right</i>
+      </div>
+      <div class="log-row-details">
+        <div><strong style="color:#ffffff;">Raw Entry:</strong> ${escHtml(line)}</div>
+        <div><strong style="color:#ffffff;">Category:</strong> ${parsed.cat} (${parsed.catKey.toUpperCase()})</div>
+        ${parsed.timeStr ? `<div><strong style="color:#ffffff;">Timestamp:</strong> ${escHtml(parsed.timeStr)}</div>` : ''}
+      </div>
+    </div>`;
   });
 
   updateLogStats(totalCount, execCount, errCount, httpCount);
@@ -2923,6 +3014,13 @@ function renderLogsUI() {
   if (updatedEl) {
     const now = new Date();
     updatedEl.textContent = `Updated: ${now.toLocaleTimeString()}`;
+  }
+}
+
+function toggleLogRowDetail(el) {
+  const parent = el.closest('.log-row-container');
+  if (parent) {
+    parent.classList.toggle('expanded');
   }
 }
 

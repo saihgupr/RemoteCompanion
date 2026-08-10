@@ -4,6 +4,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 
 > [!IMPORTANT]
 > **What’s New in v3.5.0**
+> - **Home Assistant Integration**: Native Home Assistant integration with Settings toggle, credentials management, and a live **Test Connection** button. Control HA entities (`ha toggle`, `ha turn_on`, `ha turn_off`, `ha call`) directly from the Web UI, iOS App, or CLI.
 > - **Power Event Triggers**: Trigger actions on AC power connection and disconnection (`trigger_power_connect` and `trigger_power_disconnect`).
 > - **SneakyCam Integration**: Native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS App, and Web UI (dynamically displayed if SneakyCam is installed).
 > - **Web UI Modal Action Editors**: Dedicated popup modals for editing **Terminal Actions** (with root toggle) and **HUD Toast Notifications** (with live HUD preview).
@@ -95,6 +96,11 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc bluetooth [connect|disconnect] <name>` - Manage paired devices.
 - `rc airplay list` - See speakers and their UIDs.
 - `rc airplay connect <UID|Name>` / `rc airplay disconnect`
+
+### Home Assistant Integration
+- `rc ha toggle <entity_id>` - Toggle a Home Assistant light, switch, or entity (e.g. `rc ha toggle light.bedroom_lights`).
+- `rc ha turn_on <entity_id>` / `rc ha turn_off <entity_id>` - Turn on or off a Home Assistant entity.
+- `rc ha call <domain.service> <entity_id>` - Call any Home Assistant service (e.g. `rc ha call light.turn_on light.bedroom_lights` or `rc ha call scene.turn_on scene.movie_night`).
 
 <details>
 <summary><b>Hardware Triggers (Tweak App)</b></summary>
@@ -375,22 +381,40 @@ Execution URLs for your specific triggers:
 </details>
 
 <details>
-<summary><b>Home Assistant Setup</b></summary>
+<summary><b>Home Assistant Integration</b></summary>
 
-The most reliable way to control your device from Home Assistant is via SSH.
+### 1. Controlling Home Assistant from RemoteCompanion
+
+Enable two-way automation between your iOS device and Home Assistant:
+
+1. In the Web UI or iOS App, go to **Settings** &rarr; **Integrations**.
+2. Toggle on **Home Assistant**.
+3. Enter your **Server URL** (e.g., `http://192.168.1.100:8123`) and a **Long-Lived Access Token** (generated under your Home Assistant Profile &rarr; Long-Lived Access Tokens).
+4. Click **Test Connection** to verify setup.
+
+Once configured:
+- Use **Control Home Assistant Entity…** in any trigger sequence to search and select entities (lights, switches, scenes, scripts, locks) with live state badges and quick action options.
+- Use **Custom HA Service Call…** to execute any Home Assistant domain service.
+- Execute HA commands directly via CLI: `rc ha toggle light.bedroom_lights` or `rc ha call light.turn_on light.bedroom_lights`.
+
+### 2. Controlling RemoteCompanion from Home Assistant
+
+Control your iPhone or iPad directly from Home Assistant via SSH `shell_command`:
 
 ```yaml
 shell_command:
   iphone_remote: >
     ssh -o "StrictHostKeyChecking=no" mobile@YOUR_IPHONE_IP "rc {{ cmd }}"
 ```
-Then call it with:
+Then call it in automations or scripts:
 
 ```yaml
 service: shell_command.iphone_remote
 data:
   cmd: 'play'
 ```
+
+Alternatively, call the Automations API endpoint: `http://[DEVICE_IP]:8080/api/command?cmd=lock`.
 
 </details>
 

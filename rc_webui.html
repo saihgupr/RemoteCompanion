@@ -1632,7 +1632,7 @@
 
 <!-- ══ HOME ASSISTANT ACTION DIALOG ═════════════════════════════════════ -->
 <div class="dialog-backdrop" id="ha-dialog-backdrop">
-  <div class="dialog-box app-launch-dialog" style="max-width: 680px; width: 92%;">
+  <div class="dialog-box app-launch-dialog" style="max-width: 560px; width: 90%;">
     <div class="dialog-title">Home Assistant Control</div>
     <div class="dialog-msg" style="text-align:center;padding:0 16px 6px">Select a device or entity to control with Home Assistant.</div>
     <div style="padding:0 14px 10px">
@@ -1642,11 +1642,6 @@
       </div>
       <div class="app-picker-list" id="ha-picker-list" style="max-height: 280px; overflow-y: auto;">
         <div class="app-picker-loading" id="ha-picker-loading">Loading Home Assistant entities…</div>
-      </div>
-      <div style="margin-top: 10px; text-align: center;">
-        <button class="sys-action-btn" onclick="promptManualHAEntity()" style="font-size: 13px; margin: 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="f7-icons" style="font-size: 14px;">keyboard</i> Manual Command / Entity ID…
-        </button>
       </div>
     </div>
     <div class="dialog-btns">
@@ -2301,6 +2296,7 @@ function nameForCmd(cmd) {
     const app = cachedApps.find(a => (a.bundleId || '').toLowerCase() === bundleId);
     return `Kill ${app ? app.name : cmd.slice(5).trim()}`;
   }
+  if (lowCmd.startsWith('ha ') || lowCmd === 'ha') return formatHACommandName(cmd);
   // Touch gesture display names
   if (lowCmd.startsWith('tap '))   { const p=cmd.slice(4).trim().split(/\s+/); return `Tap (${p[0]||'?'}, ${p[1]||'?'})`; }
   if (lowCmd.startsWith('hold '))  { const p=cmd.slice(5).trim().split(/\s+/); return `Hold (${p[0]||'?'}, ${p[1]||'?'})${p[2]?` ${p[2]}ms`:''}`; }
@@ -2311,6 +2307,46 @@ function nameForCmd(cmd) {
   if (lowCmd === 'swiper' || lowCmd === 'swiperight') return 'Swipe Right';
   // Fallback: capitalize first letter
   return cmd.charAt(0).toUpperCase() + cmd.slice(1);
+}
+
+function formatHACommandName(cmd) {
+  const raw = cmd.slice(2).trim();
+  if (!raw) return 'Home Assistant';
+  const parts = raw.split(/\s+/);
+  const subCmd = parts[0].toLowerCase();
+
+  function formatEntity(eid) {
+    if (!eid) return '';
+    const p = eid.split('.');
+    if (p.length > 1) {
+      let name = p[1].replace(/_/g, ' ');
+      name = name.split(' ').map(w => w ? (w.charAt(0).toUpperCase() + w.slice(1)) : '').join(' ');
+      return name;
+    }
+    return eid;
+  }
+
+  if (subCmd === 'toggle' && parts.length > 1) {
+    const eid = parts[1];
+    return `HA Toggle: ${formatEntity(eid) || eid}`;
+  }
+  if (subCmd === 'turn_on' && parts.length > 1) {
+    const eid = parts[1];
+    return `HA Turn On: ${formatEntity(eid) || eid}`;
+  }
+  if (subCmd === 'turn_off' && parts.length > 1) {
+    const eid = parts[1];
+    return `HA Turn Off: ${formatEntity(eid) || eid}`;
+  }
+  if (subCmd === 'call' && parts.length > 1) {
+    const service = parts[1];
+    const eid = parts[2] || '';
+    return `HA Call ${service}${eid ? ': ' + (formatEntity(eid) || eid) : ''}`;
+  }
+  if (subCmd === 'raw') {
+    return `HA Raw: ${parts.slice(1).join(' ')}`;
+  }
+  return `HA: ${raw}`;
 }
 
 function iconForCmd(cmd) {
@@ -2347,6 +2383,7 @@ function iconForCmd(cmd) {
   if (map[lowCmd]) return { icon:map[lowCmd], cls:'icon-dark' };
   const toggleInfo = parseToggleCmd(cmd);
   if (toggleInfo) return { icon:toggleInfo.icon, cls:'icon-dark' };
+  if (lowCmd.startsWith('ha ') || lowCmd === 'ha') return { icon:'house_fill', cls:'icon-blue' };
   if (lowCmd.startsWith('flashlight ')) return { icon:'bolt_fill',       cls:'icon-orange' };
   if (lowCmd.startsWith('toast'))         return { icon:'text_bubble',     cls:'icon-orange' };
   if (lowCmd.startsWith('lua:'))          return { icon:'command',         cls:'icon-purple' };

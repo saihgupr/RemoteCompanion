@@ -832,6 +832,47 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             result = [NSString stringWithFormat:@"Flashlight %@%%", [cmd substringFromIndex:6]];
         } else if ([cmd hasPrefix:@"shortcut:"]) {
             result = [NSString stringWithFormat:@"Run %@", [cmd substringFromIndex:9]];
+        } else if ([cmd hasPrefix:@"ha "] || [cmd isEqualToString:@"ha"]) {
+            NSString *raw = [cmd hasPrefix:@"ha "] ? [cmd substringFromIndex:3] : @"";
+            NSArray *parts = [raw componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSMutableArray *cleanParts = [NSMutableArray array];
+            for (NSString *p in parts) {
+                if (p.length > 0) [cleanParts addObject:p];
+            }
+            NSString *subCmd = cleanParts.firstObject ? [(NSString *)cleanParts.firstObject lowercaseString] : @"";
+            
+            NSString *(^formatEntity)(NSString *) = ^(NSString *eid) {
+                if (!eid.length) return @"";
+                NSArray *p = [eid componentsSeparatedByString:@"."];
+                if (p.count > 1) {
+                    NSString *name = [p[1] stringByReplacingOccurrencesOfString:@"_" withString:@" "];
+                    NSMutableArray *words = [NSMutableArray array];
+                    for (NSString *w in [name componentsSeparatedByString:@" "]) {
+                        if (w.length > 0) {
+                            [words addObject:[NSString stringWithFormat:@"%@%@", [[w substringToIndex:1] uppercaseString], [w substringFromIndex:1]]];
+                        }
+                    }
+                    return [words componentsJoinedByString:@" "];
+                }
+                return eid;
+            };
+
+            if ([subCmd isEqualToString:@"toggle"] && cleanParts.count > 1) {
+                NSString *eid = cleanParts[1];
+                result = [NSString stringWithFormat:@"HA Toggle: %@", formatEntity(eid)];
+            } else if ([subCmd isEqualToString:@"turn_on"] && cleanParts.count > 1) {
+                NSString *eid = cleanParts[1];
+                result = [NSString stringWithFormat:@"HA Turn On: %@", formatEntity(eid)];
+            } else if ([subCmd isEqualToString:@"turn_off"] && cleanParts.count > 1) {
+                NSString *eid = cleanParts[1];
+                result = [NSString stringWithFormat:@"HA Turn Off: %@", formatEntity(eid)];
+            } else if ([subCmd isEqualToString:@"call"] && cleanParts.count > 1) {
+                NSString *service = cleanParts[1];
+                NSString *eid = cleanParts.count > 2 ? cleanParts[2] : @"";
+                result = [NSString stringWithFormat:@"HA Call %@%@", service, eid.length ? [NSString stringWithFormat:@": %@", formatEntity(eid)] : @""];
+            } else {
+                result = [NSString stringWithFormat:@"HA: %@", raw.length ? raw : @"Control"];
+            }
         } else if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) {
             result = @"Lua Script";
         } else if ([cmd hasPrefix:@"spotify "]) {
@@ -929,6 +970,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     NSString *cmd = [[(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
     if ([cmd hasPrefix:@"sneakycam photo"] || [cmd isEqualToString:@"sneakycam takephoto"]) return @"camera.aperture";
     if ([cmd hasPrefix:@"sneakycam video"] || [cmd isEqualToString:@"sneakycam record"] || [cmd isEqualToString:@"sneakycam startstopvideo"]) return @"video.fill";
+    if ([cmd hasPrefix:@"ha "] || [cmd isEqualToString:@"ha"]) return @"house.fill";
     if ([cmd hasPrefix:@"toast"]) return @"text.bubble.fill";
     if ([cmd hasPrefix:@"root "] || [cmd hasPrefix:@"exec-root "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";

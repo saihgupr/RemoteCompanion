@@ -101,6 +101,7 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc ha toggle <entity_id>` - Toggle a Home Assistant light, switch, or entity (e.g. `rc ha toggle light.bedroom_lights`).
 - `rc ha turn_on <entity_id>` / `rc ha turn_off <entity_id>` - Turn on or off a Home Assistant entity.
 - `rc ha call <domain.service> <entity_id>` - Call any Home Assistant service (e.g. `rc ha call light.turn_on light.bedroom_lights` or `rc ha call scene.turn_on scene.movie_night`).
+- `rc ha raw <domain.service> <json_payload>` - Send custom JSON payloads to any Home Assistant service endpoint (e.g. `rc ha raw light.turn_on '{"entity_id":"light.bedroom","brightness":200}'`).
 
 <details>
 <summary><b>Hardware Triggers (Tweak App)</b></summary>
@@ -395,7 +396,7 @@ Enable two-way automation between your iOS device and Home Assistant:
 Once configured:
 - Use **Control Home Assistant Entity…** in any trigger sequence to search and select entities (lights, switches, scenes, scripts, locks) with live state badges and quick action options.
 - Use **Custom HA Service Call…** to execute any Home Assistant domain service.
-- Execute HA commands directly via CLI: `rc ha toggle light.bedroom_lights` or `rc ha call light.turn_on light.bedroom_lights`.
+- Execute HA commands directly via CLI: `rc ha toggle light.bedroom_lights`, `rc ha call light.turn_on light.bedroom_lights`, or `rc ha raw light.turn_on '{"entity_id":"light.bedroom","brightness":200}'`.
 
 ### 2. Controlling RemoteCompanion from Home Assistant
 

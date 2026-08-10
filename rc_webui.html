@@ -2764,6 +2764,7 @@ let g_logInterval = null;
 let g_rawLogs = '';
 let g_logCategoryFilter = 'ALL';
 let g_isLogAutoStreaming = true;
+let g_expandedLogKeys = new Set();
 
 function toggleLogPanel() {
   const panel = document.getElementById('logs-panel');
@@ -2893,6 +2894,7 @@ function fallbackCopyText(text, count) {
 
 function clearLogDisplay() {
   g_rawLogs = '';
+  g_expandedLogKeys.clear();
   renderLogsUI();
   showToast('Logs cleared from view');
 }
@@ -2985,8 +2987,12 @@ function renderLogsUI() {
     safeMsg = safeMsg.replace(/(ERROR|FAILED|Bad Request|Forbidden)/gi, '<span class="hl-error">$1</span>');
 
     const timePill = parsed.timeStr ? `<span class="log-time-pill">${escHtml(parsed.timeStr)}</span>` : '';
+    const logKey = line.trim();
+    const isExpanded = g_expandedLogKeys.has(logKey);
+    const expandedClass = isExpanded ? ' expanded' : '';
+    const attrKey = escHtml(logKey).replace(/"/g, '&quot;');
 
-    html += `<div class="log-row-container">
+    html += `<div class="log-row-container${expandedClass}" data-log-key="${attrKey}">
       <div class="log-row" onclick="toggleLogRowDetail(this)">
         ${timePill}
         <span class="log-tag-badge ${parsed.catKey}">${parsed.cat}</span>
@@ -3019,8 +3025,14 @@ function renderLogsUI() {
 
 function toggleLogRowDetail(el) {
   const parent = el.closest('.log-row-container');
-  if (parent) {
-    parent.classList.toggle('expanded');
+  if (!parent) return;
+  const key = parent.getAttribute('data-log-key');
+  if (g_expandedLogKeys.has(key)) {
+    g_expandedLogKeys.delete(key);
+    parent.classList.remove('expanded');
+  } else {
+    g_expandedLogKeys.add(key);
+    parent.classList.add('expanded');
   }
 }
 

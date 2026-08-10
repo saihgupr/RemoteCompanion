@@ -1632,7 +1632,7 @@
 
 <!-- ══ HOME ASSISTANT ACTION DIALOG ═════════════════════════════════════ -->
 <div class="dialog-backdrop" id="ha-dialog-backdrop">
-  <div class="dialog-box app-launch-dialog" style="max-width: 480px;">
+  <div class="dialog-box app-launch-dialog" style="max-width: 680px; width: 92%;">
     <div class="dialog-title">Home Assistant Control</div>
     <div class="dialog-msg" style="text-align:center;padding:0 16px 6px">Select a device or entity to control with Home Assistant.</div>
     <div style="padding:0 14px 10px">
@@ -2424,9 +2424,6 @@ const ACTION_SECTIONS = [
   ]},
   { title:'Home Assistant', actions:[
     { name:'Control Home Assistant Entity…', cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
-    { name:'Toggle Entity…',                cmd:'__HA_TOGGLE__', icon:'arrow_triangle_2_circlepath', needs_input:true },
-    { name:'Turn On Light/Switch…',        cmd:'__HA_TURN_ON__', icon:'lightbulb_fill', needs_input:true },
-    { name:'Turn Off Light/Switch…',       cmd:'__HA_TURN_OFF__', icon:'lightbulb', needs_input:true },
     { name:'Custom HA Service Call…',       cmd:'__HA_CUSTOM__', icon:'slider_horizontal_3', needs_input:true },
   ]},
   { title:'Scripting & Logic', actions:[
@@ -4352,7 +4349,7 @@ function selectHAEntity(item) {
     addActionToCurrent(cmd);
     showToast(`✓ Added HA Action: ${friendlyName}`);
   } else {
-    showContextMenu({ preventDefault:()=>{} }, [
+    showSheet(`Control ${friendlyName}`, [
       { label: `Toggle (${friendlyName})`, action: () => { addActionToCurrent(`ha toggle ${entityId}`); showToast(`✓ Added Toggle for ${friendlyName}`); } },
       { label: `Turn On (${friendlyName})`, action: () => { addActionToCurrent(`ha turn_on ${entityId}`); showToast(`✓ Added Turn On for ${friendlyName}`); } },
       { label: `Turn Off (${friendlyName})`, action: () => { addActionToCurrent(`ha turn_off ${entityId}`); showToast(`✓ Added Turn Off for ${friendlyName}`); } }

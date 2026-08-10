@@ -62,7 +62,7 @@
     
     // Categories and actions
     // Each action: @{ @"name": display name, @"command": rc command }
-    _sectionTitles = @[@"Media", @"Device Controls", @"Connectivity", @"System", @"Audio", @"Scripting & Logic"];
+    _sectionTitles = @[@"Media", @"Device Controls", @"Connectivity", @"System", @"Audio", @"Home Assistant", @"Scripting & Logic"];
     
     _sections = @[
         // Media
@@ -158,6 +158,11 @@
             @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
             @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
             @{ @"name": @"AudioMix", @"command": @"audiomix toggle", @"icon": @"music.note" }
+        ],
+        // Home Assistant
+        @[
+            @{ @"name": @"Control Home Assistant Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" },
+            @{ @"name": @"Custom HA Service Call...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" }
         ],
         // Scripting & Logic
         @[
@@ -290,6 +295,8 @@
         [cmd isEqualToString:@"__IF_CONDITION__"] ||
         [cmd isEqualToString:@"__DELAY__"] ||
         [cmd isEqualToString:@"__CUSTOM__"] ||
+        [cmd isEqualToString:@"__HA_PICKER__"] ||
+        [cmd isEqualToString:@"__HA_CUSTOM__"] ||
         [cmd isEqualToString:@"__TAP__"] ||
         [cmd isEqualToString:@"__HOLD__"] ||
         [cmd isEqualToString:@"__SWIPE__"]) {
@@ -311,7 +318,6 @@
     }
     NSString *command = action[@"command"];
     
-
 
     if ([command isEqualToString:@"__SET_VOLUME__"] || [command isEqualToString:@"__SET_BRIGHTNESS__"] || [command isEqualToString:@"__SET_FLASHLIGHT__"]) {
         [self handleValueInputForCommand:command];
@@ -353,6 +359,16 @@
     
     if ([command isEqualToString:@"__BT_DISCONNECT__"]) {
         [self handleBluetoothDisconnect];
+        return;
+    }
+
+    if ([command isEqualToString:@"__HA_PICKER__"]) {
+        [self handleHAPicker];
+        return;
+    }
+
+    if ([command isEqualToString:@"__HA_CUSTOM__"]) {
+        [self handleHACustom];
         return;
     }
 
@@ -744,6 +760,58 @@
         self.filteredActions = [allActions filteredArrayUsingPredicate:pred];
     }
     [self.tableView reloadData];
+}
+
+- (void)handleHACustom {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Custom HA Service Call"
+                                                                   message:@"Enter service and entity (e.g. light.turn_on light.bedroom_lights):"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"light.turn_on light.bedroom_lights";
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!val.length) return;
+        NSString *cmd = [NSString stringWithFormat:@"ha call %@", val];
+        if (self.onActionSelected) self.onActionSelected(cmd);
+        if (self.searchController.isActive) {
+            [self.searchController dismissViewControllerAnimated:NO completion:^{
+                [self dismissViewControllerAnimated:YES completion:nil];
+            }];
+        } else {
+            [self dismissViewControllerAnimated:YES completion:nil];
+        }
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)handleHAPicker {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Control Home Assistant Entity"
+                                                                   message:@"Enter command or entity ID (e.g. toggle light.bedroom_lights or turn_on switch.fan):"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"toggle light.bedroom_lights";
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!val.length) return;
+        NSString *cmd = [val hasPrefix:@"ha "] ? val : [NSString stringWithFormat:@"ha %@", val];
+        if (self.onActionSelected) self.onActionSelected(cmd);
+        if (self.searchController.isActive) {
+            [self.searchController dismissViewControllerAnimated:NO completion:^{
+                [self dismissViewControllerAnimated:YES completion:nil];
+            }];
+        } else {
+            [self dismissViewControllerAnimated:YES completion:nil];
+        }
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 @end

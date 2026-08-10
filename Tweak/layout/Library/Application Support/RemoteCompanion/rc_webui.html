@@ -4037,7 +4037,12 @@ function selectPickerAction(act) {
     });
   } else if (c === '__HA_CUSTOM__') {
     showDialog('Custom HA Service Call', 'Service (e.g. light.turn_on) and Entity ID:', 'light.turn_on light.bedroom_lights', 'Add', val => {
-      if (val) addActionToCurrent(`ha call ${val.trim()}`);
+      if (val) {
+        let clean = val.trim();
+        if (clean.startsWith('ha call ')) addActionToCurrent(clean);
+        else if (clean.startsWith('ha ')) addActionToCurrent('ha call ' + clean.substring(3).trim());
+        else addActionToCurrent(`ha call ${clean}`);
+      }
     });
   } else {
     addActionToCurrent(c);
@@ -4855,6 +4860,13 @@ function showDialog(title, msg, defaultVal, okLabel, callback, isNumber = false,
 
   dialogCallback = callback;
   
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      dialogOk();
+    }
+  };
+
   // Set modal width based on content type
   const box = document.querySelector('#dialog-backdrop .dialog-box');
   if (isNumber || showRecordBtn) box.classList.remove('wide');
@@ -4882,8 +4894,9 @@ function _dialogBackdropClick(e) {
 
 function dialogOk() {
   const val = document.getElementById('dialog-input').value.trim();
+  const cb = dialogCallback;
   closeDialog();
-  if (dialogCallback) dialogCallback(val);
+  if (cb) cb(val);
 }
 
 function dialogRecord() {

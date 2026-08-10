@@ -804,7 +804,14 @@
     [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if (!val.length) return;
-        NSString *cmd = [NSString stringWithFormat:@"ha call %@", val];
+        NSString *cmd;
+        if ([val hasPrefix:@"ha call "]) {
+            cmd = val;
+        } else if ([val hasPrefix:@"ha "]) {
+            cmd = [NSString stringWithFormat:@"ha call %@", [val substringFromIndex:3]];
+        } else {
+            cmd = [NSString stringWithFormat:@"ha call %@", val];
+        }
         if (self.onActionSelected) self.onActionSelected(cmd);
         if (self.searchController.isActive) {
             [self.searchController dismissViewControllerAnimated:NO completion:^{

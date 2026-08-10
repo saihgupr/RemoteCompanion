@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #import <unistd.h>
 #include <arpa/inet.h>
+#include <ifaddrs.h>
 #import <spawn.h>
 #import <notify.h>
 #import <sys/wait.h>
@@ -6684,6 +6685,90 @@ static NSString *handle_command(NSString *cmd) {
     return nil;
 }
 
+static NSString* get_local_ip_address(void) {
+    NSString *address = @"Unavailable";
+    struct ifaddrs *interfaces = NULL;
+    struct ifaddrs *temp_addr = NULL;
+    int success = getifaddrs(&interfaces);
+    if (success == 0) {
+        temp_addr = interfaces;
+        while (temp_addr != NULL) {
+            if (temp_addr->ifa_addr && temp_addr->ifa_addr->sa_family == AF_INET) {
+                NSString *name = [NSString stringWithUTF8String:temp_addr->ifa_name];
+                if ([name isEqualToString:@"en0"] || [name isEqualToString:@"pdp_ip0"]) {
+                    address = [NSString stringWithUTF8String:inet_ntoa(((struct sockaddr_in *)temp_addr->ifa_addr)->sin_addr)];
+                    if ([name isEqualToString:@"en0"]) break;
+                }
+            }
+            temp_addr = temp_addr->ifa_next;
+        }
+    }
+    if (interfaces) freeifaddrs(interfaces);
+    return address;
+}
+
+static NSDictionary* get_system_diagnostics(void) {
+    [UIDevice currentDevice].batteryMonitoringEnabled = YES;
+    float batteryLevelVal = [UIDevice currentDevice].batteryLevel;
+    int batteryPercent = (batteryLevelVal >= 0) ? (int)(batteryLevelVal * 100.0f) : -1;
+    
+    UIDeviceBatteryState bState = [UIDevice currentDevice].batteryState;
+    NSString *chargingStatus = @"Unknown";
+    if (bState == UIDeviceBatteryStateCharging) chargingStatus = @"Charging";
+    else if (bState == UIDeviceBatteryStateFull) chargingStatus = @"Fully Charged";
+    else if (bState == UIDeviceBatteryStateUnplugged) chargingStatus = @"Unplugged";
+
+    BOOL isLowPowerMode = [[NSProcessInfo processInfo] isLowPowerModeEnabled];
+
+    uint64_t freeBytes = 0;
+    uint64_t totalBytes = 0;
+    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:@"/var/mobile" error:nil];
+    if (!attrs) attrs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:@"/" error:nil];
+    if (attrs) {
+        totalBytes = [attrs[NSFileSystemSize] unsignedLongLongValue];
+        freeBytes = [attrs[NSFileSystemFreeSize] unsignedLongLongValue];
+    }
+    double totalGB = (double)totalBytes / (1024.0 * 1024.0 * 1024.0);
+    double freeGB = (double)freeBytes / (1024.0 * 1024.0 * 1024.0);
+    double usedGB = (totalGB > freeGB) ? (totalGB - freeGB) : 0;
+    int storagePercentUsed = (totalBytes > 0) ? (int)((usedGB / totalGB) * 100.0) : 0;
+
+    NSTimeInterval uptimeSecs = [[NSProcessInfo processInfo] systemUptime];
+    int days = (int)(uptimeSecs / 86400);
+    int hours = (int)((uptimeSecs - (days * 86400)) / 3600);
+    int mins = (int)((uptimeSecs - (days * 86400) - (hours * 3600)) / 60);
+    NSString *uptimeStr = (days > 0) 
+        ? [NSString stringWithFormat:@"%dd %dh %dm", days, hours, mins]
+        : [NSString stringWithFormat:@"%dh %dm", hours, mins];
+
+    NSProcessInfoThermalState thermal = [[NSProcessInfo processInfo] thermalState];
+    NSString *thermalStr = @"Normal";
+    if (thermal == NSProcessInfoThermalStateFair) thermalStr = @"Fair";
+    else if (thermal == NSProcessInfoThermalStateSerious) thermalStr = @"Warm";
+    else if (thermal == NSProcessInfoThermalStateCritical) thermalStr = @"Hot";
+
+    NSString *deviceName = [UIDevice currentDevice].name ?: @"iPhone";
+    NSString *systemVersion = [UIDevice currentDevice].systemVersion ?: @"iOS";
+    NSString *modelName = [UIDevice currentDevice].model ?: @"iPhone";
+
+    NSString *ipAddress = get_local_ip_address();
+
+    return @{
+        @"device_name": deviceName,
+        @"system_version": systemVersion,
+        @"model": modelName,
+        @"battery_level": @(batteryPercent),
+        @"battery_status": chargingStatus,
+        @"low_power_mode": @(isLowPowerMode),
+        @"storage_total_gb": [NSString stringWithFormat:@"%.1f GB", totalGB],
+        @"storage_free_gb": [NSString stringWithFormat:@"%.1f GB", freeGB],
+        @"storage_used_gb": [NSString stringWithFormat:@"%.1f GB", usedGB],
+        @"storage_percent_used": @(storagePercentUsed),
+        @"uptime": uptimeStr,
+        @"thermal_state": thermalStr,
+        @"ip_address": ipAddress ?: @"Unavailable"
+    };
+}
 
 static void start_web_server() {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -6857,12 +6942,17 @@ static void start_web_server() {
                                     NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
                                 } else if ([path isEqualToString:@"/api/capabilities"] && [method isEqualToString:@"GET"]) {
-        NSDictionary *caps = @{
-            @"sneakycam": @(is_sneakycam_installed())
-        };
-        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:caps options:0 error:nil];
-        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-        responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                    NSDictionary *caps = @{
+                                        @"sneakycam": @(is_sneakycam_installed())
+                                    };
+                                    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:caps options:0 error:nil];
+                                    NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                } else if ([path isEqualToString:@"/api/sysinfo"] && [method isEqualToString:@"GET"]) {
+                                    NSDictionary *sysInfo = get_system_diagnostics();
+                                    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:sysInfo options:0 error:nil];
+                                    NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
                                 NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];

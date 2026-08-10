@@ -6812,6 +6812,20 @@ static NSDictionary* get_system_diagnostics(void) {
         ? [NSString stringWithFormat:@"http://%@:8080", ipAddress]
         : @"http://127.0.0.1:8080";
 
+    // Log File Info
+    NSString *logPath = @"/tmp/remotecommand.log";
+    uint64_t logSizeBytes = 0;
+    NSDictionary *logAttrs = [[NSFileManager defaultManager] attributesOfItemAtPath:logPath error:nil];
+    if (logAttrs) {
+        logSizeBytes = [logAttrs fileSize];
+    }
+    NSString *logSizeFormatted = @"0 KB";
+    if (logSizeBytes >= 1024 * 1024) {
+        logSizeFormatted = [NSString stringWithFormat:@"%.2f MB", (double)logSizeBytes / (1024.0 * 1024.0)];
+    } else if (logSizeBytes > 0) {
+        logSizeFormatted = [NSString stringWithFormat:@"%.1f KB", (double)logSizeBytes / 1024.0];
+    }
+
     return @{
         @"device_name": deviceName,
         @"system_version": systemVersion,
@@ -6836,7 +6850,8 @@ static NSDictionary* get_system_diagnostics(void) {
         @"pid": @(pid),
         @"resolution": resolutionStr,
         @"brightness": [NSString stringWithFormat:@"%d%%", brightnessPercent],
-        @"dark_mode": @(isDarkMode)
+        @"dark_mode": @(isDarkMode),
+        @"log_size": logSizeFormatted
     };
 }
 
@@ -7032,6 +7047,10 @@ static void start_web_server() {
                                     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                                         execute_shell_command("killall -HUP mDNSResponder 2>/dev/null");
                                     });
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
+                                } else if ([path isEqualToString:@"/api/sysaction/clearlog"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                    NSString *logPath = @"/tmp/remotecommand.log";
+                                    [@"" writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];

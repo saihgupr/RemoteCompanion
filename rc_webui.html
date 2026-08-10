@@ -273,6 +273,17 @@
     }
     .rc-panel.active { transform: translateX(0); }
 
+    .sysinfo-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    @media (min-width: 640px) {
+      .sysinfo-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
     /* Panel navbar */
     .panel-navbar {
       position: sticky; top: 0; z-index: 10;
@@ -1331,6 +1342,7 @@
 </div>
 
 <!-- ══ DEVICE DIAGNOSTICS PANEL ══════════════════════════════════════════════ -->
+<!-- ══ DEVICE DIAGNOSTICS PANEL ══════════════════════════════════════════════ -->
 <div class="rc-panel" id="sysinfo-panel" style="display:flex; flex-direction:column;">
   <div class="panel-navbar">
     <button class="panel-back" onclick="closeSysInfoPanel()">
@@ -1344,7 +1356,7 @@
     </div>
   </div>
 
-  <div style="flex:1; overflow-y:auto; padding: 16px; max-width:600px; margin:0 auto; width:100%;">
+  <div style="flex:1; overflow-y:auto; padding: 16px; padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 120px) !important; max-width:840px; margin:0 auto; width:100%;">
     
     <!-- 1. Header Device & Environment Card -->
     <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between;">
@@ -1361,113 +1373,143 @@
       </div>
     </div>
 
-    <!-- 2. Battery & Power Card -->
-    <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px; margin-bottom:16px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <span style="font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px;">Battery & Power</span>
-        <span id="sys-battery-status" style="font-size:12px; background:#30d15822; color:#30d158; padding:3px 8px; border-radius:8px; font-weight:600;">Unplugged</span>
-      </div>
-      <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px;">
-        <span id="sys-battery-percent" style="font-size:32px; font-weight:800; color:#fff;">--%</span>
-        <span id="sys-lpm-status" style="font-size:12px; color:#8e8e93;">Low Power Mode: Off</span>
-      </div>
-      <div style="height:10px; background:#2c2c2e; border-radius:5px; overflow:hidden;">
-        <div id="sys-battery-bar" style="height:100%; width:0%; background:#30d158; border-radius:5px; transition:width 0.5s ease;"></div>
-      </div>
-    </div>
-
-    <!-- 3. Storage & RAM Usage Cards -->
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
-      <!-- Disk Storage -->
-      <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:14px;">
-        <div style="font-size:12px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Storage</div>
-        <div id="sys-storage-ratio" style="font-size:18px; font-weight:700; color:#fff; margin-bottom:6px;">-- / --</div>
-        <div style="height:6px; background:#2c2c2e; border-radius:3px; overflow:hidden; margin-bottom:8px;">
-          <div id="sys-storage-bar" style="height:100%; width:0%; background:#0a84ff; border-radius:3px; transition:width 0.5s ease;"></div>
-        </div>
-        <div style="font-size:11px; color:#8e8e93;">
-          Free: <strong id="sys-storage-free" style="color:#30d158;">--</strong>
-        </div>
-      </div>
-
-      <!-- RAM Memory -->
-      <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:14px;">
-        <div style="font-size:12px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">RAM Memory</div>
-        <div id="sys-ram-ratio" style="font-size:18px; font-weight:700; color:#fff; margin-bottom:6px;">-- / --</div>
-        <div style="height:6px; background:#2c2c2e; border-radius:3px; overflow:hidden; margin-bottom:8px;">
-          <div id="sys-ram-bar" style="height:100%; width:0%; background:#bf5af2; border-radius:3px; transition:width 0.5s ease;"></div>
-        </div>
-        <div style="font-size:11px; color:#8e8e93;">
-          Free: <strong id="sys-ram-free" style="color:#bf5af2;">--</strong>
-        </div>
-      </div>
-    </div>
-
-    <!-- 4. Network & Connection Details -->
-    <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden; margin-bottom:16px;">
-      <div style="padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.08); font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px;">Network & Connection</div>
+    <!-- Responsive Multi-Column Dashboard Grid -->
+    <div class="sysinfo-grid">
       
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span style="color:#8e8e93; font-size:14px;">Device Hostname</span>
-        <span id="sys-hostname" style="color:#fff; font-size:14px; font-weight:600;">--</span>
-      </div>
-
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span style="color:#8e8e93; font-size:14px;">Local IP Address</span>
-        <span id="sys-ip" style="color:#0a84ff; font-size:14px; font-weight:600; font-family:monospace;">--</span>
-      </div>
-
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px;">
-        <span style="color:#8e8e93; font-size:14px;">Web UI Address</span>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span id="sys-webui-url" style="color:#30d158; font-size:13px; font-weight:600; font-family:monospace;">--</span>
-          <button onclick="copyWebUIUrl()" style="background:#2c2c2e; border:none; color:#0a84ff; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">Copy</button>
+      <!-- Left Column -->
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        
+        <!-- 2. Battery & Power Card -->
+        <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <span style="font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px;">Battery & Power</span>
+            <span id="sys-battery-status" style="font-size:12px; background:#30d15822; color:#30d158; padding:3px 8px; border-radius:8px; font-weight:600;">Unplugged</span>
+          </div>
+          <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px;">
+            <span id="sys-battery-percent" style="font-size:32px; font-weight:800; color:#fff;">--%</span>
+            <span id="sys-lpm-status" style="font-size:12px; color:#8e8e93;">Low Power Mode: Off</span>
+          </div>
+          <div style="height:10px; background:#2c2c2e; border-radius:5px; overflow:hidden;">
+            <div id="sys-battery-bar" style="height:100%; width:0%; background:#30d158; border-radius:5px; transition:width 0.5s ease;"></div>
+          </div>
         </div>
-      </div>
-    </div>
 
-    <!-- 5. Display Specs & System Details -->
-    <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden; margin-bottom:16px;">
-      <div style="padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.08); font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px;">Display & Hardware</div>
-      
-      <div style="display:flex; justify-content:space-between; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span style="color:#8e8e93; font-size:14px;">Screen Resolution</span>
-        <span id="sys-resolution" style="color:#fff; font-size:14px; font-weight:600;">--</span>
+        <!-- 3. Storage & RAM Usage Cards -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <!-- Disk Storage -->
+          <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:14px;">
+            <div style="font-size:12px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Storage</div>
+            <div id="sys-storage-ratio" style="font-size:17px; font-weight:700; color:#fff; margin-bottom:6px;">-- / --</div>
+            <div style="height:6px; background:#2c2c2e; border-radius:3px; overflow:hidden; margin-bottom:8px;">
+              <div id="sys-storage-bar" style="height:100%; width:0%; background:#0a84ff; border-radius:3px; transition:width 0.5s ease;"></div>
+            </div>
+            <div style="font-size:11px; color:#8e8e93;">
+              Free: <strong id="sys-storage-free" style="color:#30d158;">--</strong>
+            </div>
+          </div>
+
+          <!-- RAM Memory -->
+          <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:14px;">
+            <div style="font-size:12px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">RAM Memory</div>
+            <div id="sys-ram-ratio" style="font-size:17px; font-weight:700; color:#fff; margin-bottom:6px;">-- / --</div>
+            <div style="height:6px; background:#2c2c2e; border-radius:3px; overflow:hidden; margin-bottom:8px;">
+              <div id="sys-ram-bar" style="height:100%; width:0%; background:#bf5af2; border-radius:3px; transition:width 0.5s ease;"></div>
+            </div>
+            <div style="font-size:11px; color:#8e8e93;">
+              Free: <strong id="sys-ram-free" style="color:#bf5af2;">--</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. Quick Maintenance Actions -->
+        <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px;">
+          <div style="font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;">Quick Maintenance Actions</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+            <button onclick="triggerRespringAction()" style="background:#ff453a22; border:1px solid #ff453a44; color:#ff453a; padding:10px 6px; border-radius:10px; font-weight:600; font-size:12px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;">
+              <i class="f7-icons" style="font-size:18px;">arrow_counterclockwise</i>
+              <span>Respring</span>
+            </button>
+            <button onclick="triggerActionApi('uicache', 'UICache refresh triggered')" style="background:#0a84ff22; border:1px solid #0a84ff44; color:#0a84ff; padding:10px 6px; border-radius:10px; font-weight:600; font-size:12px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;">
+              <i class="f7-icons" style="font-size:18px;">square_grid_2x2</i>
+              <span>UICache</span>
+            </button>
+            <button onclick="triggerActionApi('flushdns', 'DNS Cache flushed')" style="background:#30d15822; border:1px solid #30d15844; color:#30d158; padding:10px 6px; border-radius:10px; font-weight:600; font-size:12px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;">
+              <i class="f7-icons" style="font-size:18px;">bolt_horizontal</i>
+              <span>Flush DNS</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 7. Tweak Log Storage & Maintenance Card -->
+        <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px;">Tweak Log Storage</span>
+            <span id="sys-log-size" style="font-size:13px; font-weight:700; color:#0a84ff;">-- KB</span>
+          </div>
+          <div style="font-size:12px; color:#8e8e93; margin-bottom:12px;">
+            Log File: <code style="color:#fff; font-family:monospace;">/tmp/remotecommand.log</code>
+          </div>
+          <button onclick="clearTweakLogFile()" style="width:100%; background:#ff950022; border:1px solid #ff950044; color:#ff9500; padding:9px; border-radius:10px; font-weight:600; font-size:13px; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer;">
+            <i class="f7-icons" style="font-size:16px;">trash</i>
+            <span>Clear Log File on Disk</span>
+          </button>
+        </div>
+
       </div>
 
-      <div style="display:flex; justify-content:space-between; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span style="color:#8e8e93; font-size:14px;">Screen Brightness</span>
-        <span id="sys-brightness" style="color:#fff; font-size:14px; font-weight:600;">--</span>
+      <!-- Right Column -->
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        
+        <!-- 4. Network & Connection Details -->
+        <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden;">
+          <div style="padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.08); font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px;">Network & Connection</div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <span style="color:#8e8e93; font-size:14px;">Device Hostname</span>
+            <span id="sys-hostname" style="color:#fff; font-size:14px; font-weight:600;">--</span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <span style="color:#8e8e93; font-size:14px;">Local IP Address</span>
+            <span id="sys-ip" style="color:#0a84ff; font-size:14px; font-weight:600; font-family:monospace;">--</span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px;">
+            <span style="color:#8e8e93; font-size:14px;">Web UI Address</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span id="sys-webui-url" style="color:#30d158; font-size:13px; font-weight:600; font-family:monospace;">--</span>
+              <button onclick="copyWebUIUrl()" style="background:#2c2c2e; border:none; color:#0a84ff; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Display Specs & System Details -->
+        <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden;">
+          <div style="padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.08); font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px;">Display & Hardware</div>
+          
+          <div style="display:flex; justify-content:space-between; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <span style="color:#8e8e93; font-size:14px;">Screen Resolution</span>
+            <span id="sys-resolution" style="color:#fff; font-size:14px; font-weight:600;">--</span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <span style="color:#8e8e93; font-size:14px;">Screen Brightness</span>
+            <span id="sys-brightness" style="color:#fff; font-size:14px; font-weight:600;">--</span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <span style="color:#8e8e93; font-size:14px;">System Uptime</span>
+            <span id="sys-uptime" style="color:#fff; font-size:14px; font-weight:600;">--</span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; padding:12px 16px;">
+            <span style="color:#8e8e93; font-size:14px;">Thermal State</span>
+            <span id="sys-thermal" style="color:#30d158; font-size:14px; font-weight:600;">Normal</span>
+          </div>
+        </div>
+
       </div>
 
-      <div style="display:flex; justify-content:space-between; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span style="color:#8e8e93; font-size:14px;">System Uptime</span>
-        <span id="sys-uptime" style="color:#fff; font-size:14px; font-weight:600;">--</span>
-      </div>
-
-      <div style="display:flex; justify-content:space-between; padding:12px 16px;">
-        <span style="color:#8e8e93; font-size:14px;">Thermal State</span>
-        <span id="sys-thermal" style="color:#30d158; font-size:14px; font-weight:600;">Normal</span>
-      </div>
-    </div>
-
-    <!-- 6. Quick Maintenance Actions -->
-    <div style="background:#1c1c1e; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px;">
-      <div style="font-size:13px; font-weight:600; color:#8e8e93; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;">Quick Maintenance Actions</div>
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
-        <button onclick="triggerRespringAction()" style="background:#ff453a22; border:1px solid #ff453a44; color:#ff453a; padding:10px 6px; border-radius:10px; font-weight:600; font-size:12px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;">
-          <i class="f7-icons" style="font-size:18px;">arrow_counterclockwise</i>
-          <span>Respring</span>
-        </button>
-        <button onclick="triggerActionApi('uicache', 'UICache refresh triggered')" style="background:#0a84ff22; border:1px solid #0a84ff44; color:#0a84ff; padding:10px 6px; border-radius:10px; font-weight:600; font-size:12px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;">
-          <i class="f7-icons" style="font-size:18px;">square_grid_2x2</i>
-          <span>UICache</span>
-        </button>
-        <button onclick="triggerActionApi('flushdns', 'DNS Cache flushed')" style="background:#30d15822; border:1px solid #30d15844; color:#30d158; padding:10px 6px; border-radius:10px; font-weight:600; font-size:12px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;">
-          <i class="f7-icons" style="font-size:18px;">bolt_horizontal</i>
-          <span>Flush DNS</span>
-        </button>
-      </div>
     </div>
 
   </div>
@@ -2913,6 +2955,17 @@ function triggerRespringAction() {
   });
 }
 
+function clearTweakLogFile() {
+  showConfirm('Clear Log File?', 'Truncate /tmp/remotecommand.log on disk?', () => {
+    fetch('/api/sysaction/clearlog').then(r => r.json()).then(() => {
+      showToast('🧹 Tweak log file cleared');
+      fetchSysInfo();
+    }).catch(() => {
+      showToast('Failed to clear log file');
+    });
+  });
+}
+
 function triggerActionApi(actionName, successMsg) {
   fetch(`/api/sysaction/${actionName}`).then(r => r.json()).then(data => {
     showToast(successMsg || 'Action executed successfully');
@@ -2973,6 +3026,7 @@ function fetchSysInfo() {
     document.getElementById('sys-resolution').textContent = data.resolution || '--';
     document.getElementById('sys-brightness').textContent = data.brightness || '--';
     document.getElementById('sys-uptime').textContent = data.uptime || '--';
+    document.getElementById('sys-log-size').textContent = data.log_size || '0 KB';
 
     const thermalEl = document.getElementById('sys-thermal');
     thermalEl.textContent = data.thermal_state || 'Normal';

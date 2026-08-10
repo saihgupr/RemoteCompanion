@@ -849,30 +849,6 @@
       border-color: rgba(255, 255, 255, 0.15);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     }
-    .log-tab.active.exec {
-      background: rgba(48, 209, 88, 0.2);
-      color: #30d158;
-      border-color: rgba(48, 209, 88, 0.4);
-      box-shadow: none;
-    }
-    .log-tab.active.err {
-      background: rgba(255, 69, 58, 0.2);
-      color: #ff453a;
-      border-color: rgba(255, 69, 58, 0.4);
-      box-shadow: none;
-    }
-    .log-tab.active.http {
-      background: rgba(100, 210, 255, 0.2);
-      color: #64d2ff;
-      border-color: rgba(100, 210, 255, 0.4);
-      box-shadow: none;
-    }
-    .log-tab.active.sys {
-      background: rgba(191, 90, 242, 0.2);
-      color: #bf5af2;
-      border-color: rgba(191, 90, 242, 0.4);
-      box-shadow: none;
-    }
 
     /* iOS Toolbar & Search Row (Unified 1-Line Search + Actions) */
     .log-search-row { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 2px; }
@@ -2983,8 +2959,8 @@ function renderLogsUI() {
     let safeMsg = escHtml(parsed.msg);
     safeMsg = safeMsg.replace(/(trigger_[a-zA-Z0-9_]+)/g, '<span class="hl-target">$1</span>');
     safeMsg = safeMsg.replace(/(com\.[a-zA-Z0-9_\.]+)/g, '<span class="hl-target">$1</span>');
-    safeMsg = safeMsg.replace(/(SUCCESS|OK|Acknowledged)/gi, '<span class="hl-success">$1</span>');
-    safeMsg = safeMsg.replace(/(ERROR|FAILED|Bad Request|Forbidden)/gi, '<span class="hl-error">$1</span>');
+    safeMsg = safeMsg.replace(/\b(SUCCESSFULLY|SUCCESSFUL|SUCCESS|OK|ACKNOWLEDGED|PASSED)\b/gi, '<span class="hl-success">$1</span>');
+    safeMsg = safeMsg.replace(/\b(FAILED|FAILURE|FORBIDDEN|ERROR|ERRORS|BAD REQUEST)\b/gi, '<span class="hl-error">$1</span>');
 
     const timePill = parsed.timeStr ? `<span class="log-time-pill">${escHtml(parsed.timeStr)}</span>` : '';
     const logKey = line.trim();

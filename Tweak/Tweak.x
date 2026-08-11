@@ -5582,6 +5582,16 @@ static NSString *handle_command(NSString *cmd) {
         notify_post("com.saihgupr.audiostream.shuffleall");
         rc_show_hud_toast(@"Shuffle All Songs", @"Shuffling all songs and playing", @"shuffle");
         return @"Shuffle all command sent to AudioReceiver\n";
+    } else if ([cleanCmd isEqualToString:@"deletesong"] || [cleanCmd isEqualToString:@"delete song"] || [cleanCmd isEqualToString:@"delete current song"]) {
+        // Signal AudioReceiver app to delete currently playing song
+        [@"deletesong" writeToFile:@"/tmp/audiostream_pending_cmd" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+             FBSOpenApplicationService *service = [FBSOpenApplicationService serviceWithDefaultShellEndpoint];
+             [service openApplication:@"com.saihgupr.audiostream" withOptions:nil completion:nil];
+        });
+        notify_post("com.saihgupr.audiostream.deletesong");
+        rc_show_hud_toast(@"Song Deleted", @"Deleting currently playing song", @"trash");
+        return @"Delete song command sent to AudioReceiver\n";
     } else if ([cleanCmd hasPrefix:@"playlist "] || [cleanCmd hasPrefix:@"play playlist "] || [cleanCmd hasPrefix:@"shuffle playlist "] || [cleanCmd hasPrefix:@"suffle playlist "]) {
         NSString *playlistName = @"";
         if ([cleanCmd hasPrefix:@"play playlist "]) {

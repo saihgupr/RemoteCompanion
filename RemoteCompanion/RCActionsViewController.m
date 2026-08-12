@@ -2068,13 +2068,15 @@ static id g_actionClipboard = nil;
     CGFloat indentWidth = cell.indentationWidth > 0 ? cell.indentationWidth : 14.0f;
     CGFloat baseMargin = 16.0f;
     
+    RCConfigManager *config = [RCConfigManager sharedManager];
+    UIColor *borderColor = [config tweakColorForKey:@"borders" defaultVal:0.14];
+    
     for (NSInteger i = 1; i <= indentationLevel; i++) {
         CGFloat x = baseMargin + (i - 1) * indentWidth + 6.0f;
-        BOOL isInner = (i == indentationLevel);
         
         UIView *line = [[UIView alloc] initWithFrame:CGRectMake(x, 0, 1.0f, cell.contentView.bounds.size.height)];
         line.autoresizingMask = UIViewAutoresizingFlexibleHeight;
-        line.backgroundColor = isInner ? [UIColor colorWithWhite:1.0 alpha:0.25f] : [UIColor colorWithWhite:1.0 alpha:0.12f];
+        line.backgroundColor = borderColor;
         line.userInteractionEnabled = NO;
         [container addSubview:line];
     }

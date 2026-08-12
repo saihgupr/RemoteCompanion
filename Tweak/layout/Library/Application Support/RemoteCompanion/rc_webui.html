@@ -1469,11 +1469,6 @@
 
     <div class="action-list-header" style="display:flex;align-items:center;justify-content:space-between">
       <span>Action Sequence</span>
-      <div class="nest-style-picker" style="display:inline-flex;gap:4px;text-transform:none;letter-spacing:normal;font-weight:normal">
-        <button type="button" class="nest-style-btn active" data-style="rails" onclick="setNestStyle('rails')" title="Thin vertical guide lines">Rails</button>
-        <button type="button" class="nest-style-btn" data-style="accents" onclick="setNestStyle('accents')" title="Subtle left border accents">Accents</button>
-        <button type="button" class="nest-style-btn" data-style="connectors" onclick="setNestStyle('connectors')" title="L-shaped branch connectors">Joints</button>
-      </div>
     </div>
     <div class="action-list-card" id="action-list-card">
       <!-- Rendered by renderActionList() -->
@@ -3116,27 +3111,11 @@ function closeOpenActionRow() {
   _openActionRow = null;
 }
 
-function setNestStyle(style) {
-  const card = document.getElementById('action-list-card');
-  if (card) {
-    card.classList.remove('nest-style-rails', 'nest-style-accents', 'nest-style-connectors');
-    card.classList.add(`nest-style-${style}`);
-  }
-  localStorage.setItem('rc_nest_style', style);
-  document.querySelectorAll('.nest-style-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.style === style);
-  });
-}
-
 function renderActionList() {
   const card = document.getElementById('action-list-card');
   card.innerHTML = '';
-  const savedNestStyle = localStorage.getItem('rc_nest_style') || 'rails';
   card.classList.remove('nest-style-rails', 'nest-style-accents', 'nest-style-connectors');
-  card.classList.add(`nest-style-${savedNestStyle}`);
-  document.querySelectorAll('.nest-style-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.style === savedNestStyle);
-  });
+  card.classList.add('nest-style-rails');
 
   const actions = triggerData(currentKey).actions || [];
 

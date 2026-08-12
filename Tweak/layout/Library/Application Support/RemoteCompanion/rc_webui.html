@@ -711,7 +711,7 @@
     .action-seq-inner::after {
       content: '';
       position: absolute;
-      left: 54px; /* Offset for action icon */
+      left: calc(54px + var(--indent-pad, 0px));
       right: 0;
       bottom: 0;
       height: 0.5px;
@@ -741,6 +741,95 @@
 
     /* Open state handle in CSS as fallback */
     .action-seq-row.del-open .action-seq-inner { transform: translateX(-75px); }
+
+    /* ── Indent Guides Visual Hierarchy ── */
+    .nest-style-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      border-radius: 4px;
+      color: #8e8e93;
+      font-size: 11px;
+      padding: 2px 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .nest-style-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+    }
+    .nest-style-btn.active {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .action-indent-guides {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Variation 1: Thin Vertical Guide Lines (Rails) - Default */
+    .action-list-card.nest-style-rails .indent-line,
+    .action-list-card:not(.nest-style-accents):not(.nest-style-connectors) .indent-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1.5px;
+      background: rgba(255, 255, 255, 0.18);
+    }
+    .action-list-card.nest-style-rails .indent-line.active-level,
+    .action-list-card:not(.nest-style-accents):not(.nest-style-connectors) .indent-line.active-level {
+      background: rgba(255, 255, 255, 0.40);
+    }
+    .action-list-card.nest-style-rails .indent-joint,
+    .action-list-card:not(.nest-style-accents):not(.nest-style-connectors) .indent-joint {
+      display: none;
+    }
+
+    /* Variation 2: Layered Left-Border Accents */
+    .action-list-card.nest-style-accents .indent-line {
+      position: absolute;
+      top: 6px;
+      bottom: 6px;
+      width: 2px;
+      border-radius: 1px;
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .action-list-card.nest-style-accents .indent-line.active-level {
+      width: 3px;
+      border-radius: 1.5px;
+      background: rgba(255, 255, 255, 0.50);
+    }
+    .action-list-card.nest-style-accents .indent-joint {
+      display: none;
+    }
+
+    /* Variation 3: L-Shaped Joint Connectors */
+    .action-list-card.nest-style-connectors .indent-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1.5px;
+      background: rgba(255, 255, 255, 0.18);
+    }
+    .action-list-card.nest-style-connectors .indent-line.active-level {
+      display: none;
+    }
+    .action-list-card.nest-style-connectors .indent-joint {
+      position: absolute;
+      top: 0;
+      height: 50%;
+      width: 12px;
+      box-sizing: border-box;
+      border-left: 1.5px solid rgba(255, 255, 255, 0.45);
+      border-bottom: 1.5px solid rgba(255, 255, 255, 0.45);
+      border-bottom-left-radius: 4px;
+    }
 
     /* UNCHANGED for picker/settings rows */
     .action-list-row {
@@ -1380,7 +1469,14 @@
       </div>
     </div>
 
-    <div class="action-list-header">Action Sequence</div>
+    <div class="action-list-header" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Action Sequence</span>
+      <div class="nest-style-picker" style="display:inline-flex;gap:4px;text-transform:none;letter-spacing:normal;font-weight:normal">
+        <button type="button" class="nest-style-btn active" data-style="rails" onclick="setNestStyle('rails')" title="Thin vertical guide lines">Rails</button>
+        <button type="button" class="nest-style-btn" data-style="accents" onclick="setNestStyle('accents')" title="Subtle left border accents">Accents</button>
+        <button type="button" class="nest-style-btn" data-style="connectors" onclick="setNestStyle('connectors')" title="L-shaped branch connectors">Joints</button>
+      </div>
+    </div>
     <div class="action-list-card" id="action-list-card">
       <!-- Rendered by renderActionList() -->
     </div>
@@ -3022,9 +3118,28 @@ function closeOpenActionRow() {
   _openActionRow = null;
 }
 
+function setNestStyle(style) {
+  const card = document.getElementById('action-list-card');
+  if (card) {
+    card.classList.remove('nest-style-rails', 'nest-style-accents', 'nest-style-connectors');
+    card.classList.add(`nest-style-${style}`);
+  }
+  localStorage.setItem('rc_nest_style', style);
+  document.querySelectorAll('.nest-style-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.style === style);
+  });
+}
+
 function renderActionList() {
   const card = document.getElementById('action-list-card');
   card.innerHTML = '';
+  const savedNestStyle = localStorage.getItem('rc_nest_style') || 'rails';
+  card.classList.remove('nest-style-rails', 'nest-style-accents', 'nest-style-connectors');
+  card.classList.add(`nest-style-${savedNestStyle}`);
+  document.querySelectorAll('.nest-style-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.style === savedNestStyle);
+  });
+
   const actions = triggerData(currentKey).actions || [];
 
   if (actions.length === 0) {
@@ -3043,6 +3158,21 @@ function renderActionList() {
     const rowIndent = (isEnd || isElse || isElseIf) ? Math.max(0, indent - 1) : indent;
     const { icon, cls } = iconForCmd(action);
 
+    // Build indent guide elements if rowIndent > 0
+    let indentGuidesHtml = '';
+    if (rowIndent > 0) {
+      let guides = '';
+      for (let i = 1; i <= rowIndent; i++) {
+        const leftPx = 16 + (i - 1) * 20 + 8;
+        const isInner = (i === rowIndent);
+        guides += `<div class="indent-line ${isInner ? 'active-level' : ''}" style="left:${leftPx}px"></div>`;
+        if (isInner) {
+          guides += `<div class="indent-joint" style="left:${leftPx}px"></div>`;
+        }
+      }
+      indentGuidesHtml = `<div class="action-indent-guides">${guides}</div>`;
+    }
+
     // Outer wrapper
     const row = document.createElement('div');
     row.className = 'action-seq-row';
@@ -3058,7 +3188,9 @@ function renderActionList() {
     const inner = document.createElement('div');
     inner.className = 'action-seq-inner';
     inner.style.paddingLeft = `${16 + rowIndent * 20}px`;
+    inner.style.setProperty('--indent-pad', `${rowIndent * 20}px`);
     inner.innerHTML = `
+      ${indentGuidesHtml}
       <div class="action-row-icon ${cls}" style="width:24px;height:24px;border-radius:6px;margin-right:14px;flex-shrink:0">
         <i class="f7-icons" style="font-size:13px">${icon}</i>
       </div>

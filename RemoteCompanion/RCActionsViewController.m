@@ -19,6 +19,51 @@
 + (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleIdentifier format:(int)format scale:(CGFloat)scale;
 @end
 
+@interface RCActionCell : UITableViewCell
+@end
+
+@implementation RCActionCell
+
+- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
+    self = [super initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:reuseIdentifier];
+    return self;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    CGFloat indentWidth = self.indentationWidth > 0 ? self.indentationWidth : 14.0f;
+    CGFloat indentOffset = self.indentationLevel * indentWidth;
+    
+    if (self.indentationLevel > 0 && self.imageView && !CGRectIsEmpty(self.imageView.frame)) {
+        CGRect imgFrame = self.imageView.frame;
+        imgFrame.origin.x += indentOffset;
+        self.imageView.frame = imgFrame;
+    }
+    
+    if (self.textLabel && !CGRectIsEmpty(self.textLabel.frame)) {
+        CGRect textFrame = self.textLabel.frame;
+        if (self.indentationLevel > 0) {
+            textFrame.origin.x += indentOffset;
+        }
+        CGFloat maxW = self.contentView.bounds.size.width - textFrame.origin.x - 6.0f;
+        textFrame.size.width = MAX(0, maxW);
+        self.textLabel.frame = textFrame;
+    }
+    
+    if (self.detailTextLabel && !CGRectIsEmpty(self.detailTextLabel.frame)) {
+        CGRect detailFrame = self.detailTextLabel.frame;
+        if (self.indentationLevel > 0) {
+            detailFrame.origin.x += indentOffset;
+        }
+        CGFloat maxW = self.contentView.bounds.size.width - detailFrame.origin.x - 6.0f;
+        detailFrame.size.width = MAX(0, maxW);
+        self.detailTextLabel.frame = detailFrame;
+    }
+}
+
+@end
+
 @interface RCActionsViewController () <UITableViewDragDelegate, UITableViewDropDelegate>
 @property (nonatomic, strong) NSString *triggerKey;
 @property (nonatomic, strong) NSMutableArray *actions;
@@ -272,7 +317,7 @@ static id g_actionClipboard = nil;
     
     // rightBarButtonItems set above
 
-    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ActionCell"];
+    [self.tableView registerClass:[RCActionCell class] forCellReuseIdentifier:@"ActionCell"];
     self.tableView.rowHeight = 70; // Fixed height as in V2.1.2
 }
 
@@ -1857,11 +1902,7 @@ static id g_actionClipboard = nil;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    // Use Subtitle style
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ActionCell"];
-    if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ActionCell"];
-    }
+    RCActionCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ActionCell" forIndexPath:indexPath];
     
     // Action card styling applied via applySectionCardStyleToCell: below
     id actionItem = _actions[indexPath.row];
@@ -1869,12 +1910,17 @@ static id g_actionClipboard = nil;
     NSString *subtitle = nil;
     NSInteger indentationLevel = [self indentationLevelForRow:indexPath.row];
 
-    cell.indentationWidth = 18.0f;
+    cell.indentationWidth = 14.0f;
     cell.indentationLevel = indentationLevel;
+
+    cell.textLabel.adjustsFontSizeToFitWidth = YES;
+    cell.textLabel.minimumScaleFactor = 0.80f;
+    cell.detailTextLabel.adjustsFontSizeToFitWidth = YES;
+    cell.detailTextLabel.minimumScaleFactor = 0.80f;
 
     if ([actionItem isKindOfClass:[NSDictionary class]]) {
         cell.textLabel.text = cleanName;
-        cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
+        cell.textLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
         BOOL isControl = [self isEndIfActionItem:actionItem] || [self isElseActionItem:actionItem];
         cell.textLabel.textColor = isControl ? [UIColor secondaryLabelColor] : [UIColor labelColor];
         cell.detailTextLabel.text = nil;
@@ -1904,7 +1950,7 @@ static id g_actionClipboard = nil;
         
         UIColor *accentColor = [UIColor systemBlueColor];
         
-        [attrStr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:17 weight:UIFontWeightMedium] range:NSMakeRange(0, fullText.length)];
+        [attrStr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:16 weight:UIFontWeightMedium] range:NSMakeRange(0, fullText.length)];
         [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor labelColor] range:baseRange];
         if (suffixRange.location != NSNotFound) {
             [attrStr addAttribute:NSForegroundColorAttributeName value:accentColor range:suffixRange];
@@ -1963,7 +2009,7 @@ static id g_actionClipboard = nil;
     }
 
     if (cell.textLabel.attributedText == nil) {
-        cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
+        cell.textLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
         cell.textLabel.textColor = [UIColor labelColor];
     }
 
@@ -2019,7 +2065,7 @@ static id g_actionClipboard = nil;
     container.userInteractionEnabled = NO;
     container.tag = 998811;
     
-    CGFloat indentWidth = cell.indentationWidth > 0 ? cell.indentationWidth : 18.0f;
+    CGFloat indentWidth = cell.indentationWidth > 0 ? cell.indentationWidth : 14.0f;
     CGFloat baseMargin = 16.0f;
     
     for (NSInteger i = 1; i <= indentationLevel; i++) {

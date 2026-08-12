@@ -2005,8 +2005,41 @@ static id g_actionClipboard = nil;
     return cell;
 }
 
+- (void)applyIndentGuidesToCell:(UITableViewCell *)cell level:(NSInteger)indentationLevel {
+    for (UIView *subview in [cell.contentView.subviews copy]) {
+        if (subview.tag == 998811) {
+            [subview removeFromSuperview];
+        }
+    }
+    
+    if (indentationLevel <= 0) return;
+    
+    UIView *container = [[UIView alloc] initWithFrame:cell.contentView.bounds];
+    container.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    container.userInteractionEnabled = NO;
+    container.tag = 998811;
+    
+    CGFloat indentWidth = cell.indentationWidth > 0 ? cell.indentationWidth : 18.0f;
+    CGFloat baseMargin = 16.0f;
+    
+    for (NSInteger i = 1; i <= indentationLevel; i++) {
+        CGFloat x = baseMargin + (i - 1) * indentWidth + 6.0f;
+        BOOL isInner = (i == indentationLevel);
+        
+        UIView *line = [[UIView alloc] initWithFrame:CGRectMake(x, 0, 1.0f, cell.contentView.bounds.size.height)];
+        line.autoresizingMask = UIViewAutoresizingFlexibleHeight;
+        line.backgroundColor = isInner ? [UIColor colorWithWhite:1.0 alpha:0.25f] : [UIColor colorWithWhite:1.0 alpha:0.12f];
+        line.userInteractionEnabled = NO;
+        [container addSubview:line];
+    }
+    
+    [cell.contentView addSubview:container];
+}
+
 - (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
     [self applySectionCardStyleToCell:cell atIndexPath:indexPath];
+    NSInteger level = [self indentationLevelForRow:indexPath.row];
+    [self applyIndentGuidesToCell:cell level:level];
 }
 
 #pragma mark - UITableViewDragDelegate

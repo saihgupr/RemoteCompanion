@@ -4147,6 +4147,30 @@ static NSString *formatIvarValue(id obj, Ivar ivar) {
     return [NSString stringWithFormat:@"<type %s at offset %td>", type, offset];
 }
 
+@interface RCInsecureSessionDelegate : NSObject <NSURLSessionDelegate>
++ (instancetype)sharedDelegate;
+@end
+
+@implementation RCInsecureSessionDelegate
++ (instancetype)sharedDelegate {
+    static RCInsecureSessionDelegate *del = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        del = [[RCInsecureSessionDelegate alloc] init];
+    });
+    return del;
+}
+
+- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler {
+    if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
+        // Accept self-signed or local network certificates (-k mode)
+        completionHandler(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]);
+    } else {
+        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
+    }
+}
+@end
+
 static NSDictionary *rc_execute_ha_request(NSString *endpointPath, NSString *httpMethod, NSDictionary *bodyDict, NSString *overrideUrl, NSString *overrideToken) {
     if (!g_triggerConfig) load_trigger_config();
     NSString *baseUrl = overrideUrl.length > 0 ? overrideUrl : g_triggerConfig[@"haUrl"];
@@ -4182,7 +4206,11 @@ static NSDictionary *rc_execute_ha_request(NSString *endpointPath, NSString *htt
     __block NSDictionary *resultDict = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
     
-    NSURLSession *session = [NSURLSession sharedSession];
+    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    sessionConfig.timeoutIntervalForRequest = 10.0;
+    sessionConfig.timeoutIntervalForResource = 10.0;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
+    
     NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error) {
             resultDict = @{@"ok": @NO, @"error": error.localizedDescription ?: @"Connection failed"};
@@ -4325,14 +4353,17 @@ static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *htt
     }
     
     NSString *fullUrlStr = nil;
-    if (endpointPath.length > 0 && ![endpointPath hasPrefix:@"/"] && ![endpointPath hasPrefix:@"?"]) {
-        endpointPath = [NSString stringWithFormat:@"/%@", endpointPath];
-    }
-    
-    if (endpointPath.length > 0) {
-        fullUrlStr = [NSString stringWithFormat:@"%@%@", baseUrl, endpointPath];
-    } else {
+    if ([baseUrl containsString:@"/action.html"] || [baseUrl containsString:@"/authenticatedaction.html"]) {
         fullUrlStr = baseUrl;
+    } else {
+        NSString *ep = endpointPath;
+        if (!ep || ep.length == 0) {
+            ep = (user.length > 0 || pass.length > 0) ? @"/authenticatedaction.html" : @"/action.html";
+        }
+        if (![ep hasPrefix:@"/"] && ![ep hasPrefix:@"?"]) {
+            ep = [NSString stringWithFormat:@"/%@", ep];
+        }
+        fullUrlStr = [NSString stringWithFormat:@"%@%@", baseUrl, ep];
     }
     
     if (queryParams.count > 0) {
@@ -4369,7 +4400,7 @@ static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *htt
     NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration ephemeralSessionConfiguration];
     sessionConfig.timeoutIntervalForRequest = 10.0;
     sessionConfig.timeoutIntervalForResource = 10.0;
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
     
     NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error) {
@@ -4379,7 +4410,7 @@ static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *htt
             NSInteger statusCode = httpResp.statusCode;
             NSString *respText = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"";
             
-            if (statusCode >= 200 && statusCode < 300) {
+            if (statusCode >= 200 && statusCode < 400) {
                 resultDict = @{
                     @"ok": @YES,
                     @"statusCode": @(statusCode),
@@ -4390,6 +4421,13 @@ static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *htt
                     @"ok": @NO,
                     @"statusCode": @(statusCode),
                     @"error": @"HTTP 401: Unauthorized (check Web Server username/password)"
+                };
+            } else if (statusCode == 400 || statusCode == 404) {
+                // KM Web server returns 400/404 if macro name is not found, but connection itself succeeded
+                resultDict = @{
+                    @"ok": @YES,
+                    @"statusCode": @(statusCode),
+                    @"data": respText ?: @""
                 };
             } else {
                 resultDict = @{
@@ -4431,17 +4469,31 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
         NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0];
         [req setHTTPMethod:@"GET"];
         
+        NSString *user = g_triggerConfig[@"kmUser"];
+        NSString *pass = g_triggerConfig[@"kmPassword"];
+        if (user.length > 0 || pass.length > 0) {
+            NSString *authStr = [NSString stringWithFormat:@"%@:%@", user ?: @"", pass ?: @""];
+            NSData *authData = [authStr dataUsingEncoding:NSUTF8StringEncoding];
+            NSString *base64Auth = [authData base64EncodedStringWithOptions:0];
+            [req setValue:[NSString stringWithFormat:@"Basic %@", base64Auth] forHTTPHeaderField:@"Authorization"];
+        }
+        
         __block NSString *respMsg = nil;
         dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-        NSURLSession *session = [NSURLSession sharedSession];
+        NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        sessionConfig.timeoutIntervalForRequest = 10.0;
+        sessionConfig.timeoutIntervalForResource = 10.0;
+        NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
         [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
             if (err) {
                 respMsg = [NSString stringWithFormat:@"Error: %@\n", err.localizedDescription];
             } else {
                 NSHTTPURLResponse *http = (NSHTTPURLResponse *)resp;
-                if (http.statusCode >= 200 && http.statusCode < 300) {
+                if (http.statusCode >= 200 && http.statusCode < 400) {
                     rc_show_hud_toast(@"Keyboard Maestro", @"Triggered URL Macro", @"command");
                     respMsg = [NSString stringWithFormat:@"Keyboard Maestro trigger succeeded (HTTP %ld)\n", (long)http.statusCode];
+                } else if (http.statusCode == 401) {
+                    respMsg = @"Keyboard Maestro error (HTTP 401: Unauthorized - Check Username/Password)\n";
                 } else {
                     respMsg = [NSString stringWithFormat:@"Keyboard Maestro error (HTTP %ld)\n", (long)http.statusCode];
                 }
@@ -4508,7 +4560,18 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
         params[@"value"] = triggerValue;
     }
     
-    NSDictionary *res = rc_execute_km_request(@"/action.html", @"GET", params, nil, nil, nil);
+    NSString *user = g_triggerConfig[@"kmUser"];
+    NSString *pass = g_triggerConfig[@"kmPassword"];
+    NSString *defaultEndpoint = (user.length > 0 || pass.length > 0) ? @"/authenticatedaction.html" : @"/action.html";
+    
+    NSDictionary *res = rc_execute_km_request(defaultEndpoint, @"GET", params, nil, nil, nil);
+    if (![res[@"ok"] boolValue] && [defaultEndpoint isEqualToString:@"/authenticatedaction.html"]) {
+        NSDictionary *fallbackRes = rc_execute_km_request(@"/action.html", @"GET", params, nil, nil, nil);
+        if ([fallbackRes[@"ok"] boolValue]) {
+            res = fallbackRes;
+        }
+    }
+    
     if ([res[@"ok"] boolValue]) {
         NSString *toastMsg = [NSString stringWithFormat:@"Triggered %@", macroName];
         rc_show_hud_toast(@"Keyboard Maestro", toastMsg, @"command");
@@ -7574,7 +7637,7 @@ static void start_web_server() {
                                              }
                                          }
                                      }
-                                     NSDictionary *res = rc_execute_km_request(@"/action.html", @"GET", nil, overrideUrl, overrideUser, overridePass);
+                                     NSDictionary *res = rc_execute_km_request(nil, @"GET", nil, overrideUrl, overrideUser, overridePass);
                                      NSMutableDictionary *resp = [NSMutableDictionary dictionary];
                                      if ([res[@"ok"] boolValue]) {
                                          resp[@"ok"] = @YES;

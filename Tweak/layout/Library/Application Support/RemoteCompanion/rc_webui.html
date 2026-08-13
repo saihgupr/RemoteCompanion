@@ -1543,8 +1543,8 @@
         </div>
         
         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-          <button class="sys-action-btn green" id="ha-test-btn" onclick="testHAConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
-            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
+          <button class="sys-action-btn" id="ha-test-btn" onclick="testHAConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 500;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">network</i> Test Connection
           </button>
           <span id="ha-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
         </div>
@@ -1575,8 +1575,8 @@
         </div>
         
         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-          <button class="sys-action-btn green" id="km-test-btn" onclick="testKMConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
-            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
+          <button class="sys-action-btn" id="km-test-btn" onclick="testKMConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 500;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">network</i> Test Connection
           </button>
           <span id="km-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
         </div>
@@ -4105,9 +4105,21 @@ function renderPickerSections() {
   container.innerHTML = '';
 
   ACTION_SECTIONS.forEach(sec => {
+    let actions = sec.actions;
+    if (sec.title === 'Integrations') {
+      actions = actions.filter(a => {
+        if (a.cmd === '__HA_PICKER__' || a.cmd === '__HA_CUSTOM__') {
+          return !!config.haEnabled;
+        }
+        if (a.cmd === '__KM_TRIGGER__' || a.cmd === '__KM_URL__') {
+          return !!config.kmEnabled;
+        }
+        return true;
+      });
+    }
     const filtered = query
-      ? sec.actions.filter(a => a.name.toLowerCase().includes(query) || (a.cmd && a.cmd.toLowerCase().includes(query)))
-      : sec.actions;
+      ? actions.filter(a => a.name.toLowerCase().includes(query) || (a.cmd && a.cmd.toLowerCase().includes(query)))
+      : actions;
     if (filtered.length === 0) return;
 
     const hdr = document.createElement('div');

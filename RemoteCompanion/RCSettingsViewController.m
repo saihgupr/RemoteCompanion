@@ -3,6 +3,29 @@
 #import "RCUITweaker.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+@interface RCInsecureSessionDelegate : NSObject <NSURLSessionDelegate>
++ (instancetype)sharedDelegate;
+@end
+
+@implementation RCInsecureSessionDelegate
++ (instancetype)sharedDelegate {
+    static RCInsecureSessionDelegate *del = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        del = [[RCInsecureSessionDelegate alloc] init];
+    });
+    return del;
+}
+
+- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler {
+    if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
+        completionHandler(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]);
+    } else {
+        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
+    }
+}
+@end
+
 @interface RCSettingsViewController () <UIDocumentPickerDelegate>
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) UILabel *versionLabel;
@@ -277,9 +300,10 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
                 break;
             case RCIntegrationRowHATest:
                 cell.textLabel.text = @"Test Connection";
-                cell.textLabel.textColor = [UIColor systemGreenColor];
-                cell.imageView.image = [UIImage systemImageNamed:@"bolt.fill"];
-                cell.imageView.tintColor = [UIColor systemGreenColor];
+                cell.textLabel.textColor = [UIColor labelColor];
+                cell.imageView.image = [UIImage systemImageNamed:@"network"];
+                cell.imageView.tintColor = [UIColor secondaryLabelColor];
+                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
                 break;
             case RCIntegrationRowKMHeader:
                 cell.textLabel.text = @"Keyboard Maestro";
@@ -306,9 +330,10 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
                 break;
             case RCIntegrationRowKMTest:
                 cell.textLabel.text = @"Test Connection";
-                cell.textLabel.textColor = [UIColor systemGreenColor];
-                cell.imageView.image = [UIImage systemImageNamed:@"bolt.fill"];
-                cell.imageView.tintColor = [UIColor systemGreenColor];
+                cell.textLabel.textColor = [UIColor labelColor];
+                cell.imageView.image = [UIImage systemImageNamed:@"network"];
+                cell.imageView.tintColor = [UIColor secondaryLabelColor];
+                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
                 break;
         }
     } else {
@@ -433,7 +458,11 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
     req.timeoutInterval = 6.0;
     [req setValue:[NSString stringWithFormat:@"Bearer %@", cm.haToken] forHTTPHeaderField:@"Authorization"];
     
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *res, NSError *err) {
+    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration defaultSessionConfiguration];
+    sessionConfig.timeoutIntervalForRequest = 6.0;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
+    
+    [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *res, NSError *err) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [loading dismissViewControllerAnimated:YES completion:^{
                 NSHTTPURLResponse *httpRes = (NSHTTPURLResponse *)res;
@@ -454,7 +483,7 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
 
 - (void)editKMUrl {
     RCConfigManager *cm = [RCConfigManager sharedManager];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Server URL" message:@"Enter the Web Server URL from Keyboard Maestro Preferences (e.g. http://192.168.1.50:4490):" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Server URL" message:@"Enter the Web Server URL from Keyboard Maestro Preferences (e.g. http://192.168.1.50:4490 or https://192.168.1.30:4491):" preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
         tf.placeholder = @"http://192.168.1.50:4490";
         tf.text = cm.kmUrl;
@@ -519,7 +548,16 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
     
     NSString *base = cm.kmUrl;
     if ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
-    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/action.html", base]];
+    
+    NSString *endpointStr;
+    if ([base containsString:@"/action.html"] || [base containsString:@"/authenticatedaction.html"]) {
+        endpointStr = base;
+    } else {
+        NSString *path = (cm.kmUser.length || cm.kmPassword.length) ? @"/authenticatedaction.html" : @"/action.html";
+        endpointStr = [NSString stringWithFormat:@"%@%@", base, path];
+    }
+    
+    NSURL *url = [NSURL URLWithString:endpointStr];
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
     req.timeoutInterval = 6.0;
     if (cm.kmUser.length || cm.kmPassword.length) {
@@ -528,16 +566,20 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
         [req setValue:[NSString stringWithFormat:@"Basic %@", b64] forHTTPHeaderField:@"Authorization"];
     }
     
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *res, NSError *err) {
+    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration defaultSessionConfiguration];
+    sessionConfig.timeoutIntervalForRequest = 6.0;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
+    
+    [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *res, NSError *err) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [loading dismissViewControllerAnimated:YES completion:^{
                 NSHTTPURLResponse *httpRes = (NSHTTPURLResponse *)res;
-                if (!err && (httpRes.statusCode == 200 || httpRes.statusCode == 400 || httpRes.statusCode == 404)) {
+                if (!err && ((httpRes.statusCode >= 200 && httpRes.statusCode < 400) || httpRes.statusCode == 404)) {
                     UIAlertController *ok = [UIAlertController alertControllerWithTitle:@"Connection Successful" message:@"Connected to Keyboard Maestro Web Server successfully!" preferredStyle:UIAlertControllerStyleAlert];
                     [ok addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
                     [self presentViewController:ok animated:YES completion:nil];
                 } else {
-                    NSString *msg = err ? err.localizedDescription : [NSString stringWithFormat:@"Server returned HTTP status %ld", (long)httpRes.statusCode];
+                    NSString *msg = err ? err.localizedDescription : (httpRes.statusCode == 401 ? @"HTTP 401: Unauthorized (Check Username / Password)" : [NSString stringWithFormat:@"Server returned HTTP status %ld", (long)httpRes.statusCode]);
                     UIAlertController *fail = [UIAlertController alertControllerWithTitle:@"Connection Failed" message:msg preferredStyle:UIAlertControllerStyleAlert];
                     [fail addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
                     [self presentViewController:fail animated:YES completion:nil];

@@ -60,8 +60,23 @@
     self.navigationItem.hidesSearchBarWhenScrolling = NO;
     self.definesPresentationContext = YES;
     
-    // Categories and actions
-    // Each action: @{ @"name": display name, @"command": rc command }
+    [self rebuildSections];
+    
+    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ActionCell"];
+    self.tableView.rowHeight = 60; // Increased touch target
+    
+    [self applyTweaks];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self rebuildSections];
+    [self.tableView reloadData];
+}
+
+- (void)rebuildSections {
+    RCConfigManager *cm = [RCConfigManager sharedManager];
+    
     _sectionTitles = @[@"Media", @"Device Controls", @"Connectivity", @"System", @"Integrations", @"Scripting & Logic"];
     
     _sections = @[
@@ -155,13 +170,16 @@
         ],
         // Integrations
         ({
-            NSMutableArray *integrations = [NSMutableArray arrayWithArray:@[
-                @{ @"name": @"Home Assistant: Control Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" },
-                @{ @"name": @"Home Assistant: Call Service...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" },
-                @{ @"name": @"Keyboard Maestro: Trigger Macro...", @"command": @"__KM_TRIGGER__", @"icon": @"command" },
-                @{ @"name": @"Keyboard Maestro: Trigger Web URL...", @"command": @"__KM_URL__", @"icon": @"link" },
-                @{ @"name": @"Shortcuts: Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" }
-            ]];
+            NSMutableArray *integrations = [NSMutableArray array];
+            if (cm.haEnabled) {
+                [integrations addObject:@{ @"name": @"Home Assistant: Control Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" }];
+                [integrations addObject:@{ @"name": @"Home Assistant: Call Service...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" }];
+            }
+            if (cm.kmEnabled) {
+                [integrations addObject:@{ @"name": @"Keyboard Maestro: Trigger Macro...", @"command": @"__KM_TRIGGER__", @"icon": @"command" }];
+                [integrations addObject:@{ @"name": @"Keyboard Maestro: Trigger Web URL...", @"command": @"__KM_URL__", @"icon": @"link" }];
+            }
+            [integrations addObject:@{ @"name": @"Shortcuts: Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" }];
             NSArray *sneakyPaths = @[
                 @"/Library/MobileSubstrate/DynamicLibraries/SneakyCam.dylib",
                 @"/Library/MobileSubstrate/DynamicLibraries/sneakycam.dylib",
@@ -200,11 +218,6 @@
             @{ @"name": @"Toast...", @"command": @"__TOAST__", @"icon": @"text.bubble.fill" }
         ]
     ];
-    
-    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ActionCell"];
-    self.tableView.rowHeight = 60; // Increased touch target
-    
-    [self applyTweaks];
 }
 
 - (void)cancel {

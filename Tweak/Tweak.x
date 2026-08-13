@@ -4306,6 +4306,218 @@ static NSString *rc_execute_ha_command(NSString *cmdArgs) {
     }
 }
 
+static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *httpMethod, NSDictionary *queryParams, NSString *overrideUrl, NSString *overrideUser, NSString *overridePass) {
+    if (!g_triggerConfig) load_trigger_config();
+    NSString *baseUrl = overrideUrl.length > 0 ? overrideUrl : g_triggerConfig[@"kmUrl"];
+    NSString *user = overrideUser.length > 0 ? overrideUser : g_triggerConfig[@"kmUser"];
+    NSString *pass = overridePass.length > 0 ? overridePass : g_triggerConfig[@"kmPassword"];
+    
+    if (![baseUrl isKindOfClass:[NSString class]] || baseUrl.length == 0) {
+        return @{@"ok": @NO, @"error": @"Keyboard Maestro URL must be configured in Settings."};
+    }
+    
+    if (![baseUrl hasPrefix:@"http://"] && ![baseUrl hasPrefix:@"https://"]) {
+        baseUrl = [NSString stringWithFormat:@"http://%@", baseUrl];
+    }
+    
+    if ([baseUrl hasSuffix:@"/"]) {
+        baseUrl = [baseUrl substringToIndex:baseUrl.length - 1];
+    }
+    
+    NSString *fullUrlStr = nil;
+    if (endpointPath.length > 0 && ![endpointPath hasPrefix:@"/"] && ![endpointPath hasPrefix:@"?"]) {
+        endpointPath = [NSString stringWithFormat:@"/%@", endpointPath];
+    }
+    
+    if (endpointPath.length > 0) {
+        fullUrlStr = [NSString stringWithFormat:@"%@%@", baseUrl, endpointPath];
+    } else {
+        fullUrlStr = baseUrl;
+    }
+    
+    if (queryParams.count > 0) {
+        NSMutableArray *queryItems = [NSMutableArray array];
+        NSCharacterSet *allowedChars = [NSCharacterSet URLQueryAllowedCharacterSet];
+        for (NSString *key in queryParams) {
+            NSString *val = [NSString stringWithFormat:@"%@", queryParams[key]];
+            NSString *encKey = [key stringByAddingPercentEncodingWithAllowedCharacters:allowedChars];
+            NSString *encVal = [val stringByAddingPercentEncodingWithAllowedCharacters:allowedChars];
+            [queryItems addObject:[NSString stringWithFormat:@"%@=%@", encKey, encVal]];
+        }
+        NSString *delim = [fullUrlStr containsString:@"?"] ? @"&" : @"?";
+        fullUrlStr = [NSString stringWithFormat:@"%@%@%@", fullUrlStr, delim, [queryItems componentsJoinedByString:@"&"]];
+    }
+    
+    NSURL *url = [NSURL URLWithString:fullUrlStr];
+    if (!url) {
+        return @{@"ok": @NO, @"error": [NSString stringWithFormat:@"Invalid Keyboard Maestro URL: %@", fullUrlStr]};
+    }
+    
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0];
+    [request setHTTPMethod:httpMethod ?: @"GET"];
+    
+    if (user.length > 0 || pass.length > 0) {
+        NSString *authStr = [NSString stringWithFormat:@"%@:%@", user ?: @"", pass ?: @""];
+        NSData *authData = [authStr dataUsingEncoding:NSUTF8StringEncoding];
+        NSString *base64Auth = [authData base64EncodedStringWithOptions:0];
+        [request setValue:[NSString stringWithFormat:@"Basic %@", base64Auth] forHTTPHeaderField:@"Authorization"];
+    }
+    
+    __block NSDictionary *resultDict = nil;
+    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+    
+    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    sessionConfig.timeoutIntervalForRequest = 10.0;
+    sessionConfig.timeoutIntervalForResource = 10.0;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig];
+    
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (error) {
+            resultDict = @{@"ok": @NO, @"error": error.localizedDescription ?: @"Connection failed"};
+        } else {
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            NSInteger statusCode = httpResp.statusCode;
+            NSString *respText = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"";
+            
+            if (statusCode >= 200 && statusCode < 300) {
+                resultDict = @{
+                    @"ok": @YES,
+                    @"statusCode": @(statusCode),
+                    @"data": respText ?: @""
+                };
+            } else if (statusCode == 401) {
+                resultDict = @{
+                    @"ok": @NO,
+                    @"statusCode": @(statusCode),
+                    @"error": @"HTTP 401: Unauthorized (check Web Server username/password)"
+                };
+            } else {
+                resultDict = @{
+                    @"ok": @NO,
+                    @"statusCode": @(statusCode),
+                    @"error": [NSString stringWithFormat:@"HTTP %ld: %@", (long)statusCode, respText.length > 0 ? respText : @"Server returned error"]
+                };
+            }
+        }
+        dispatch_semaphore_signal(sema);
+    }];
+    [task resume];
+    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC));
+    
+    return resultDict ?: @{@"ok": @NO, @"error": @"Request timed out"};
+}
+
+static NSString *rc_execute_km_command(NSString *cmdArgs) {
+    if (!g_triggerConfig) load_trigger_config();
+    BOOL kmEnabled = [g_triggerConfig[@"kmEnabled"] boolValue];
+    if (!kmEnabled) {
+        return @"Error: Keyboard Maestro is disabled in settings\n";
+    }
+    
+    NSString *cleanArgs = [cmdArgs stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cleanArgs.length == 0) {
+        return @"Error: Missing Keyboard Maestro command parameters. Usage: 'km trigger <macro_name_or_uuid> [value]' or 'km <macro_name_or_uuid>'\n";
+    }
+    
+    if ([cleanArgs hasPrefix:@"url "] || [cleanArgs hasPrefix:@"http://"] || [cleanArgs hasPrefix:@"https://"]) {
+        NSString *urlStr = [cleanArgs hasPrefix:@"url "] ? [cleanArgs substringFromIndex:4] : cleanArgs;
+        urlStr = [urlStr stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        NSURL *url = [NSURL URLWithString:urlStr];
+        if (!url) {
+            return [NSString stringWithFormat:@"Error: Invalid URL: %@\n", urlStr];
+        }
+        
+        NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0];
+        [req setHTTPMethod:@"GET"];
+        
+        __block NSString *respMsg = nil;
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+        NSURLSession *session = [NSURLSession sharedSession];
+        [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+            if (err) {
+                respMsg = [NSString stringWithFormat:@"Error: %@\n", err.localizedDescription];
+            } else {
+                NSHTTPURLResponse *http = (NSHTTPURLResponse *)resp;
+                if (http.statusCode >= 200 && http.statusCode < 300) {
+                    rc_show_hud_toast(@"Keyboard Maestro", @"Triggered URL Macro", @"command");
+                    respMsg = [NSString stringWithFormat:@"Keyboard Maestro trigger succeeded (HTTP %ld)\n", (long)http.statusCode];
+                } else {
+                    respMsg = [NSString stringWithFormat:@"Keyboard Maestro error (HTTP %ld)\n", (long)http.statusCode];
+                }
+            }
+            dispatch_semaphore_signal(sema);
+        }] resume];
+        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC));
+        return respMsg ?: @"Keyboard Maestro URL request sent\n";
+    }
+    
+    NSString *macroName = nil;
+    NSString *triggerValue = nil;
+    
+    if ([cleanArgs hasPrefix:@"trigger "]) {
+        NSString *afterTrigger = [[cleanArgs substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([afterTrigger hasPrefix:@"\""]) {
+            NSRange endQuote = [afterTrigger rangeOfString:@"\"" options:0 range:NSMakeRange(1, afterTrigger.length - 1)];
+            if (endQuote.location != NSNotFound) {
+                macroName = [afterTrigger substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+                NSString *rem = [[afterTrigger substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (rem.length > 0) {
+                    if ([rem hasPrefix:@"\""] && [rem hasSuffix:@"\""] && rem.length >= 2) {
+                        triggerValue = [rem substringWithRange:NSMakeRange(1, rem.length - 2)];
+                    } else {
+                        triggerValue = rem;
+                    }
+                }
+            }
+        }
+        if (!macroName) {
+            NSArray *parts = [afterTrigger componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSMutableArray *cleanParts = [NSMutableArray array];
+            for (NSString *p in parts) {
+                if (p.length > 0) [cleanParts addObject:p];
+            }
+            if (cleanParts.count > 0) {
+                macroName = cleanParts[0];
+                if (cleanParts.count > 1) {
+                    triggerValue = [[cleanParts subarrayWithRange:NSMakeRange(1, cleanParts.count - 1)] componentsJoinedByString:@" "];
+                }
+            }
+        }
+    } else {
+        if ([cleanArgs hasPrefix:@"\""]) {
+            NSRange endQuote = [cleanArgs rangeOfString:@"\"" options:0 range:NSMakeRange(1, cleanArgs.length - 1)];
+            if (endQuote.location != NSNotFound) {
+                macroName = [cleanArgs substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+                NSString *rem = [[cleanArgs substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (rem.length > 0) triggerValue = rem;
+            }
+        }
+        if (!macroName) {
+            macroName = cleanArgs;
+        }
+    }
+    
+    if (!macroName || macroName.length == 0) {
+        return @"Error: Missing macro name or UUID\n";
+    }
+    
+    NSMutableDictionary *params = [NSMutableDictionary dictionary];
+    params[@"macro"] = macroName;
+    if (triggerValue.length > 0) {
+        params[@"value"] = triggerValue;
+    }
+    
+    NSDictionary *res = rc_execute_km_request(@"/action.html", @"GET", params, nil, nil, nil);
+    if ([res[@"ok"] boolValue]) {
+        NSString *toastMsg = [NSString stringWithFormat:@"Triggered %@", macroName];
+        rc_show_hud_toast(@"Keyboard Maestro", toastMsg, @"command");
+        return [NSString stringWithFormat:@"Keyboard Maestro macro triggered: %@\n", macroName];
+    } else {
+        return [NSString stringWithFormat:@"Keyboard Maestro trigger failed: %@\n", res[@"error"] ?: @"Unknown error"];
+    }
+}
+
 static NSString *handle_command(NSString *cmd) {
     if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
         SRLog(@"ERROR: handle_command received nil or invalid command string");
@@ -4318,6 +4530,11 @@ static NSString *handle_command(NSString *cmd) {
     if ([cleanCmd isEqualToString:@"ha"] || [cleanCmd hasPrefix:@"ha "]) {
         NSString *subArgs = [cleanCmd isEqualToString:@"ha"] ? @"" : [cleanCmd substringFromIndex:3];
         return rc_execute_ha_command(subArgs);
+    }
+    
+    if ([cleanCmd isEqualToString:@"km"] || [cleanCmd hasPrefix:@"km "]) {
+        NSString *subArgs = [cleanCmd isEqualToString:@"km"] ? @"" : [cleanCmd substringFromIndex:3];
+        return rc_execute_km_command(subArgs);
     }
     
     // Debug hex dump of command
@@ -7325,6 +7542,97 @@ static void start_web_server() {
                                     NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
                                     NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                } else if ([path isEqualToString:@"/api/km/test"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                     load_trigger_config();
+                                     NSString *overrideUrl = nil;
+                                     NSString *overrideUser = nil;
+                                     NSString *overridePass = nil;
+                                     if ([method isEqualToString:@"POST"]) {
+                                         NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                         int contentLength = 0;
+                                         if (clRange.location != NSNotFound) {
+                                             NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                             contentLength = [afterCl intValue];
+                                         }
+                                         const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                         if (headersEnd != NULL) {
+                                             size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                             size_t availableBodyLength = valread - headerBytesOffset;
+                                             NSMutableData *bodyData = [NSMutableData data];
+                                             if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                             while (bodyData.length < contentLength) {
+                                                 char chunk[4096];
+                                                 ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                                 if (chunkRead <= 0) break;
+                                                 [bodyData appendBytes:chunk length:chunkRead];
+                                             }
+                                             NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                             if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                                 overrideUrl = jsonObj[@"kmUrl"];
+                                                 overrideUser = jsonObj[@"kmUser"];
+                                                 overridePass = jsonObj[@"kmPassword"];
+                                             }
+                                         }
+                                     }
+                                     NSDictionary *res = rc_execute_km_request(@"/action.html", @"GET", nil, overrideUrl, overrideUser, overridePass);
+                                     NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                     if ([res[@"ok"] boolValue]) {
+                                         resp[@"ok"] = @YES;
+                                         resp[@"message"] = @"Connected to Keyboard Maestro Web Server";
+                                     } else {
+                                         resp[@"ok"] = @NO;
+                                         resp[@"error"] = res[@"error"] ?: @"Connection failed";
+                                     }
+                                     NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                     NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                 } else if ([path isEqualToString:@"/api/km/trigger"] && [method isEqualToString:@"POST"]) {
+                                     load_trigger_config();
+                                     NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                     int contentLength = 0;
+                                     if (clRange.location != NSNotFound) {
+                                         NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                         contentLength = [afterCl intValue];
+                                     }
+                                     const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                     NSString *macro = nil;
+                                     NSString *value = nil;
+                                     NSString *fullUrl = nil;
+                                     if (headersEnd != NULL) {
+                                         size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                         size_t availableBodyLength = valread - headerBytesOffset;
+                                         NSMutableData *bodyData = [NSMutableData data];
+                                         if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                         while (bodyData.length < contentLength) {
+                                             char chunk[4096];
+                                             ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                             if (chunkRead <= 0) break;
+                                             [bodyData appendBytes:chunk length:chunkRead];
+                                         }
+                                         NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                         if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                             macro = jsonObj[@"macro"];
+                                             value = jsonObj[@"value"];
+                                             fullUrl = jsonObj[@"url"];
+                                         }
+                                     }
+                                     NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                     if (fullUrl.length > 0) {
+                                         NSString *kmRes = rc_execute_km_command([NSString stringWithFormat:@"url %@", fullUrl]);
+                                         resp[@"ok"] = [kmRes containsString:@"Error:"] ? @NO : @YES;
+                                         resp[@"output"] = kmRes;
+                                     } else if (macro.length > 0) {
+                                         NSString *cmdStr = value.length > 0 ? [NSString stringWithFormat:@"trigger %@ %@", macro, value] : [NSString stringWithFormat:@"trigger %@", macro];
+                                         NSString *kmRes = rc_execute_km_command(cmdStr);
+                                         resp[@"ok"] = [kmRes containsString:@"Error:"] ? @NO : @YES;
+                                         resp[@"output"] = kmRes;
+                                     } else {
+                                         resp[@"ok"] = @NO;
+                                         resp[@"error"] = @"Missing macro parameter";
+                                     }
+                                     NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                     NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
                                 NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];

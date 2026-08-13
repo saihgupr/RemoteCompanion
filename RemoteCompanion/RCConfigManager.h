@@ -8,6 +8,13 @@
 @property (nonatomic, assign) BOOL webUIEnabled;
 @property (nonatomic, assign) BOOL nfcEnabled;
 @property (nonatomic, assign) BOOL rootEnabled;
+@property (nonatomic, assign) BOOL haEnabled;
+@property (nonatomic, copy) NSString *haUrl;
+@property (nonatomic, copy) NSString *haToken;
+@property (nonatomic, assign) BOOL kmEnabled;
+@property (nonatomic, copy) NSString *kmUrl;
+@property (nonatomic, copy) NSString *kmUser;
+@property (nonatomic, copy) NSString *kmPassword;
 
 
 + (instancetype)sharedManager;

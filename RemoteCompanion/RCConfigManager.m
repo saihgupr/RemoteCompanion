@@ -273,6 +273,69 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     [self saveConfig];
 }
 
+- (BOOL)haEnabled {
+    return [_config[@"haEnabled"] boolValue];
+}
+
+- (void)setHaEnabled:(BOOL)haEnabled {
+    _config[@"haEnabled"] = @(haEnabled);
+    [self saveConfig];
+}
+
+- (NSString *)haUrl {
+    return _config[@"haUrl"] ?: @"";
+}
+
+- (void)setHaUrl:(NSString *)haUrl {
+    _config[@"haUrl"] = haUrl ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)haToken {
+    return _config[@"haToken"] ?: @"";
+}
+
+- (void)setHaToken:(NSString *)haToken {
+    _config[@"haToken"] = haToken ?: @"";
+    [self saveConfig];
+}
+
+- (BOOL)kmEnabled {
+    return [_config[@"kmEnabled"] boolValue];
+}
+
+- (void)setKmEnabled:(BOOL)kmEnabled {
+    _config[@"kmEnabled"] = @(kmEnabled);
+    [self saveConfig];
+}
+
+- (NSString *)kmUrl {
+    return _config[@"kmUrl"] ?: @"";
+}
+
+- (void)setKmUrl:(NSString *)kmUrl {
+    _config[@"kmUrl"] = kmUrl ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)kmUser {
+    return _config[@"kmUser"] ?: @"";
+}
+
+- (void)setKmUser:(NSString *)kmUser {
+    _config[@"kmUser"] = kmUser ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)kmPassword {
+    return _config[@"kmPassword"] ?: @"";
+}
+
+- (void)setKmPassword:(NSString *)kmPassword {
+    _config[@"kmPassword"] = kmPassword ?: @"";
+    [self saveConfig];
+}
+
 - (NSDictionary *)triggerDataForKey:(NSString *)triggerKey {
     return _config[@"triggers"][triggerKey];
 }
@@ -876,6 +939,29 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             } else {
                 result = [NSString stringWithFormat:@"HA: %@", raw.length ? raw : @"Control"];
             }
+        } else if ([cmd hasPrefix:@"km "] || [cmd isEqualToString:@"km"]) {
+            NSString *raw = [cmd hasPrefix:@"km "] ? [cmd substringFromIndex:3] : @"";
+            NSArray *parts = [raw componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSMutableArray *cleanParts = [NSMutableArray array];
+            for (NSString *p in parts) {
+                if (p.length > 0) [cleanParts addObject:p];
+            }
+            NSString *subCmd = cleanParts.firstObject ? [(NSString *)cleanParts.firstObject lowercaseString] : @"";
+            if ([subCmd isEqualToString:@"trigger"] && cleanParts.count > 1) {
+                NSString *macro = cleanParts[1];
+                if (cleanParts.count > 2) {
+                    NSString *val = [[cleanParts subarrayWithRange:NSMakeRange(2, cleanParts.count - 2)] componentsJoinedByString:@" "];
+                    result = [NSString stringWithFormat:@"KM: %@ (%@)", macro, val];
+                } else {
+                    result = [NSString stringWithFormat:@"KM: %@", macro];
+                }
+            } else if ([subCmd isEqualToString:@"url"] && cleanParts.count > 1) {
+                result = [NSString stringWithFormat:@"KM URL: %@", cleanParts[1]];
+            } else if (raw.length > 0) {
+                result = [NSString stringWithFormat:@"KM: %@", raw];
+            } else {
+                result = @"Keyboard Maestro";
+            }
         } else if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) {
             result = @"Lua Script";
         } else if ([cmd hasPrefix:@"spotify "]) {
@@ -974,6 +1060,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmd hasPrefix:@"sneakycam photo"] || [cmd isEqualToString:@"sneakycam takephoto"]) return @"camera.aperture";
     if ([cmd hasPrefix:@"sneakycam video"] || [cmd isEqualToString:@"sneakycam record"] || [cmd isEqualToString:@"sneakycam startstopvideo"]) return @"video.fill";
     if ([cmd hasPrefix:@"ha "] || [cmd isEqualToString:@"ha"]) return @"house.fill";
+    if ([cmd hasPrefix:@"km "] || [cmd isEqualToString:@"km"]) return @"command";
     if ([cmd hasPrefix:@"toast"]) return @"text.bubble.fill";
     if ([cmd hasPrefix:@"root "] || [cmd hasPrefix:@"exec-root "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";

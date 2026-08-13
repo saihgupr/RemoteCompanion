@@ -1549,6 +1549,38 @@
           <span id="ha-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
         </div>
       </div>
+
+      <div class="settings-row" style="border-top: 1px solid rgba(255,255,255,0.08);">
+        <span class="settings-label">Keyboard Maestro</span>
+        <div class="settings-btn">
+          <input type="checkbox" class="ios-toggle" id="setting-km" onchange="onKMToggleChange(this.checked)">
+        </div>
+      </div>
+      <div id="km-credentials-wrapper" style="display:none; padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18);">
+        <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">WEB SERVER URL</div>
+        <input type="url" id="setting-km-url" placeholder="http://192.168.1.50:4490" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; margin-bottom: 12px; outline: none;" onchange="config.kmUrl=this.value.trim();saveConfig()">
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">USERNAME</div>
+            <input type="text" id="setting-km-user" placeholder="Optional" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.kmUser=this.value.trim();saveConfig()">
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">PASSWORD</div>
+            <div style="position: relative;">
+              <input type="password" id="setting-km-password" placeholder="Optional" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 40px 10px 12px; font-size: 15px; outline: none;" onchange="config.kmPassword=this.value.trim();saveConfig()">
+              <button type="button" onclick="toggleKMPasswordVisibility()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #8e8e93; cursor: pointer; padding: 6px;"><i class="f7-icons" id="km-password-eye-icon" style="font-size: 18px;">eye</i></button>
+            </div>
+          </div>
+        </div>
+        
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+          <button class="sys-action-btn green" id="km-test-btn" onclick="testKMConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
+          </button>
+          <span id="km-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
+        </div>
+      </div>
     </div>
 
     <div class="action-list-header">Backup</div>
@@ -1735,6 +1767,22 @@
     </div>
     <div class="dialog-btns">
       <button onclick="closeHADialog()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ KEYBOARD MAESTRO ACTION DIALOG ═══════════════════════════════════ -->
+<div class="dialog-backdrop" id="km-dialog-backdrop">
+  <div class="dialog-box" style="max-width: 480px; width: 90%;">
+    <div class="dialog-title">Keyboard Maestro Macro</div>
+    <div class="dialog-msg" style="padding-bottom: 8px;">Configure macro trigger on your Mac:</div>
+    <div style="padding:0 14px 12px; display:flex; flex-direction:column; gap:10px;">
+      <input class="dialog-input" id="km-macro-input" type="text" placeholder="Macro Name or UUID (e.g. Sleep Display)" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0; width:100%">
+      <input class="dialog-input" id="km-value-input" type="text" placeholder="Trigger Parameter / Value (optional)" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0; width:100%">
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closeKMDialog()" style="color:#ff3b30;">Cancel</button>
+      <button onclick="kmDialogSave()" style="font-weight:600;">Save</button>
     </div>
   </div>
 </div>
@@ -2386,6 +2434,7 @@ function nameForCmd(cmd) {
     return `Kill ${app ? app.name : cmd.slice(5).trim()}`;
   }
   if (lowCmd.startsWith('ha ') || lowCmd === 'ha') return formatHACommandName(cmd);
+  if (lowCmd.startsWith('km ') || lowCmd === 'km') return formatKMCommandName(cmd);
   // Touch gesture display names
   if (lowCmd.startsWith('tap '))   { const p=cmd.slice(4).trim().split(/\s+/); return `Tap (${p[0]||'?'}, ${p[1]||'?'})`; }
   if (lowCmd.startsWith('hold '))  { const p=cmd.slice(5).trim().split(/\s+/); return `Hold (${p[0]||'?'}, ${p[1]||'?'})${p[2]?` ${p[2]}ms`:''}`; }
@@ -2396,6 +2445,22 @@ function nameForCmd(cmd) {
   if (lowCmd === 'swiper' || lowCmd === 'swiperight') return 'Swipe Right';
   // Fallback: capitalize first letter
   return cmd.charAt(0).toUpperCase() + cmd.slice(1);
+}
+
+function formatKMCommandName(cmd) {
+  const raw = cmd.slice(2).trim();
+  if (!raw) return 'Keyboard Maestro';
+  const parts = raw.split(/\s+/);
+  const subCmd = parts[0].toLowerCase();
+  if (subCmd === 'trigger' && parts.length > 1) {
+    const macro = parts[1];
+    const val = parts.slice(2).join(' ');
+    return `KM: ${macro}${val ? ' (' + val + ')' : ''}`;
+  }
+  if (subCmd === 'url' && parts.length > 1) {
+    return `KM URL: ${parts.slice(1).join(' ')}`;
+  }
+  return `KM: ${raw}`;
 }
 
 function formatHACommandName(cmd) {
@@ -2473,6 +2538,7 @@ function iconForCmd(cmd) {
   const toggleInfo = parseToggleCmd(cmd);
   if (toggleInfo) return { icon:toggleInfo.icon, cls:'icon-dark' };
   if (lowCmd.startsWith('ha ') || lowCmd === 'ha') return { icon:'house_fill', cls:'icon-blue' };
+  if (lowCmd.startsWith('km ') || lowCmd === 'km') return { icon:'command', cls:'icon-yellow' };
   if (lowCmd.startsWith('flashlight ')) return { icon:'bolt_fill',       cls:'icon-orange' };
   if (lowCmd.startsWith('toast'))         return { icon:'text_bubble',     cls:'icon-orange' };
   if (lowCmd.startsWith('lua:'))          return { icon:'command',         cls:'icon-purple' };
@@ -2529,15 +2595,11 @@ const ACTION_SECTIONS = [
   { title:'System', actions:[
     { name:'Haptic Feedback',   cmd:'haptic',        icon:'hand_raised_fill' },
     { name:'Screenshot',        cmd:'screenshot',    icon:'camera_fill' },
-    { name:'SneakyCam Photo',   cmd:'sneakycam photo', icon:'camera_fill' },
-    { name:'SneakyCam Video',   cmd:'sneakycam video', icon:'video_fill' },
-    { name:'Run Shortcut…',     cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'Open App…',         cmd:'__OPEN_APP__',  icon:'square_grid_2x2_fill', needs_input:true },
     { name:'Kill App…',         cmd:'__KILL_APP__',  icon:'xmark_circle_fill', needs_input:true },
     { name:'Lock Device',       cmd:'lock',          icon:'lock_fill' },
     { name:'Unlock Device',     cmd:'unlock',        icon:'lock_open_fill' },
     { name:'Do Not Disturb',    cmd:'dnd toggle',    icon:'moon_fill', is_toggle:true },
-    { name:'AudioMix',          cmd:'audiomix toggle',icon:'equalizer', is_toggle:true },
     { name:'Activate Siri',     cmd:'siri',          icon:'mic_fill' },
     { name:'Home Button',       cmd:'home',          icon:'house_fill' },
     { name:'App Switcher',      cmd:'switcher',      icon:'square_stack_3d_up_fill' },
@@ -2549,9 +2611,15 @@ const ACTION_SECTIONS = [
     { name:'Silent Vibration',  cmd:'vibration silent-toggle', icon:'bell_slash', is_toggle:true },
     { name:'Ring Vibration',    cmd:'vibration ring-toggle', icon:'bell', is_toggle:true },
   ]},
-  { title:'Home Assistant', actions:[
-    { name:'Select Entity…',  cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
-    { name:'Call Service…',   cmd:'__HA_CUSTOM__', icon:'slider_horizontal_3', needs_input:true },
+  { title:'Integrations', actions:[
+    { name:'Home Assistant: Control Entity…',  cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
+    { name:'Home Assistant: Call Service…',   cmd:'__HA_CUSTOM__', icon:'slider_horizontal_3', needs_input:true },
+    { name:'Keyboard Maestro: Trigger Macro…',cmd:'__KM_TRIGGER__', icon:'command', needs_input:true },
+    { name:'Keyboard Maestro: Trigger Web URL…', cmd:'__KM_URL__',   icon:'link',    needs_input:true },
+    { name:'Shortcuts: Run Shortcut…',        cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
+    { name:'SneakyCam: Take Photo',           cmd:'sneakycam photo', icon:'camera_fill' },
+    { name:'SneakyCam: Toggle Video',         cmd:'sneakycam video', icon:'video_fill' },
+    { name:'AudioMix: Toggle',                cmd:'audiomix toggle',icon:'equalizer', is_toggle:true },
   ]},
   { title:'Scripting & Logic', actions:[
     { name:'If Condition…',     cmd:'__IF_CONDITION__',icon:'arrow_triangle_branch', needs_input:true },
@@ -4154,6 +4222,19 @@ function selectPickerAction(act) {
         else addActionToCurrent(`ha call ${clean}`);
       }
     });
+  } else if (c === '__KM_TRIGGER__') {
+    openKMDialog();
+  } else if (c === '__KM_URL__') {
+    showDialog('Keyboard Maestro Web Trigger URL', 'Enter full KM trigger URL:', 'http://', 'Add', val => {
+      if (val) {
+        let clean = val.trim();
+        if (!clean.startsWith('km url ') && !clean.startsWith('km ')) {
+          addActionToCurrent(`km url ${clean}`);
+        } else {
+          addActionToCurrent(clean);
+        }
+      }
+    });
   } else {
     addActionToCurrent(c);
   }
@@ -4313,6 +4394,16 @@ function openSettings() {
     document.getElementById('setting-ha-token').value = config.haToken || '';
   }
 
+  const kmToggle = document.getElementById('setting-km');
+  if (kmToggle) {
+    kmToggle.checked = !!config.kmEnabled;
+    const wrapper = document.getElementById('km-credentials-wrapper');
+    if (wrapper) wrapper.style.display = config.kmEnabled ? 'block' : 'none';
+    document.getElementById('setting-km-url').value = config.kmUrl || '';
+    document.getElementById('setting-km-user').value = config.kmUser || '';
+    document.getElementById('setting-km-password').value = config.kmPassword || '';
+  }
+
   document.getElementById('settings-panel').classList.add('active');
   document.getElementById('footer-settings-fixed').style.display = 'block';
 }
@@ -4323,6 +4414,110 @@ function onHAToggleChange(enabled) {
   const wrapper = document.getElementById('ha-credentials-wrapper');
   if (wrapper) wrapper.style.display = enabled ? 'block' : 'none';
   renderPickerSections();
+}
+
+function onKMToggleChange(enabled) {
+  config.kmEnabled = enabled;
+  saveConfig();
+  const wrapper = document.getElementById('km-credentials-wrapper');
+  if (wrapper) wrapper.style.display = enabled ? 'block' : 'none';
+  renderPickerSections();
+}
+
+function toggleKMPasswordVisibility() {
+  const passInput = document.getElementById('setting-km-password');
+  const eyeIcon = document.getElementById('km-password-eye-icon');
+  if (!passInput || !eyeIcon) return;
+  if (passInput.type === 'password') {
+    passInput.type = 'text';
+    eyeIcon.textContent = 'eye_fill';
+  } else {
+    passInput.type = 'password';
+    eyeIcon.textContent = 'eye';
+  }
+}
+
+async function testKMConnection() {
+  const statusEl = document.getElementById('km-test-status');
+  const btn = document.getElementById('km-test-btn');
+  const url = (document.getElementById('setting-km-url').value || '').trim();
+  const user = (document.getElementById('setting-km-user').value || '').trim();
+  const password = (document.getElementById('setting-km-password').value || '').trim();
+  
+  if (!url) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Missing Web Server URL';
+    }
+    return;
+  }
+  
+  config.kmUrl = url;
+  config.kmUser = user;
+  config.kmPassword = password;
+  saveConfig();
+  
+  if (statusEl) {
+    statusEl.style.color = '#8e8e93';
+    statusEl.textContent = 'Testing connection...';
+  }
+  if (btn) btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/km/test', {
+      method: 'POST',
+      body: JSON.stringify({ kmUrl: url, kmUser: user, kmPassword: password }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (statusEl) {
+        statusEl.style.color = '#30d158';
+        statusEl.textContent = '✓ Connected!';
+      }
+      showToast('✓ Keyboard Maestro connection successful');
+    } else {
+      if (statusEl) {
+        statusEl.style.color = '#ff453a';
+        statusEl.textContent = `⚠ ${data.error || 'Connection failed'}`;
+      }
+      showToast('⚠ Keyboard Maestro connection failed');
+    }
+  } catch(e) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Server request error';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function openKMDialog() {
+  document.getElementById('km-macro-input').value = '';
+  document.getElementById('km-value-input').value = '';
+  document.getElementById('km-dialog-backdrop').classList.add('visible');
+  setTimeout(() => document.getElementById('km-macro-input').focus(), 150);
+}
+
+function closeKMDialog() {
+  document.getElementById('km-dialog-backdrop').classList.remove('visible');
+}
+
+function kmDialogSave() {
+  const macro = document.getElementById('km-macro-input').value.trim();
+  const value = document.getElementById('km-value-input').value.trim();
+  if (!macro) {
+    showToast('⚠ Please enter a Macro Name or UUID');
+    return;
+  }
+  closeKMDialog();
+  if (value) {
+    addActionToCurrent(`km trigger ${macro} ${value}`);
+  } else {
+    addActionToCurrent(`km trigger ${macro}`);
+  }
+  showToast(`✓ Added KM: ${macro}`);
 }
 
 function toggleHATokenVisibility() {

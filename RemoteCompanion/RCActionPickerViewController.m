@@ -62,7 +62,7 @@
     
     // Categories and actions
     // Each action: @{ @"name": display name, @"command": rc command }
-    _sectionTitles = @[@"Media", @"Device Controls", @"Connectivity", @"System", @"Audio", @"Home Assistant", @"Scripting & Logic"];
+    _sectionTitles = @[@"Media", @"Device Controls", @"Connectivity", @"System", @"Integrations", @"Scripting & Logic"];
     
     _sections = @[
         // Media
@@ -77,7 +77,10 @@
                 @{ @"name": @"Volume Down", @"command": @"volume down", @"icon": @"speaker.wave.1.fill" },
                 @{ @"name": @"Set Volume...", @"command": @"__SET_VOLUME__", @"icon": @"speaker.wave.3.fill" },
                 @{ @"name": @"Set Brightness...", @"command": @"__SET_BRIGHTNESS__", @"icon": @"sun.max.fill" },
-                @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" }
+                @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" },
+                @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
+                @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
+                @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" }
             ]];
             NSArray *audioStreamPaths = @[
                 @"/Applications/AudioReceiver.app",
@@ -129,10 +132,35 @@
             @{ @"name": @"Disconnect AirPlay", @"command": @"airplay disconnect", @"icon": @"airplayaudio.badge.exclamationmark" }
         ],
         // System
+        @[
+            @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
+            @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
+            @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
+            @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },
+            @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
+            @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
+            @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
+            @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
+            @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
+            @{ @"name": @"App Switcher", @"command": @"switcher", @"icon": @"square.stack.3d.up.fill" },
+            @{ @"name": @"Previous App", @"command": @"previous app", @"icon": @"arrow.uturn.backward" },
+            @{ @"name": @"Control Center", @"command": @"open control center", @"icon": @"gear" },
+            @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
+            @{ @"name": @"Soft Reboot (ldrestart)", @"command": @"ldrestart", @"icon": @"arrow.clockwise" },
+            @{ @"name": @"Userspace Reboot", @"command": @"userspace-reboot", @"icon": @"arrow.clockwise.circle" },
+            @{ @"name": @"Refresh Icon Cache (uicache)", @"command": @"uicache", @"icon": @"square.grid.2x2" },
+            @{ @"name": @"Silent Vibration", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
+            @{ @"name": @"Ring Vibration", @"command": @"vibration ring-toggle", @"icon": @"bell" },
+            @{ @"name": @"Low Power Mode", @"command": @"low power toggle", @"icon": @"battery.25" }
+        ],
+        // Integrations
         ({
-            NSMutableArray *sys = [NSMutableArray arrayWithArray:@[
-                @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
-                @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" }
+            NSMutableArray *integrations = [NSMutableArray arrayWithArray:@[
+                @{ @"name": @"Home Assistant: Control Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" },
+                @{ @"name": @"Home Assistant: Call Service...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" },
+                @{ @"name": @"Keyboard Maestro: Trigger Macro...", @"command": @"__KM_TRIGGER__", @"icon": @"command" },
+                @{ @"name": @"Keyboard Maestro: Trigger Web URL...", @"command": @"__KM_URL__", @"icon": @"link" },
+                @{ @"name": @"Shortcuts: Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" }
             ]];
             NSArray *sneakyPaths = @[
                 @"/Library/MobileSubstrate/DynamicLibraries/SneakyCam.dylib",
@@ -157,43 +185,12 @@
                 if ([fm fileExistsAtPath:p]) { sneakyInstalled = YES; break; }
             }
             if (sneakyInstalled) {
-                [sys addObject:@{ @"name": @"SneakyCam Photo", @"command": @"sneakycam photo", @"icon": @"camera.aperture" }];
-                [sys addObject:@{ @"name": @"SneakyCam Video", @"command": @"sneakycam video", @"icon": @"video.fill" }];
+                [integrations addObject:@{ @"name": @"SneakyCam: Take Photo", @"command": @"sneakycam photo", @"icon": @"camera.aperture" }];
+                [integrations addObject:@{ @"name": @"SneakyCam: Toggle Video", @"command": @"sneakycam video", @"icon": @"video.fill" }];
             }
-            [sys addObjectsFromArray:@[
-                @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
-                @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
-                @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },
-                @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
-                @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
-                @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
-                @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
-                @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
-                @{ @"name": @"App Switcher", @"command": @"switcher", @"icon": @"square.stack.3d.up.fill" },
-                @{ @"name": @"Previous App", @"command": @"previous app", @"icon": @"arrow.uturn.backward" },
-                @{ @"name": @"Control Center", @"command": @"open control center", @"icon": @"gear" },
-                @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
-                @{ @"name": @"Soft Reboot (ldrestart)", @"command": @"ldrestart", @"icon": @"arrow.clockwise" },
-                @{ @"name": @"Userspace Reboot", @"command": @"userspace-reboot", @"icon": @"arrow.clockwise.circle" },
-                @{ @"name": @"Refresh Icon Cache (uicache)", @"command": @"uicache", @"icon": @"square.grid.2x2" },
-                @{ @"name": @"Silent Vibration", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
-                @{ @"name": @"Ring Vibration", @"command": @"vibration ring-toggle", @"icon": @"bell" },
-                @{ @"name": @"Low Power Mode", @"command": @"low power toggle", @"icon": @"battery.25" }
-            ]];
-            sys;
+            [integrations addObject:@{ @"name": @"AudioMix: Toggle", @"command": @"audiomix toggle", @"icon": @"music.note" }];
+            integrations;
         }),
-        // Audio (ANC & AudioMix)
-        @[
-            @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
-            @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
-            @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
-            @{ @"name": @"AudioMix", @"command": @"audiomix toggle", @"icon": @"music.note" }
-        ],
-        // Home Assistant
-        @[
-            @{ @"name": @"Select Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" },
-            @{ @"name": @"Call Service...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" }
-        ],
         // Scripting & Logic
         @[
             @{ @"name": @"Custom Lua Script", @"command": @"__LUA_SCRIPT__", @"icon": @"scroll.fill" },
@@ -327,6 +324,8 @@
         [cmd isEqualToString:@"__CUSTOM__"] ||
         [cmd isEqualToString:@"__HA_PICKER__"] ||
         [cmd isEqualToString:@"__HA_CUSTOM__"] ||
+        [cmd isEqualToString:@"__KM_TRIGGER__"] ||
+        [cmd isEqualToString:@"__KM_URL__"] ||
         [cmd isEqualToString:@"__TAP__"] ||
         [cmd isEqualToString:@"__HOLD__"] ||
         [cmd isEqualToString:@"__SWIPE__"]) {
@@ -399,6 +398,16 @@
 
     if ([command isEqualToString:@"__HA_CUSTOM__"]) {
         [self handleHACustom];
+        return;
+    }
+
+    if ([command isEqualToString:@"__KM_TRIGGER__"]) {
+        [self handleKMTrigger];
+        return;
+    }
+
+    if ([command isEqualToString:@"__KM_URL__"]) {
+        [self handleKMUrl];
         return;
     }
 
@@ -826,7 +835,7 @@
 }
 
 - (void)handleHAPicker {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Control Home Assistant Entity"
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Home Assistant Control"
                                                                    message:@"Enter command or entity ID (e.g. toggle light.bedroom_lights or turn_on switch.fan):"
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
@@ -839,6 +848,77 @@
         NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if (!val.length) return;
         NSString *cmd = [val hasPrefix:@"ha "] ? val : [NSString stringWithFormat:@"ha %@", val];
+        if (self.onActionSelected) self.onActionSelected(cmd);
+        if (self.searchController.isActive) {
+            [self.searchController dismissViewControllerAnimated:NO completion:^{
+                [self dismissViewControllerAnimated:YES completion:nil];
+            }];
+        } else {
+            [self dismissViewControllerAnimated:YES completion:nil];
+        }
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)handleKMTrigger {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Macro"
+                                                                   message:@"Enter Macro Name or UUID (and optional trigger value):"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"Macro Name or UUID (e.g. Sleep Display)";
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"Trigger Value / Parameter (optional)";
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        NSString *macro = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *val = [alert.textFields[1].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!macro.length) return;
+        
+        NSString *cmd;
+        if (val.length) {
+            cmd = [NSString stringWithFormat:@"km trigger %@ %@", macro, val];
+        } else {
+            cmd = [NSString stringWithFormat:@"km trigger %@", macro];
+        }
+        if (self.onActionSelected) self.onActionSelected(cmd);
+        if (self.searchController.isActive) {
+            [self.searchController dismissViewControllerAnimated:NO completion:^{
+                [self dismissViewControllerAnimated:YES completion:nil];
+            }];
+        } else {
+            [self dismissViewControllerAnimated:YES completion:nil];
+        }
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)handleKMUrl {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Web Trigger URL"
+                                                                   message:@"Enter full Keyboard Maestro Web Server action URL:"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"http://192.168.1.50:4490/action.html?macro=...";
+        tf.keyboardType = UIKeyboardTypeURL;
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        NSString *url = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!url.length) return;
+        
+        NSString *cmd;
+        if ([url hasPrefix:@"km url "] || [url hasPrefix:@"km "]) {
+            cmd = url;
+        } else {
+            cmd = [NSString stringWithFormat:@"km url %@", url];
+        }
         if (self.onActionSelected) self.onActionSelected(cmd);
         if (self.searchController.isActive) {
             [self.searchController dismissViewControllerAnimated:NO completion:^{

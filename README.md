@@ -3,14 +3,10 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.5.0**
-> - **Web UI Live System Log Viewer**: Stream real-time device logs directly in the Web UI dashboard backed by `/api/logs`.
-> - **iOS-Native Device Diagnostics & Health UI**: Redesigned Web UI diagnostics panel styled after the iOS app's visual language with inset grouped table cards, gradient icons, and real-time hardware meters.
-> - **Power Event Triggers**: Trigger actions on AC power connection and disconnection (`trigger_power_connect` and `trigger_power_disconnect`).
-> - **SneakyCam Integration**: Native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS App, and Web UI (dynamically displayed if SneakyCam is installed).
-> - **Web UI Modal Action Editors**: Dedicated popup modals for editing **Terminal Actions** (with root toggle) and **HUD Toast Notifications** (with live HUD preview).
-> - **Web UI Context Menu Copy & Paste**: Right-click context menu options to Copy and Paste actions in sequence.
-> - **Home Assistant Integration**: Native Home Assistant integration with Settings toggle, credentials management, and a live **Test Connection** button. Control HA entities (`ha toggle`, `ha turn_on`, `ha turn_off`, `ha call`) directly from the Web UI, iOS App, or CLI.
+> **What’s New in v3.7.0**
+> - **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`) and full Web Server trigger URLs (`km url <url>`) with optional HTTP Basic Authentication.
+> - **Web UI Keyboard Maestro Modal & Test Connection**: Dedicated settings card in the Web UI to configure server URL, optional username/password, and test connection directly against your Mac's Keyboard Maestro Web Server.
+> - **CLI & Automations API**: Full support via CLI (`rc km trigger <macro>`) and REST endpoints (`/api/km/test` and `/api/km/trigger`).
 
 
 <p align="center">
@@ -102,6 +98,10 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc ha turn_on <entity_id>` / `rc ha turn_off <entity_id>` - Turn on or off a Home Assistant entity.
 - `rc ha call <domain.service> <entity_id>` - Call any Home Assistant service (e.g. `rc ha call light.turn_on light.bedroom_lights` or `rc ha call scene.turn_on scene.movie_night`).
 - `rc ha raw <domain.service> <json_payload>` - Send custom JSON payloads to any Home Assistant service endpoint (e.g. `rc ha raw light.turn_on '{"entity_id":"light.bedroom","brightness":200}'`).
+
+### Keyboard Maestro Integration
+- `rc km trigger <macro_name_or_uuid> [value]` - Trigger a Keyboard Maestro macro on your Mac by Name or UUID (e.g. `rc km trigger "Sleep Display"` or `rc km trigger 12345678-ABCD-EF01-2345-6789ABCDEF01 "MyParam"`).
+- `rc km url <web_trigger_url>` - Trigger a full Keyboard Maestro Web Server action URL (e.g. `rc km url "http://192.168.1.50:4490/action.html?macro=Sleep%20Display"`).
 
 <details>
 <summary><b>Hardware Triggers (Tweak App)</b></summary>
@@ -416,6 +416,27 @@ data:
 ```
 
 Alternatively, call the Automations API endpoint: `http://[DEVICE_IP]:8080/api/command?cmd=lock`.
+
+</details>
+
+<details>
+<summary><b>Keyboard Maestro Integration</b></summary>
+
+### Controlling Keyboard Maestro from RemoteCompanion
+
+Trigger macros on your Mac directly from iPhone hardware gestures, buttons, NFC tags, or scripts:
+
+1. In Keyboard Maestro on your Mac, open **Preferences** &rarr; **Web Server** and check **Enable Web Server**.
+2. Note your Mac's IP address and Port (default: `4490`), and set a Username/Password if desired.
+3. In the RemoteCompanion Web UI or iOS App, go to **Settings** &rarr; **Integrations**.
+4. Toggle on **Keyboard Maestro**.
+5. Enter your **Web Server URL** (e.g., `http://192.168.1.50:4490`) and optional **Username** and **Password** (supports HTTP Basic Authentication).
+6. Click **Test Connection** to verify connectivity.
+
+Once configured:
+- Use **Trigger Macro…** in any action sequence to trigger macros by Name or UUID (with optional trigger parameter value).
+- Use **Trigger Web URL…** to execute any custom KM Web Server action URL.
+- Execute KM commands directly via CLI: `rc km trigger "Sleep Display"` or `rc km url "http://192.168.1.50:4490/action.html?macro=MyMacro"`.
 
 </details>
 

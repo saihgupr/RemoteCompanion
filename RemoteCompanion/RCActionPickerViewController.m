@@ -174,7 +174,6 @@
             NSMutableArray *integrations = [NSMutableArray array];
             if (cm.haEnabled) {
                 [integrations addObject:@{ @"name": @"Home Assistant: Control Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" }];
-                [integrations addObject:@{ @"name": @"Home Assistant: Call Service...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" }];
             }
             if (cm.kmEnabled) {
                 [integrations addObject:@{ @"name": @"Keyboard Maestro: Trigger Macro...", @"command": @"__KM_TRIGGER__", @"icon": @"command" }];
@@ -336,7 +335,6 @@
         [cmd isEqualToString:@"__DELAY__"] ||
         [cmd isEqualToString:@"__CUSTOM__"] ||
         [cmd isEqualToString:@"__HA_PICKER__"] ||
-        [cmd isEqualToString:@"__HA_CUSTOM__"] ||
         [cmd isEqualToString:@"__KM_TRIGGER__"] ||
         [cmd isEqualToString:@"__TAP__"] ||
         [cmd isEqualToString:@"__HOLD__"] ||
@@ -405,11 +403,6 @@
 
     if ([command isEqualToString:@"__HA_PICKER__"]) {
         [self handleHAPicker];
-        return;
-    }
-
-    if ([command isEqualToString:@"__HA_CUSTOM__"]) {
-        [self handleHACustom];
         return;
     }
 
@@ -806,39 +799,6 @@
         self.filteredActions = [allActions filteredArrayUsingPredicate:pred];
     }
     [self.tableView reloadData];
-}
-
-- (void)handleHACustom {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Custom HA Service Call"
-                                                                   message:@"Enter service and entity (e.g. light.turn_on light.bedroom_lights):"
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"light.turn_on light.bedroom_lights";
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (!val.length) return;
-        NSString *cmd;
-        if ([val hasPrefix:@"ha call "]) {
-            cmd = val;
-        } else if ([val hasPrefix:@"ha "]) {
-            cmd = [NSString stringWithFormat:@"ha call %@", [val substringFromIndex:3]];
-        } else {
-            cmd = [NSString stringWithFormat:@"ha call %@", val];
-        }
-        if (self.onActionSelected) self.onActionSelected(cmd);
-        if (self.searchController.isActive) {
-            [self.searchController dismissViewControllerAnimated:NO completion:^{
-                [self dismissViewControllerAnimated:YES completion:nil];
-            }];
-        } else {
-            [self dismissViewControllerAnimated:YES completion:nil];
-        }
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)handleHAPicker {

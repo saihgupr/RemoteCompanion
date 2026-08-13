@@ -2613,7 +2613,6 @@ const ACTION_SECTIONS = [
   ]},
   { title:'Integrations', actions:[
     { name:'Home Assistant: Control Entity…',  cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
-    { name:'Home Assistant: Call Service…',   cmd:'__HA_CUSTOM__', icon:'slider_horizontal_3', needs_input:true },
     { name:'Keyboard Maestro: Trigger Macro…',cmd:'__KM_TRIGGER__', icon:'command', needs_input:true },
     { name:'Shortcuts: Run Shortcut…',        cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'SneakyCam: Take Photo',           cmd:'sneakycam photo', icon:'camera_fill' },
@@ -4107,7 +4106,7 @@ function renderPickerSections() {
     let actions = sec.actions;
     if (sec.title === 'Integrations') {
       actions = actions.filter(a => {
-        if (a.cmd === '__HA_PICKER__' || a.cmd === '__HA_CUSTOM__') {
+        if (a.cmd === '__HA_PICKER__') {
           return !!config.haEnabled;
         }
         if (a.cmd === '__KM_TRIGGER__') {
@@ -4223,15 +4222,6 @@ function selectPickerAction(act) {
   } else if (c === '__HA_TURN_OFF__') {
     showDialog('Turn Off Home Assistant Entity', 'Entity ID (e.g. light.bedroom_lights):', '', 'Add', val => {
       if (val) addActionToCurrent(`ha turn_off ${val.trim()}`);
-    });
-  } else if (c === '__HA_CUSTOM__') {
-    showDialog('Custom HA Service Call', 'Service (e.g. light.turn_on) and Entity ID:', 'light.turn_on light.bedroom_lights', 'Add', val => {
-      if (val) {
-        let clean = val.trim();
-        if (clean.startsWith('ha call ')) addActionToCurrent(clean);
-        else if (clean.startsWith('ha ')) addActionToCurrent('ha call ' + clean.substring(3).trim());
-        else addActionToCurrent(`ha call ${clean}`);
-      }
     });
   } else if (c === '__KM_TRIGGER__') {
     openKMDialog();

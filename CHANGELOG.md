@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-08-13
+
+### Fixed
+- **Dynamic Config Path Resolution (`find_config_path`)**: Fixed trigger resolution in rootless, NathanLR, and Sileo environments by checking file modification timestamps (`NSFileModificationDate`) across shared (`/var/mobile/Documents/`), rootless (`/var/jb/var/mobile/Documents/`), and app container (`/var/mobile/Containers/Data/Application/*/Documents/`) paths to ensure trigger updates saved in the companion app are immediately picked up by SpringBoard.
+- **Notification Trigger Observer**: Moved `%hook BBServer` before `%ctor` so that `%init(_ungrouped)` correctly registers notification hooks.
+- **Immediate Tweak Observer Registration**: Config loading and Darwin notification listeners now initialize synchronously on tweak load instead of waiting on a delayed 5-second timer.
+
 ## [3.5.0] - 2026-08-09
 
 ### Added

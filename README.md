@@ -3,14 +3,13 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.5.0**
+> **What’s New in v3.5.1**
+> - **Dynamic Trigger Config Resolution**: Added automatic modification date checking across shared (`/var/mobile/Documents/`), rootless (`/var/jb/var/mobile/Documents/`), and sandbox app container paths to ensure trigger edits in the Companion App are immediately active.
+> - **Notification Trigger Fix**: Resolved an initialization ordering bug for `%hook BBServer` so notification triggers work reliably across all environments.
+> - **Instant Tweak Observer Registration**: Config loading and notification observers now initialize immediately on tweak load instead of waiting on a delayed startup timer.
 > - **Web UI Live System Log Viewer**: Stream real-time device logs directly in the Web UI dashboard backed by `/api/logs`.
-> - **iOS-Native Device Diagnostics & Health UI**: Redesigned Web UI diagnostics panel styled after the iOS app's visual language with inset grouped table cards, gradient icons, and real-time hardware meters.
 > - **Power Event Triggers**: Trigger actions on AC power connection and disconnection (`trigger_power_connect` and `trigger_power_disconnect`).
-> - **SneakyCam Integration**: Native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS App, and Web UI (dynamically displayed if SneakyCam is installed).
-> - **Web UI Modal Action Editors**: Dedicated popup modals for editing **Terminal Actions** (with root toggle) and **HUD Toast Notifications** (with live HUD preview).
-> - **Web UI Context Menu Copy & Paste**: Right-click context menu options to Copy and Paste actions in sequence.
-> - **Home Assistant Integration**: Native Home Assistant integration with Settings toggle, credentials management, and a live **Test Connection** button. Control HA entities (`ha toggle`, `ha turn_on`, `ha turn_off`, `ha call`) directly from the Web UI, iOS App, or CLI.
+> - **SneakyCam Integration**: Native `sneakycam photo` and `sneakycam video` triggers across CLI, iOS App, and Web UI.
 
 
 <p align="center">

@@ -1245,15 +1245,23 @@ static NSDictionary *g_triggerConfig = nil;
 static NSString *g_resolvedConfigPath = nil;
 
 // Find config file - check shared path first, then search app containers
+// Find config file - check shared path, rootless path, and app containers, selecting the newest file
 static NSString *find_config_path() {
     NSFileManager *fm = [NSFileManager defaultManager];
+    NSMutableArray *candidatePaths = [NSMutableArray array];
     
     // First try the shared path
     if ([fm fileExistsAtPath:kTriggerConfigPath]) {
-        return kTriggerConfigPath;
+        [candidatePaths addObject:kTriggerConfigPath];
     }
     
-    // Search for RemoteCompanion app container
+    // Try rootless shared path
+    NSString *rootlessShared = @"/var/jb/var/mobile/Documents/rc_triggers.plist";
+    if ([fm fileExistsAtPath:rootlessShared]) {
+        [candidatePaths addObject:rootlessShared];
+    }
+    
+    // Search for RemoteCompanion app container(s)
     NSString *containersPath = @"/var/mobile/Containers/Data/Application";
     NSArray *uuids = [fm contentsOfDirectoryAtPath:containersPath error:nil];
     
@@ -1261,12 +1269,31 @@ static NSString *find_config_path() {
         NSString *configPath = [NSString stringWithFormat:@"%@/%@/Documents/%@", 
                                 containersPath, uuid, kTriggerConfigFilename];
         if ([fm fileExistsAtPath:configPath]) {
-            SRLog(@"Found config in container: %@", configPath);
-            return configPath;
+            [candidatePaths addObject:configPath];
         }
     }
     
-    return nil;
+    if (candidatePaths.count == 0) return nil;
+    
+    // Select the file with the most recent modification date
+    NSString *newestPath = nil;
+    NSDate *newestDate = [NSDate distantPast];
+    
+    for (NSString *path in candidatePaths) {
+        NSDictionary *attrs = [fm attributesOfItemAtPath:path error:nil];
+        NSDate *modDate = [attrs fileModificationDate];
+        if (modDate && [modDate compare:newestDate] == NSOrderedDescending) {
+            newestDate = modDate;
+            newestPath = path;
+        }
+    }
+    
+    if (newestPath) {
+        SRLog(@"find_config_path selected newest config at %@ (modified: %@)", newestPath, newestDate);
+        return newestPath;
+    }
+    
+    return [candidatePaths firstObject];
 }
 // ============ BLACKLIST SYSTEM ============
 
@@ -9364,36 +9391,6 @@ static void update_edge_gestures() {
 
 %end
 
-%ctor {
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-    if ([bundleID isEqualToString:@"com.apple.springboard"] || [bundleID isEqualToString:@"com.apple.calculator"]) {
-        %init(_ungrouped);
-        
-        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
-        
-        // Start Background HID Listener immediately (safe for NFC)
-        setup_background_hid_listener();
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SRLog(@"Delayed Initialization & Gesture Setup...");
-            
-            load_trigger_config();
-            register_config_observer();
-            register_simulation_observers();
-            register_system_event_observers(); // WiFi/BT Triggers
-            start_server();
-            start_web_server();
-            start_schedule_timer();
-            
-            // Conditionally register edge gestures based on config
-            update_edge_gestures();
-            
-            SRLog(@"Initialization Complete.");
-        });
-    } else {
-        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
-    }
-}
 %hook BBServer
 - (void)publishBulletin:(id)bulletin destinations:(NSUInteger)destinations {
     %orig;
@@ -9441,3 +9438,36 @@ static void update_edge_gestures() {
     }
 }
 %end
+
+%ctor {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    if ([bundleID isEqualToString:@"com.apple.springboard"] || [bundleID isEqualToString:@"com.apple.calculator"]) {
+        %init(_ungrouped);
+        
+        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
+        
+        // Load config & register observer immediately
+        load_trigger_config();
+        register_config_observer();
+        
+        // Start Background HID Listener immediately (safe for NFC)
+        setup_background_hid_listener();
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SRLog(@"Delayed Initialization & Gesture Setup...");
+            
+            register_simulation_observers();
+            register_system_event_observers(); // WiFi/BT Triggers
+            start_server();
+            start_web_server();
+            start_schedule_timer();
+            
+            // Conditionally register edge gestures based on config
+            update_edge_gestures();
+            
+            SRLog(@"Initialization Complete.");
+        });
+    } else {
+        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
+    }
+}

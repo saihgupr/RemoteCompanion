@@ -300,10 +300,9 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
                 break;
             case RCIntegrationRowHATest:
                 cell.textLabel.text = @"Test Connection";
-                cell.textLabel.textColor = [UIColor labelColor];
-                cell.imageView.image = [UIImage systemImageNamed:@"network"];
-                cell.imageView.tintColor = [UIColor secondaryLabelColor];
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+                cell.textLabel.textColor = [UIColor systemGreenColor];
+                cell.imageView.image = [UIImage systemImageNamed:@"bolt.fill"];
+                cell.imageView.tintColor = [UIColor systemGreenColor];
                 break;
             case RCIntegrationRowKMHeader:
                 cell.textLabel.text = @"Keyboard Maestro";
@@ -330,10 +329,9 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
                 break;
             case RCIntegrationRowKMTest:
                 cell.textLabel.text = @"Test Connection";
-                cell.textLabel.textColor = [UIColor labelColor];
-                cell.imageView.image = [UIImage systemImageNamed:@"network"];
-                cell.imageView.tintColor = [UIColor secondaryLabelColor];
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+                cell.textLabel.textColor = [UIColor systemGreenColor];
+                cell.imageView.image = [UIImage systemImageNamed:@"bolt.fill"];
+                cell.imageView.tintColor = [UIColor systemGreenColor];
                 break;
         }
     } else {

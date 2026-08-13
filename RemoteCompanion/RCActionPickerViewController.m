@@ -1,6 +1,7 @@
 #import "RCActionPickerViewController.h"
 #import "RCServerClient.h"
 #import "RCConfigManager.h"
+#import "RCHAEntityPickerViewController.h"
 
 @interface RCActionPickerViewController () <UISearchResultsUpdating>
 @property (nonatomic, strong) NSArray<NSString *> *sectionTitles;
@@ -177,7 +178,6 @@
             }
             if (cm.kmEnabled) {
                 [integrations addObject:@{ @"name": @"Keyboard Maestro: Trigger Macro...", @"command": @"__KM_TRIGGER__", @"icon": @"command" }];
-                [integrations addObject:@{ @"name": @"Keyboard Maestro: Trigger Web URL...", @"command": @"__KM_URL__", @"icon": @"link" }];
             }
             [integrations addObject:@{ @"name": @"Shortcuts: Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" }];
             NSArray *sneakyPaths = @[
@@ -338,7 +338,6 @@
         [cmd isEqualToString:@"__HA_PICKER__"] ||
         [cmd isEqualToString:@"__HA_CUSTOM__"] ||
         [cmd isEqualToString:@"__KM_TRIGGER__"] ||
-        [cmd isEqualToString:@"__KM_URL__"] ||
         [cmd isEqualToString:@"__TAP__"] ||
         [cmd isEqualToString:@"__HOLD__"] ||
         [cmd isEqualToString:@"__SWIPE__"]) {
@@ -416,11 +415,6 @@
 
     if ([command isEqualToString:@"__KM_TRIGGER__"]) {
         [self handleKMTrigger];
-        return;
-    }
-
-    if ([command isEqualToString:@"__KM_URL__"]) {
-        [self handleKMUrl];
         return;
     }
 
@@ -848,20 +842,11 @@
 }
 
 - (void)handleHAPicker {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Home Assistant Control"
-                                                                   message:@"Enter command or entity ID (e.g. toggle light.bedroom_lights or turn_on switch.fan):"
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"toggle light.bedroom_lights";
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (!val.length) return;
-        NSString *cmd = [val hasPrefix:@"ha "] ? val : [NSString stringWithFormat:@"ha %@", val];
-        if (self.onActionSelected) self.onActionSelected(cmd);
+    RCHAEntityPickerViewController *picker = [[RCHAEntityPickerViewController alloc] init];
+    picker.onEntitySelected = ^(NSString *cmd) {
+        if (self.onActionSelected) {
+            self.onActionSelected(cmd);
+        }
         if (self.searchController.isActive) {
             [self.searchController dismissViewControllerAnimated:NO completion:^{
                 [self dismissViewControllerAnimated:YES completion:nil];
@@ -869,8 +854,8 @@
         } else {
             [self dismissViewControllerAnimated:YES completion:nil];
         }
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
+    };
+    [self.navigationController pushViewController:picker animated:YES];
 }
 
 - (void)handleKMTrigger {
@@ -898,39 +883,6 @@
             cmd = [NSString stringWithFormat:@"km trigger %@ %@", macro, val];
         } else {
             cmd = [NSString stringWithFormat:@"km trigger %@", macro];
-        }
-        if (self.onActionSelected) self.onActionSelected(cmd);
-        if (self.searchController.isActive) {
-            [self.searchController dismissViewControllerAnimated:NO completion:^{
-                [self dismissViewControllerAnimated:YES completion:nil];
-            }];
-        } else {
-            [self dismissViewControllerAnimated:YES completion:nil];
-        }
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)handleKMUrl {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Web Trigger URL"
-                                                                   message:@"Enter full Keyboard Maestro Web Server action URL:"
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"http://192.168.1.50:4490/action.html?macro=...";
-        tf.keyboardType = UIKeyboardTypeURL;
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *url = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (!url.length) return;
-        
-        NSString *cmd;
-        if ([url hasPrefix:@"km url "] || [url hasPrefix:@"km "]) {
-            cmd = url;
-        } else {
-            cmd = [NSString stringWithFormat:@"km url %@", url];
         }
         if (self.onActionSelected) self.onActionSelected(cmd);
         if (self.searchController.isActive) {

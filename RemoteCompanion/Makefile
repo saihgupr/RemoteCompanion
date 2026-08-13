@@ -8,7 +8,7 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = RemoteCompanion
 
-RemoteCompanion_FILES = main.m RCAppDelegate.m RCConfigManager.m RCTriggersViewController.m RCActionsViewController.m RCActionPickerViewController.m RCSettingsViewController.m RCNFCTriggerViewController.m RCShortcutPickerViewController.m RCTextInputViewController.m RCAppPickerViewController.m RCServerClient.m RCWiFiTriggerViewController.m RCBluetoothTriggerViewController.m RCUITweaker.m RCNotificationTriggerViewController.m RCScheduledTriggerViewController.m
+RemoteCompanion_FILES = main.m RCAppDelegate.m RCConfigManager.m RCTriggersViewController.m RCActionsViewController.m RCActionPickerViewController.m RCSettingsViewController.m RCNFCTriggerViewController.m RCShortcutPickerViewController.m RCTextInputViewController.m RCAppPickerViewController.m RCServerClient.m RCWiFiTriggerViewController.m RCBluetoothTriggerViewController.m RCUITweaker.m RCNotificationTriggerViewController.m RCScheduledTriggerViewController.m RCHAEntityPickerViewController.m
 RemoteCompanion_FRAMEWORKS = UIKit Foundation UserNotifications CoreNFC MobileCoreServices
 RemoteCompanion_CFLAGS = -fobjc-arc
 RemoteCompanion_LDFLAGS = -lc++

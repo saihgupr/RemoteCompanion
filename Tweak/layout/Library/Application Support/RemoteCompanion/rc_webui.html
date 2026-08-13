@@ -1543,8 +1543,8 @@
         </div>
         
         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-          <button class="sys-action-btn" id="ha-test-btn" onclick="testHAConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 500;">
-            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">network</i> Test Connection
+          <button class="sys-action-btn green" id="ha-test-btn" onclick="testHAConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
           </button>
           <span id="ha-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
         </div>
@@ -1575,8 +1575,8 @@
         </div>
         
         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-          <button class="sys-action-btn" id="km-test-btn" onclick="testKMConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 500;">
-            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">network</i> Test Connection
+          <button class="sys-action-btn green" id="km-test-btn" onclick="testKMConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
           </button>
           <span id="km-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
         </div>
@@ -2615,7 +2615,6 @@ const ACTION_SECTIONS = [
     { name:'Home Assistant: Control Entity…',  cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
     { name:'Home Assistant: Call Service…',   cmd:'__HA_CUSTOM__', icon:'slider_horizontal_3', needs_input:true },
     { name:'Keyboard Maestro: Trigger Macro…',cmd:'__KM_TRIGGER__', icon:'command', needs_input:true },
-    { name:'Keyboard Maestro: Trigger Web URL…', cmd:'__KM_URL__',   icon:'link',    needs_input:true },
     { name:'Shortcuts: Run Shortcut…',        cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'SneakyCam: Take Photo',           cmd:'sneakycam photo', icon:'camera_fill' },
     { name:'SneakyCam: Toggle Video',         cmd:'sneakycam video', icon:'video_fill' },
@@ -4111,7 +4110,7 @@ function renderPickerSections() {
         if (a.cmd === '__HA_PICKER__' || a.cmd === '__HA_CUSTOM__') {
           return !!config.haEnabled;
         }
-        if (a.cmd === '__KM_TRIGGER__' || a.cmd === '__KM_URL__') {
+        if (a.cmd === '__KM_TRIGGER__') {
           return !!config.kmEnabled;
         }
         return true;
@@ -4236,17 +4235,6 @@ function selectPickerAction(act) {
     });
   } else if (c === '__KM_TRIGGER__') {
     openKMDialog();
-  } else if (c === '__KM_URL__') {
-    showDialog('Keyboard Maestro Web Trigger URL', 'Enter full KM trigger URL:', 'http://', 'Add', val => {
-      if (val) {
-        let clean = val.trim();
-        if (!clean.startsWith('km url ') && !clean.startsWith('km ')) {
-          addActionToCurrent(`km url ${clean}`);
-        } else {
-          addActionToCurrent(clean);
-        }
-      }
-    });
   } else {
     addActionToCurrent(c);
   }

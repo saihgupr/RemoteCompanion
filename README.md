@@ -435,8 +435,7 @@ Trigger macros on your Mac directly from iPhone hardware gestures, buttons, NFC 
 
 Once configured:
 - Use **Trigger Macro…** in any action sequence to trigger macros by Name or UUID (with optional trigger parameter value).
-- Use **Trigger Web URL…** to execute any custom KM Web Server action URL.
-- Execute KM commands directly via CLI: `rc km trigger "Sleep Display"` or `rc km url "http://192.168.1.50:4490/action.html?macro=MyMacro"`.
+- Execute KM commands directly via CLI: `rc km trigger "Sleep Display"` or `rc km "My Macro Name"`.
 
 </details>
 

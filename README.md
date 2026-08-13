@@ -4,8 +4,9 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 
 > [!IMPORTANT]
 > **What’s New in v3.7.0**
-> - **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`) and full Web Server trigger URLs (`km url <url>`) with optional HTTP Basic Authentication.
-> - **Web UI Keyboard Maestro Modal & Test Connection**: Dedicated settings card in the Web UI to configure server URL, optional username/password, and test connection directly against your Mac's Keyboard Maestro Web Server.
+> - **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`), HTTP Basic Authentication, and self-signed SSL certificates.
+> - **Native iOS Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
+> - **Integrations Settings & Dynamic Action Filtering**: Unified Integrations section in Settings for Home Assistant and Keyboard Maestro with live connection testing. The action picker dynamically only displays actions for enabled integrations.
 > - **CLI & Automations API**: Full support via CLI (`rc km trigger <macro>`) and REST endpoints (`/api/km/test` and `/api/km/trigger`).
 
 
@@ -394,8 +395,7 @@ Enable two-way automation between your iOS device and Home Assistant:
 4. Click **Test Connection** to verify setup.
 
 Once configured:
-- Use **Control Home Assistant Entity…** in any trigger sequence to search and select entities (lights, switches, scenes, scripts, locks) with live state badges and quick action options.
-- Use **Custom HA Service Call…** to execute any Home Assistant domain service.
+- Use **Control Home Assistant Entity…** in any trigger sequence to search and select entities (lights, switches, scenes, scripts, automations, locks) with live state badges and quick action options (Toggle, Turn On, Turn Off), or enter custom commands manually.
 - Execute HA commands directly via CLI: `rc ha toggle light.bedroom_lights`, `rc ha call light.turn_on light.bedroom_lights`, or `rc ha raw light.turn_on '{"entity_id":"light.bedroom","brightness":200}'`.
 
 ### 2. Controlling RemoteCompanion from Home Assistant

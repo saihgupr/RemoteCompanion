@@ -1072,7 +1072,7 @@ static NSString* root_prefix() {
     static NSString *prefix = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb/usr/bin/nc"]) {
+        if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb"]) {
             prefix = @"/var/jb";
         } else {
             prefix = @"";
@@ -4581,6 +4581,161 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
     }
 }
 
+static void rc_execute_shortcut(NSString *shortcutName, NSString *inputArg) {
+    if (!shortcutName || shortcutName.length == 0) return;
+    
+    NSString *cleanName = [shortcutName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([cleanName hasPrefix:@"\""] && [cleanName hasSuffix:@"\""] && cleanName.length >= 2) {
+        cleanName = [cleanName substringWithRange:NSMakeRange(1, cleanName.length - 2)];
+    }
+    
+    SRLog(@"[Shortcut] Attempting execution for: '%@'", cleanName);
+    
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        @try {
+            // 1. Try Native VoiceShortcutClient / WorkflowKit execution (iOS 15 / 16 / 17)
+            dlopen("/System/Library/PrivateFrameworks/VoiceShortcutClient.framework/VoiceShortcutClient", RTLD_NOW);
+            dlopen("/System/Library/PrivateFrameworks/WorkflowKit.framework/WorkflowKit", RTLD_NOW);
+            
+            Class WFSiriRunRequestClass = objc_getClass("WFSiriWorkflowRunRequest");
+            Class WFSiriClientClass = objc_getClass("WFSiriWorkflowRunnerClient");
+            if (WFSiriRunRequestClass && WFSiriClientClass) {
+                id req = nil;
+                if ([WFSiriRunRequestClass respondsToSelector:@selector(alloc)]) {
+                    id allocReq = [WFSiriRunRequestClass alloc];
+                    SEL initSel = NSSelectorFromString(@"initWithWorkflowName:input:");
+                    if ([allocReq respondsToSelector:initSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        req = [allocReq performSelector:initSel withObject:cleanName withObject:inputArg];
+#pragma clang diagnostic pop
+                    }
+                }
+                if (req) {
+                    id client = nil;
+                    SEL initClientSel = NSSelectorFromString(@"initWithRunRequest:");
+                    if ([WFSiriClientClass instancesRespondToSelector:initClientSel]) {
+                        id allocClient = [WFSiriClientClass alloc];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        client = [allocClient performSelector:initClientSel withObject:req];
+#pragma clang diagnostic pop
+                    }
+                    if (client && [client respondsToSelector:@selector(start)]) {
+                        [client performSelector:@selector(start)];
+                        SRLog(@"[Shortcut] Started via WFSiriWorkflowRunnerClient for '%@'", cleanName);
+                        return;
+                    }
+                }
+            }
+            
+            Class WFWorkflowDescriptorClass = objc_getClass("WFWorkflowDescriptor");
+            Class WFWorkflowRunnerClientClass = objc_getClass("WFWorkflowRunnerClient");
+            if (WFWorkflowDescriptorClass && WFWorkflowRunnerClientClass) {
+                id descriptor = [WFWorkflowDescriptorClass alloc];
+                if ([descriptor respondsToSelector:@selector(initWithName:)]) {
+                    descriptor = [descriptor initWithName:cleanName];
+                } else {
+                    SEL sel = NSSelectorFromString(@"initWithIdentifier:");
+                    if ([descriptor respondsToSelector:sel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        descriptor = [descriptor performSelector:sel withObject:cleanName];
+#pragma clang diagnostic pop
+                    } else {
+                        descriptor = nil;
+                    }
+                }
+                if (descriptor) {
+                    WFWorkflowRunnerClient *client = (WFWorkflowRunnerClient *)[[WFWorkflowRunnerClientClass alloc] initWithWorkflowDescriptor:descriptor input:inputArg parseInput:NO output:nil completion:^(id output, NSError *error) {
+                        if (error) {
+                            SRLog(@"[Shortcut] '%@' failed: %@", cleanName, error);
+                        } else {
+                            SRLog(@"[Shortcut] '%@' completed successfully", cleanName);
+                        }
+                    }];
+                    if (client) {
+                        [client start];
+                        SRLog(@"[Shortcut] Started via WFWorkflowRunnerClient for '%@'", cleanName);
+                        return;
+                    }
+                }
+            }
+            
+            // 2. Fallback to springcuts binary via posix_spawn
+            NSString *springcutsPath = [NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()];
+            if (![[NSFileManager defaultManager] fileExistsAtPath:springcutsPath]) {
+                springcutsPath = @"/var/jb/usr/bin/springcuts";
+            }
+            if (![[NSFileManager defaultManager] fileExistsAtPath:springcutsPath]) {
+                springcutsPath = @"/usr/bin/springcuts";
+            }
+            
+            if ([[NSFileManager defaultManager] fileExistsAtPath:springcutsPath]) {
+                NSMutableArray *args = [NSMutableArray array];
+                [args addObject:springcutsPath];
+                [args addObject:@"-r"];
+                [args addObject:cleanName];
+                if (inputArg && inputArg.length > 0) {
+                    [args addObject:@"-p"];
+                    [args addObject:inputArg];
+                }
+                
+                char **argv = (char **)malloc((args.count + 1) * sizeof(char *));
+                for (NSUInteger i = 0; i < args.count; i++) {
+                    argv[i] = (char *)[args[i] UTF8String];
+                }
+                argv[args.count] = NULL;
+                
+                pid_t pid;
+                extern char **environ;
+                int result = posix_spawn(&pid, [springcutsPath UTF8String], NULL, NULL, argv, environ);
+                free(argv);
+                
+                if (result == 0) {
+                    SRLog(@"[Shortcut] Spawned springcuts pid=%d for '%@'", pid, cleanName);
+                    return;
+                } else {
+                    SRLog(@"[Shortcut] posix_spawn springcuts failed: %d (%s)", result, strerror(result));
+                }
+            }
+            
+            // 3. Fallback to shortcuts://run-shortcut URL Scheme
+            NSString *encodedName = [cleanName stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+            NSMutableString *urlStr = [NSMutableString stringWithFormat:@"shortcuts://run-shortcut?name=%@", encodedName];
+            if (inputArg && inputArg.length > 0) {
+                NSString *encodedInput = [inputArg stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+                [urlStr appendFormat:@"&input=text&text=%@", encodedInput];
+            }
+            NSURL *url = [NSURL URLWithString:urlStr];
+            if (url) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    Class LSWorkspaceClass = objc_getClass("LSApplicationWorkspace");
+                    if (LSWorkspaceClass && [LSWorkspaceClass respondsToSelector:@selector(defaultWorkspace)]) {
+                        id ws = [LSWorkspaceClass performSelector:@selector(defaultWorkspace)];
+                        if ([ws respondsToSelector:@selector(openURL:)]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                            [ws performSelector:@selector(openURL:) withObject:url];
+#pragma clang diagnostic pop
+                            SRLog(@"[Shortcut] Invoked via LSApplicationWorkspace URL: %@", urlStr);
+                            return;
+                        }
+                    }
+                    if ([[UIApplication sharedApplication] respondsToSelector:@selector(openURL:options:completionHandler:)]) {
+                        [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
+                            SRLog(@"[Shortcut] UIApplication openURL success=%d: %@", success, urlStr);
+                        }];
+                    }
+                });
+                return;
+            }
+        } @catch (NSException *e) {
+            SRLog(@"[Shortcut] Exception running shortcut '%@': %@", cleanName, e);
+        }
+    });
+}
+
 static NSString *handle_command(NSString *cmd) {
     if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
         SRLog(@"ERROR: handle_command received nil or invalid command string");
@@ -4959,241 +5114,52 @@ static NSString *handle_command(NSString *cmd) {
         
         send_notification(title, body, urgent);
         return @"OK\n";
-    } else if ([cleanCmd hasPrefix:@"shortcut-direct "] || [cleanCmd hasPrefix:@"sd "]) {
-        // Direct posix_spawn of springcuts binary for fastest execution
-        NSString *argsString;
-        if ([cleanCmd hasPrefix:@"sd "]) {
-            argsString = [[cleanCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else {
-            argsString = [[cleanCmd substringFromIndex:16] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        }
-        
-        // Build arguments: springcuts -r "ShortcutName" [-p "Input"]
-        NSMutableArray *args = [NSMutableArray array];
-        [args addObject:@"-r"];
-        
-        // Parse the shortcut name (may be quoted)
-        if ([argsString hasPrefix:@"\""]) {
-            NSRange endQuote = [argsString rangeOfString:@"\"" options:0 range:NSMakeRange(1, argsString.length - 1)];
-            if (endQuote.location != NSNotFound) {
-                NSString *name = [argsString substringWithRange:NSMakeRange(1, endQuote.location - 1)];
-                [args addObject:name];
-                
-                // Check for -p parameter
-                NSString *remaining = [argsString substringFromIndex:endQuote.location + 1];
-                remaining = [remaining stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if ([remaining hasPrefix:@"-p "]) {
-                    [args addObject:@"-p"];
-                    NSString *input = [remaining substringFromIndex:3];
-                    input = [input stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                    if ([input hasPrefix:@"\""]) {
-                        NSRange inputEnd = [input rangeOfString:@"\"" options:0 range:NSMakeRange(1, input.length - 1)];
-                        if (inputEnd.location != NSNotFound) {
-                            [args addObject:[input substringWithRange:NSMakeRange(1, inputEnd.location - 1)]];
-                        } else {
-                            [args addObject:[input substringFromIndex:1]];
-                        }
-                    } else {
-                        [args addObject:input];
-                    }
-                }
-            } else {
-                [args addObject:[argsString substringFromIndex:1]];
-            }
-        } else {
-            // No quotes - find -p if present
-            NSRange pRange = [argsString rangeOfString:@" -p "];
-            if (pRange.location != NSNotFound) {
-                // Split at -p
-                NSString *name = [[argsString substringToIndex:pRange.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                [args addObject:name];
-                [args addObject:@"-p"];
-                
-                NSString *input = [[argsString substringFromIndex:pRange.location + 4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                // Remove quotes if present
-                if ([input hasPrefix:@"\""] && [input hasSuffix:@"\""]) {
-                    input = [input substringWithRange:NSMakeRange(1, input.length - 2)];
-                } else if ([input hasPrefix:@"\""]) {
-                    NSRange endQuote = [input rangeOfString:@"\"" options:0 range:NSMakeRange(1, input.length - 1)];
-                    if (endQuote.location != NSNotFound) {
-                        input = [input substringWithRange:NSMakeRange(1, endQuote.location - 1)];
-                    }
-                }
-                [args addObject:input];
-            } else {
-                // Just the shortcut name
-                [args addObject:argsString];
-            }
-        }
-        
-        SRLog(@"Direct spawn springcuts with: %@", args);
-        
-        const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
-        if (access(springcutsPath, X_OK) != 0) {
-            springcutsPath = "/usr/bin/springcuts";
-        }
-        
-        // Check if binary exists
-        if (access(springcutsPath, X_OK) != 0) {
-            SRLog(@"ERROR: springcuts binary not found");
-            send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-            return @"Error: SpringCuts not installed\n";
-        }
-        SRLog(@"springcuts binary found, preparing spawn...");
-        
-        char **argv = (char **)malloc((args.count + 2) * sizeof(char *));
-        argv[0] = (char *)springcutsPath;
-        for (NSUInteger i = 0; i < args.count; i++) {
-            argv[i + 1] = (char *)[args[i] UTF8String];
-        }
-        argv[args.count + 1] = NULL;
-        
-        // Log the full command
-        NSMutableString *cmdStr = [NSMutableString stringWithString:@"spawning:"];
-        for (int i = 0; argv[i] != NULL; i++) {
-            [cmdStr appendFormat:@" %s", argv[i]];
-        }
-        SRLog(@"%@", cmdStr);
-        
-        pid_t pid;
-        extern char **environ;
-        int result = posix_spawn(&pid, springcutsPath, NULL, NULL, argv, environ);
-        free(argv);
-        
-        if (result == 0) {
-            SRLog(@"Spawned springcuts pid=%d", pid);
-        } else {
-            SRLog(@"posix_spawn failed with error: %d (%s)", result, strerror(result));
-        }
-    } else if ([cleanCmd hasPrefix:@"shortcut "] || [cleanCmd hasPrefix:@"springcut "]) {
-        // Parse the shortcut name (and arguments if any) from the full command
-        NSString *argsString;
-        if ([cleanCmd hasPrefix:@"springcut "]) {
-            argsString = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else {
+    } else if ([cleanCmd hasPrefix:@"shortcut:"] || [cleanCmd hasPrefix:@"shortcut "] || [cleanCmd hasPrefix:@"springcut "] || [cleanCmd hasPrefix:@"shortcut-direct "] || [cleanCmd hasPrefix:@"sd "]) {
+        NSString *argsString = nil;
+        if ([cleanCmd hasPrefix:@"shortcut:"]) {
             argsString = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"shortcut "]) {
+            argsString = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"springcut "]) {
+            argsString = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"shortcut-direct "]) {
+            argsString = [[cleanCmd substringFromIndex:16] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"sd "]) {
+            argsString = [[cleanCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         }
         
-        // Very basic parse to extract name (assumes first quoted term is name, ignores inputs for the native implementation for now, or just passes the full string if no quotes)
         NSString *shortcutName = argsString;
+        NSString *inputParam = nil;
+        
+        // Parse name and optional -p parameter
         if ([argsString hasPrefix:@"\""]) {
             NSRange endQuote = [argsString rangeOfString:@"\"" options:0 range:NSMakeRange(1, argsString.length - 1)];
             if (endQuote.location != NSNotFound) {
                 shortcutName = [argsString substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+                NSString *remaining = [[argsString substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                if ([remaining hasPrefix:@"-p "]) {
+                    inputParam = [[remaining substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                    if ([inputParam hasPrefix:@"\""] && [inputParam hasSuffix:@"\""] && inputParam.length >= 2) {
+                        inputParam = [inputParam substringWithRange:NSMakeRange(1, inputParam.length - 2)];
+                    }
+                }
+            }
+        } else {
+            NSRange pRange = [argsString rangeOfString:@" -p "];
+            if (pRange.location != NSNotFound) {
+                shortcutName = [[argsString substringToIndex:pRange.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                inputParam = [[argsString substringFromIndex:pRange.location + 4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                if ([inputParam hasPrefix:@"\""] && [inputParam hasSuffix:@"\""] && inputParam.length >= 2) {
+                    inputParam = [inputParam substringWithRange:NSMakeRange(1, inputParam.length - 2)];
+                }
             }
         }
         
-        SRLog(@"Attempting native shortcut spawn for: %@", shortcutName);
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            @try {
-                 // Try native WorkflowKit execution first
-                 void *wfHandle = dlopen("/System/Library/PrivateFrameworks/WorkflowKit.framework/WorkflowKit", RTLD_NOW);
-                 if (wfHandle) {
-                     Class WFWorkflowDescriptorClass = objc_getClass("WFWorkflowDescriptor");
-                     Class WFWorkflowRunnerClientClass = objc_getClass("WFWorkflowRunnerClient");
-                     
-                     if (WFWorkflowDescriptorClass && WFWorkflowRunnerClientClass) {
-                         SRLog(@"WorkflowKit loaded, preparing to run shortcut: %@", shortcutName);
-                         id descriptor = [WFWorkflowDescriptorClass alloc];
-                         if ([descriptor respondsToSelector:@selector(initWithName:)]) {
-                             descriptor = [descriptor initWithName:shortcutName];
-                         } else {
-                             SRLog(@"[RemoteCommand] WFWorkflowDescriptor missing initWithName:, attempting identifier fallback");
-                             SEL sel = NSSelectorFromString(@"initWithIdentifier:");
-                             if ([descriptor respondsToSelector:sel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                                 descriptor = [descriptor performSelector:sel withObject:shortcutName];
-#pragma clang diagnostic pop
-                             } else {
-                                 descriptor = nil;
-                             }
-                         }
-
-                         if (descriptor) {
-                             WFWorkflowRunnerClient *client = (WFWorkflowRunnerClient *)[[WFWorkflowRunnerClientClass alloc] initWithWorkflowDescriptor:descriptor 
-                                                                                                   input:nil 
-                                                                                              parseInput:NO 
-                                                                                                  output:nil 
-                                                                                              completion:^(id output, NSError *error) {
-                                 if (error) {
-                                     SRLog(@"Shortcut '%@' failed: %@", shortcutName, error);
-                                 } else {
-                                     SRLog(@"Shortcut '%@' completed successfully", shortcutName);
-                                 }
-                             }];
-                             
-                             if (client) {
-                                 [client start];
-                                 SRLog(@"Started WFWorkflowRunnerClient for '%@'", shortcutName);
-                                 return; // Success, exit block!
-                             }
-                         } else {
-                             SRLog(@"[RemoteCommand] Failed to create descriptor for shortcut: %@", shortcutName);
-                         }
-                      }
-                  }
-                  
-                  // Fallback to springcuts CLI if WorkflowKit approach fails
-                 SRLog(@"WorkflowKit execution unavailable, falling back to springcuts...");
-                 NSMutableArray *args = [NSMutableArray array];
-                 
-                 // Simple parsing: split by spaces but respect quotes
-                 NSScanner *scanner = [NSScanner scannerWithString:argsString];
-                 scanner.charactersToBeSkipped = nil;
-                 
-                 while (![scanner isAtEnd]) {
-                     [scanner scanCharactersFromSet:[NSCharacterSet whitespaceCharacterSet] intoString:nil];
-                     if ([scanner isAtEnd]) break;
-                     
-                     NSString *arg = nil;
-                     if ([argsString characterAtIndex:scanner.scanLocation] == '"') {
-                         scanner.scanLocation++;
-                         [scanner scanUpToString:@"\"" intoString:&arg];
-                         if (![scanner isAtEnd]) scanner.scanLocation++;
-                     } else {
-                         [scanner scanUpToCharactersFromSet:[NSCharacterSet whitespaceCharacterSet] intoString:&arg];
-                     }
-                     if (arg) [args addObject:arg];
-                 }
-                 
-                 const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
-                 if (access(springcutsPath, X_OK) != 0) {
-                     springcutsPath = "/usr/bin/springcuts";
-                 }
-                 
-                 if (access(springcutsPath, X_OK) != 0) {
-                     SRLog(@"ERROR: springcuts not found");
-                     send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-                     return;
-                 }
-                 
-                 char **argv = (char **)malloc((args.count + 2) * sizeof(char *));
-                 argv[0] = (char *)springcutsPath;
-                 for (NSUInteger i = 0; i < args.count; i++) {
-                     argv[i + 1] = (char *)[args[i] UTF8String];
-                 }
-                 argv[args.count + 1] = NULL;
-                 
-                 pid_t pid;
-                 extern char **environ;
-                 int result = posix_spawn(&pid, springcutsPath, NULL, NULL, argv, environ);
-                 free(argv);
-                 
-                 if (result == 0) {
-                     SRLog(@"Spawned springcuts pid=%d", pid);
-                 } else {
-                     SRLog(@"posix_spawn failed: %d (%s)", result, strerror(result));
-                 }
-            } @catch (NSException *e) {
-                SRLog(@"Crash launching shortcut fallback: %@", e);
-            }
-        });
-        
+        rc_execute_shortcut(shortcutName, inputParam);
         return [NSString stringWithFormat:@"Triggered shortcut: %@\n", shortcutName];
+    } else if ([cleanCmd hasPrefix:@"anc "] || [cleanCmd isEqualToString:@"anc"]) {
         // ANC control - triggers Sonitus hooks
-        NSString *mode = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *mode = [cleanCmd length] > 4 ? [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : @"";
         NSString *listeningMode = nil;
         
         if ([mode isEqualToString:@"on"] || [mode isEqualToString:@"nc"]) {
@@ -6984,18 +6950,57 @@ static NSString *handle_command(NSString *cmd) {
         }
         return @"Usage: rc webui <on|off|status>\n";
     } else if ([cleanCmd isEqualToString:@"respring"]) {
-        SRLog(@"Triggering Respring via killbackboardd");
+        SRLog(@"Triggering Respring");
         
         dispatch_async(dispatch_get_main_queue(), ^{
-            pid_t pid;
-            const char* args[] = { "killall", "-9", "backboardd", NULL };
-            NSString *killallPath = [NSString stringWithFormat:@"%@/usr/bin/killall", root_prefix()];
-            posix_spawn(&pid, [killallPath UTF8String], NULL, NULL, (char* const*)args, NULL);
-            
-            if (pid <= 0) {
-                 const char* args2[] = { "killall", "-9", "backboardd", NULL };
-                 posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char* const*)args2, NULL);
+            // 1. Try sbreload (Rootless / Dopamine / Procursus)
+            NSString *sbreload = [NSString stringWithFormat:@"%@/usr/bin/sbreload", root_prefix()];
+            if (![[NSFileManager defaultManager] fileExistsAtPath:sbreload]) {
+                sbreload = @"/var/jb/usr/bin/sbreload";
             }
+            if (![[NSFileManager defaultManager] fileExistsAtPath:sbreload]) {
+                sbreload = @"/usr/bin/sbreload";
+            }
+            if ([[NSFileManager defaultManager] fileExistsAtPath:sbreload]) {
+                pid_t pid;
+                const char* sbreload_args[] = { [sbreload UTF8String], NULL };
+                extern char **environ;
+                int res = posix_spawn(&pid, [sbreload UTF8String], NULL, NULL, (char* const*)sbreload_args, environ);
+                if (res == 0) {
+                    SRLog(@"Respring spawned sbreload pid=%d", pid);
+                    return;
+                }
+            }
+            
+            // 2. Direct SpringBoard relaunch API
+            Class sbClass = objc_getClass("SpringBoard");
+            if (sbClass && [sbClass respondsToSelector:@selector(sharedApplication)]) {
+                id sb = [sbClass performSelector:@selector(sharedApplication)];
+                SEL relaunchSel = NSSelectorFromString(@"_relaunchSpringBoardNow");
+                if ([sb respondsToSelector:relaunchSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                    [sb performSelector:relaunchSel];
+#pragma clang diagnostic pop
+                    return;
+                }
+            }
+            
+            // 3. FBSystemService exitAndRelaunch
+            Class fbServiceClass = objc_getClass("FBSystemService");
+            if (fbServiceClass && [fbServiceClass respondsToSelector:@selector(sharedInstance)]) {
+                id fbService = [fbServiceClass performSelector:@selector(sharedInstance)];
+                if ([fbService respondsToSelector:@selector(exitAndRelaunch:)]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                    [fbService performSelector:@selector(exitAndRelaunch:) withObject:@YES];
+#pragma clang diagnostic pop
+                    return;
+                }
+            }
+            
+            // 4. SpringBoard exit(0)
+            exit(0);
         });
         return @"Device Respringing...\n";
     } else if ([cleanCmd isEqualToString:@"ldrestart"]) {
@@ -7028,90 +7033,6 @@ static NSString *handle_command(NSString *cmd) {
             posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
         });
         return @"Triggering userspace-reboot...\n";
-    } else if ([cleanCmd hasPrefix:@"shortcut:"]) {
-        NSString *shortcutName = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        SRLog(@"Attempting to run shortcut natively: %@", shortcutName);
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            @try {
-                 // Try native WorkflowKit execution first
-                 void *wfHandle = dlopen("/System/Library/PrivateFrameworks/WorkflowKit.framework/WorkflowKit", RTLD_NOW);
-                 if (wfHandle) {
-                     Class WFWorkflowDescriptorClass = objc_getClass("WFWorkflowDescriptor");
-                     Class WFWorkflowRunnerClientClass = objc_getClass("WFWorkflowRunnerClient");
-                     
-                     if (WFWorkflowDescriptorClass && WFWorkflowRunnerClientClass) {
-                         SRLog(@"WorkflowKit loaded, preparing to run shortcut: %@", shortcutName);
-                         id descriptor = [WFWorkflowDescriptorClass alloc];
-                         if ([descriptor respondsToSelector:@selector(initWithName:)]) {
-                             descriptor = [descriptor initWithName:shortcutName];
-                         } else {
-                             SRLog(@"[RemoteCommand] WFWorkflowDescriptor missing initWithName:, attempting identifier fallback");
-                             SEL sel = NSSelectorFromString(@"initWithIdentifier:");
-                             if ([descriptor respondsToSelector:sel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                                 descriptor = [descriptor performSelector:sel withObject:shortcutName];
-#pragma clang diagnostic pop
-                             } else {
-                                 descriptor = nil;
-                             }
-                         }
-
-                         if (descriptor) {
-                             WFWorkflowRunnerClient *client = (WFWorkflowRunnerClient *)[[WFWorkflowRunnerClientClass alloc] initWithWorkflowDescriptor:descriptor 
-                                                                                                   input:nil 
-                                                                                              parseInput:NO 
-                                                                                                  output:nil 
-                                                                                              completion:^(id output, NSError *error) {
-                                 if (error) {
-                                     SRLog(@"Shortcut '%@' failed: %@", shortcutName, error);
-                                 } else {
-                                     SRLog(@"Shortcut '%@' completed successfully", shortcutName);
-                                 }
-                             }];
-                             
-                             if (client) {
-                                 [client start];
-                                 SRLog(@"Started WFWorkflowRunnerClient for '%@'", shortcutName);
-                                 return; // Success, exit block!
-                             }
-                         } else {
-                             SRLog(@"[RemoteCommand] Failed to create descriptor for shortcut: %@", shortcutName);
-                         }
-                      }
-                  }
-                  
-                  // Fallback to springcuts CLI if WorkflowKit approach fails
-                 SRLog(@"WorkflowKit execution unavailable, falling back to springcuts...");
-                 Class NSTaskClass = NSClassFromString(@"NSTask");
-                 if (NSTaskClass) {
-                     id task = [[NSTaskClass alloc] init];
-                     
-                     NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()];
-                     if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
-                         binPath = @"/usr/bin/springcuts";
-                     }
-                     
-                     if ([[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
-                         [task performSelector:@selector(setLaunchPath:) withObject:binPath];
-                         [task performSelector:@selector(setArguments:) withObject:@[@"-r", shortcutName]];
-                         [task performSelector:@selector(launch)];
-                         SRLog(@"Launched springcuts for '%@'", shortcutName);
-                     } else {
-                         SRLog(@"Error: springcuts binary not found");
-                         send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-                     }
-                 } else {
-                     SRLog(@"Error: NSTask class not found");
-                 }
-            } @catch (NSException *e) {
-                SRLog(@"Crash launching shortcut: %@", e);
-            }
-        });
-        
-        return [NSString stringWithFormat:@"Triggered shortcut: %@\n", shortcutName];
     } else if ([cleanCmd isEqualToString:@"list-triggers"]) {
         load_trigger_config();
         if (!g_triggerConfig) return @"Error: No trigger config found\n";
@@ -8077,6 +7998,8 @@ static BOOL g_volDownTriggered = NO;
 static BOOL g_volUpIsDown = NO;
 static BOOL g_volDownIsDown = NO;
 static BOOL g_volComboTriggered = NO;
+static NSTimeInterval g_lastVolUpPressTime = 0;
+static NSTimeInterval g_lastVolDownPressTime = 0;
 
 static NSTimer *g_lockButtonTimer = nil;
 static BOOL g_lockButtonTriggered = NO;
@@ -8208,16 +8131,49 @@ static BOOL g_isSwappingVolume = NO;
         return;
     }
 
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    g_volUpIsDown = YES;
+    g_lastVolUpPressTime = now;
+
+    // 1. Check for Power + Volume Up combination
     if (g_powerIsDown) {
         load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"power_volume_up"][@"enabled"] boolValue]) {
-            SRLog(@"Suppressing Volume Up because Power is DOWN (Combo)");
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][@"power_volume_up"][@"enabled"] boolValue];
+        if (enabled) {
+            SRLog(@"Power + Volume Up combo triggered (from Vol Up Hook)");
+            g_powerVolComboTriggered = YES;
+            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+            trigger_haptic();
+            RCExecuteTrigger(@"power_volume_up");
             return;
         }
     }
 
-    g_volUpIsDown = YES;
-    
+    // 2. Check for simultaneous Volume Up + Volume Down dual press
+    BOOL isDualPress = g_volDownIsDown || (g_lastVolDownPressTime > 0 && (now - g_lastVolDownPressTime) < 0.20);
+    if (isDualPress) {
+        load_trigger_config();
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
+        
+        if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+        if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+        g_volUpTriggered = NO;
+        g_volDownTriggered = NO;
+
+        if (comboEnabled && !g_volComboTriggered) {
+            g_volComboTriggered = YES;
+            SRLog(@"Volume Both Press combo triggered (from Vol Up Hook)");
+            trigger_haptic();
+            RCExecuteTrigger(@"volume_both_press");
+        } else {
+            g_volComboTriggered = YES;
+        }
+        return;
+    }
+
     dispatch_async(dispatch_get_main_queue(), ^{
         load_trigger_config();
         BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
@@ -8227,7 +8183,7 @@ static BOOL g_isSwappingVolume = NO;
         if (holdEnabled || comboEnabled) {
             if (g_volUpTimer) [g_volUpTimer invalidate];
             g_volUpTimer = [NSTimer scheduledTimerWithTimeInterval:0.35 repeats:NO block:^(NSTimer *timer) {
-                if (g_volComboTriggered) return;
+                if (g_volComboTriggered || g_powerVolComboTriggered || g_volDownIsDown) return;
                 g_volUpTimer = nil;
                 if (holdEnabled) {
                     g_volUpTriggered = YES;
@@ -8259,6 +8215,12 @@ static BOOL g_isSwappingVolume = NO;
 
     if (g_volComboTriggered) {
         if (!g_volDownIsDown) g_volComboTriggered = NO;
+        if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+        return;
+    }
+
+    if (g_powerVolComboTriggered) {
+        if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
         return;
     }
 
@@ -8301,15 +8263,48 @@ static BOOL g_isSwappingVolume = NO;
         return;
     }
 
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    g_volDownIsDown = YES;
+    g_lastVolDownPressTime = now;
+
+    // 1. Check for Power + Volume Down combination
     if (g_powerIsDown) {
         load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"power_volume_down"][@"enabled"] boolValue]) {
-            SRLog(@"Suppressing Volume Down because Power is DOWN (Combo)");
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][@"power_volume_down"][@"enabled"] boolValue];
+        if (enabled) {
+            SRLog(@"Power + Volume Down combo triggered (from Vol Down Hook)");
+            g_powerVolComboTriggered = YES;
+            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+            trigger_haptic();
+            RCExecuteTrigger(@"power_volume_down");
             return;
         }
     }
 
-    g_volDownIsDown = YES;
+    // 2. Check for simultaneous Volume Up + Volume Down dual press
+    BOOL isDualPress = g_volUpIsDown || (g_lastVolUpPressTime > 0 && (now - g_lastVolUpPressTime) < 0.20);
+    if (isDualPress) {
+        load_trigger_config();
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
+        
+        if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+        if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+        g_volUpTriggered = NO;
+        g_volDownTriggered = NO;
+
+        if (comboEnabled && !g_volComboTriggered) {
+            g_volComboTriggered = YES;
+            SRLog(@"Volume Both Press combo triggered (from Vol Down Hook)");
+            trigger_haptic();
+            RCExecuteTrigger(@"volume_both_press");
+        } else {
+            g_volComboTriggered = YES;
+        }
+        return;
+    }
 
     dispatch_async(dispatch_get_main_queue(), ^{
         load_trigger_config();
@@ -8320,7 +8315,7 @@ static BOOL g_isSwappingVolume = NO;
         if (holdEnabled || comboEnabled) {
             if (g_volDownTimer) [g_volDownTimer invalidate];
             g_volDownTimer = [NSTimer scheduledTimerWithTimeInterval:0.35 repeats:NO block:^(NSTimer *timer) {
-                if (g_volComboTriggered) return;
+                if (g_volComboTriggered || g_powerVolComboTriggered || g_volUpIsDown) return;
                 g_volDownTimer = nil;
                 if (holdEnabled) {
                     g_volDownTriggered = YES;
@@ -8352,6 +8347,12 @@ static BOOL g_isSwappingVolume = NO;
 
     if (g_volComboTriggered) {
         if (!g_volUpIsDown) g_volComboTriggered = NO;
+        if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+        return;
+    }
+
+    if (g_powerVolComboTriggered) {
+        if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
         return;
     }
 
@@ -8955,7 +8956,26 @@ static void setup_background_hid_listener() {
         return;
     }
     SRLog(@"performInitialButtonDownActions on %@", [self class]);
-    // Removed g_powerBtnActive
+    g_powerIsDown = YES;
+    
+    // Check for simultaneous press if Volume is already down
+    if (g_volUpIsDown || g_volDownIsDown) {
+        NSString *triggerKey = g_volUpIsDown ? @"power_volume_up" : @"power_volume_down";
+        load_trigger_config();
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+        
+        if (enabled && !g_powerVolComboTriggered) {
+            SRLog(@"Power + Volume combo detected (from Lock button down): %@", triggerKey);
+            g_powerVolComboTriggered = YES;
+            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+            trigger_haptic();
+            RCExecuteTrigger(triggerKey);
+            return;
+        }
+    }
+    
     load_trigger_config();
     BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
                    [g_triggerConfig[@"triggers"][@"power_long_press"][@"enabled"] boolValue];
@@ -8996,9 +9016,6 @@ static void setup_background_hid_listener() {
                      g_systemPowerOffTimer = nil;
                      
                      // Manually invoke the action again, but this time g_forceSystemLongPress is YES
-                     // We need an instance to call it on. 'self' inside this block is captured? 
-                     // No, 'self' in block refers to captured SBLockHardwareButtonActions instance.
-                     // IMPORTANT: 'self' in block is valid.
                      [self performLongPressActions];
                 }];
             }];
@@ -9017,8 +9034,8 @@ static void setup_background_hid_listener() {
 
 - (void)performButtonUpPreActions {
     SRLog(@"performButtonUpPreActions on %@", [self class]);
-    // Removed g_powerBtnActive access
     SRLog(@"Power Button UP (Actions)");
+    g_powerIsDown = NO;
 
     // Automatically disable proximity sensor monitoring when power button is released
     g_forceProximityDetection = NO;

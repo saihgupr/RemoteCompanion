@@ -86,10 +86,6 @@ if [[ "$_CMD" == "vol-up" || "$_CMD" == "volup" ]]; then
     _CMD="button volup"
 elif [[ "$_CMD" == "vol-down" || "$_CMD" == "voldown" ]]; then
     _CMD="button voldown"
-elif [[ "$_CMD" == "respring" ]]; then
-    echo "Respringing device..."
-    ssh -o StrictHostKeyChecking=no mobile@$IP "sbreload"
-    exit 0
 elif [[ "$_CMD" == "shortcut "* ]]; then
     _CMD="shortcut:${_CMD#shortcut }"
 elif [[ "$_CMD" == "log" ]]; then

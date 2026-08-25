@@ -2056,6 +2056,20 @@
             </div>
             <div class="sys-row">
               <div class="sys-row-left">
+                <div class="sys-row-icon icon-orange"><i class="f7-icons">shield_slash_fill</i></div>
+                <div class="sys-row-label-group">
+                  <span class="sys-row-label">Safe Mode</span>
+                  <span class="sys-row-sublabel">Restart SpringBoard with tweaks disabled</span>
+                </div>
+              </div>
+              <div class="sys-row-right">
+                <button onclick="triggerSafeModeAction()" class="sys-action-btn orange">
+                  <i class="f7-icons" style="font-size:14px;">shield_slash_fill</i> Safe Mode
+                </button>
+              </div>
+            </div>
+            <div class="sys-row">
+              <div class="sys-row-left">
                 <div class="sys-row-icon icon-blue"><i class="f7-icons">square_grid_2x2</i></div>
                 <div class="sys-row-label-group">
                   <span class="sys-row-label">UICache</span>
@@ -2379,7 +2393,7 @@ const CMD_NAMES = {
   'lock':'Lock Device','unlock':'Unlock Device',
   'dnd on':'Do Not Disturb On','dnd off':'Do Not Disturb Off','dnd toggle':'Do Not Disturb Toggle',
   'audiomix on':'AudioMix On','audiomix off':'AudioMix Off','audiomix toggle':'AudioMix Toggle',
-  'respring':'Respring','siri':'Activate Siri','home':'Home Button','switcher':'App Switcher',
+  'respring':'Respring','safemode':'Safe Mode','safe-mode':'Safe Mode','siri':'Activate Siri','home':'Home Button','switcher':'App Switcher',
   'previous app':'Previous App',
   'open control center':'Control Center',
   'ldrestart':'Soft Reboot','userspace-reboot':'Userspace Reboot','uicache':'Refresh Icon Cache',
@@ -2524,7 +2538,7 @@ function iconForCmd(cmd) {
     'lock':'lock_fill','unlock':'lock_open_fill',
     'dnd on':'moon_fill','dnd off':'moon','dnd toggle':'moon_circle_fill',
     'audiomix on':'equalizer','audiomix off':'equalizer','audiomix toggle':'equalizer',
-    'respring':'arrow_2_circlepath','siri':'mic_fill','home':'house_fill',
+    'respring':'arrow_2_circlepath','safemode':'shield_slash_fill','safe-mode':'shield_slash_fill','siri':'mic_fill','home':'house_fill',
     'open control center':'gear',
     'low power on':'battery_25','low power off':'battery_100',
     'screenshot':'camera_fill','haptic':'hand_raised_fill',
@@ -2606,6 +2620,7 @@ const ACTION_SECTIONS = [
     { name:'Previous App',      cmd:'previous app',  icon:'arrow_uturn_backward' },
     { name:'Control Center',    cmd:'open control center',icon:'gear' },
     { name:'Respring',          cmd:'respring',      icon:'arrow_2_circlepath' },
+    { name:'Safe Mode',         cmd:'safemode',      icon:'shield_slash_fill' },
     { name:'Soft Reboot',       cmd:'ldrestart',     icon:'arrow_clockwise' },
     { name:'Low Power Mode',    cmd:'low power toggle',icon:'battery_25', is_toggle:true },
     { name:'Silent Vibration',  cmd:'vibration silent-toggle', icon:'bell_slash', is_toggle:true },
@@ -3652,6 +3667,14 @@ function triggerRespringAction() {
   showConfirm('Restart SpringBoard?', 'Are you sure you want to respring your iOS device?', () => {
     fetch('/api/command?cmd=respring').then(() => {
       showToast('Respringing SpringBoard…');
+    });
+  });
+}
+
+function triggerSafeModeAction() {
+  showConfirm('Enter Safe Mode?', 'Are you sure you want to put your iOS device into Safe Mode (restart SpringBoard with tweaks disabled)?', () => {
+    fetch('/api/command?cmd=safemode').then(() => {
+      showToast('Entering Safe Mode…');
     });
   });
 }

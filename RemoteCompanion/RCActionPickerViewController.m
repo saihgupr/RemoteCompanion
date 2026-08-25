@@ -162,6 +162,7 @@
             @{ @"name": @"Previous App", @"command": @"previous app", @"icon": @"arrow.uturn.backward" },
             @{ @"name": @"Control Center", @"command": @"open control center", @"icon": @"gear" },
             @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
+            @{ @"name": @"Safe Mode", @"command": @"safemode", @"icon": @"shield.slash.fill" },
             @{ @"name": @"Soft Reboot (ldrestart)", @"command": @"ldrestart", @"icon": @"arrow.clockwise" },
             @{ @"name": @"Userspace Reboot", @"command": @"userspace-reboot", @"icon": @"arrow.clockwise.circle" },
             @{ @"name": @"Refresh Icon Cache (uicache)", @"command": @"uicache", @"icon": @"square.grid.2x2" },

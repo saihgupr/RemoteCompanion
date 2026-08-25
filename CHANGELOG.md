@@ -2,7 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [3.6.0] - 2026-08-25
+
+### Added
+- **Safe Mode**: Added native Safe Mode support across the CLI (`rc safemode`), Web UI (Action Picker & Quick Maintenance panel in System Info), and native iOS Companion App (Action Picker & Config Manager). Safely restarts SpringBoard into Safe Mode with tweaks disabled using Substrate/ElleKit exception triggering and marker flags.
+- **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`), HTTP Basic Authentication, and self-signed SSL certificates.
+- **Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
 
 ## [3.5.0] - 2026-08-09
 

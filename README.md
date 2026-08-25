@@ -3,7 +3,8 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.7.0**
+> **What’s New in v3.6.0**
+> - **Safe Mode Action & CLI**: Enter Safe Mode directly from the CLI (`rc safemode`), Web UI (Action Picker & Quick Maintenance panel in System Info), or iOS companion app. Safely restarts SpringBoard with tweaks disabled using Substrate/ElleKit exception triggering and marker flags.
 > - **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`), HTTP Basic Authentication, and self-signed SSL certificates.
 > - **Native iOS Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
 > - **Integrations Settings & Dynamic Action Filtering**: Unified Integrations section in Settings for Home Assistant and Keyboard Maestro with live connection testing. The action picker dynamically only displays actions for enabled integrations.
@@ -186,6 +187,7 @@ Combine status queries with actions for smart automation:
 ### System & Diagnostics
 - `rc uicache` - Refresh the icon cache.
 - `rc respring` - Restart SpringBoard.
+- `rc safemode` - Enter Safe Mode (tweaks disabled).
 - `rc ldrestart` - Soft-reboot the device.
 - `rc userspace-reboot` - Restart userspace.
 - `rc webui [on|off|status]` - Enable, disable, or check the status of the Web UI server.

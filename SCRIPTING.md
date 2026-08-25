@@ -66,6 +66,7 @@ A sequence is a **JSON array** of actions. Each action is either:
 | `haptic` | Trigger haptic feedback |
 | `siri` | Activate Siri |
 | `respring` | Respring (restart SpringBoard) |
+| `safemode` | Enter Safe Mode (restart SpringBoard with tweaks disabled) |
 | `ldrestart` | Soft reboot |
 | `userspace-reboot` | Userspace reboot |
 | `uicache` | Refresh icon cache |

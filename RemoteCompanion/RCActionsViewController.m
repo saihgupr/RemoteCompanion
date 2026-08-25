@@ -1998,7 +1998,7 @@ static id g_actionClipboard = nil;
             } else if ([action hasPrefix:@"airplay disconnect"]) {
                 cell.textLabel.text = cleanName;
                 subtitle = nil;
-            } else if ([action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
+            } else if ([action isEqualToString:@"respring"] || [action isEqualToString:@"safemode"] || [action isEqualToString:@"safe-mode"] || [action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
                 cell.textLabel.text = cleanName;
                 subtitle = nil;
             } else {

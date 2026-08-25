@@ -7003,6 +7003,28 @@ static NSString *handle_command(NSString *cmd) {
             exit(0);
         });
         return @"Device Respringing...\n";
+    } else if ([cleanCmd isEqualToString:@"safemode"] || [cleanCmd isEqualToString:@"safe-mode"] || [cleanCmd isEqualToString:@"safe_mode"]) {
+        SRLog(@"Triggering Safe Mode");
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // 1. Create safe mode flag file markers (Substrate, ElleKit, Substitute)
+            NSString *safemodePath1 = @"/var/mobile/Library/SafeMode/safemode";
+            NSString *safemodePath2 = [NSString stringWithFormat:@"%@/var/mobile/Library/SafeMode/safemode", root_prefix()];
+            NSString *safemodePath3 = @"/var/mobile/Library/SafariSafeMode";
+            
+            [[NSFileManager defaultManager] createDirectoryAtPath:[safemodePath1 stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+            [[NSFileManager defaultManager] createDirectoryAtPath:[safemodePath2 stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+            
+            [[NSFileManager defaultManager] createFileAtPath:safemodePath1 contents:[NSData data] attributes:nil];
+            [[NSFileManager defaultManager] createFileAtPath:safemodePath2 contents:[NSData data] attributes:nil];
+            [[NSFileManager defaultManager] createFileAtPath:safemodePath3 contents:[NSData data] attributes:nil];
+            
+            // 2. Kill SpringBoard with SIGSEGV to trigger Safe Mode handler
+            kill(getpid(), SIGSEGV);
+            
+            // Fallback
+            abort();
+        });
+        return @"Device entering Safe Mode...\n";
     } else if ([cleanCmd isEqualToString:@"ldrestart"]) {
         SRLog(@"Triggering ldrestart");
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -7453,6 +7475,11 @@ static void start_web_server() {
                                     NSString *logPath = @"/tmp/remotecommand.log";
                                     [@"" writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
+                                } else if ([path isEqualToString:@"/api/sysaction/safemode"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                    dispatch_async(dispatch_get_main_queue(), ^{
+                                        handle_command(@"safemode");
+                                    });
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
                                 } else if ([path isEqualToString:@"/api/ha/test"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
                                     load_trigger_config();
                                     NSString *overrideUrl = nil;
@@ -7770,6 +7797,7 @@ static void start_web_server() {
                                     @{@"command": @"open <bundleId>", @"desc": @"System: Launch an application by bundle identifier"},
                                     @{@"command": @"kill <bundleId>", @"desc": @"System: Force-close an application"},
                                     @{@"command": @"respring", @"desc": @"System: Restart SpringBoard"},
+                                    @{@"command": @"safemode", @"desc": @"System: Enter Safe Mode (restart SpringBoard with tweaks disabled)"},
                                     @{@"command": @"ldrestart", @"desc": @"System: Soft-reboot the device"},
 
                                     // Media & Volume

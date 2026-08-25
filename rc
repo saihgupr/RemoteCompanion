@@ -35,6 +35,7 @@ if [ -z "$1" ]; then
     echo "  shortcut \"Name\"   - Run a Shortcut"
     echo "  ping              - Play Alert Sound"
     echo "  respring          - Restart SpringBoard"
+    echo "  safemode          - Enter Safe Mode"
     echo "  bt on/off         - Turn Bluetooth On/Off"
     echo "  wifi on/off       - Turn WiFi On/Off"
     echo "  cellular on/off/toggle - Turn Cellular Data On/Off/Toggle"
@@ -86,6 +87,8 @@ if [[ "$_CMD" == "vol-up" || "$_CMD" == "volup" ]]; then
     _CMD="button volup"
 elif [[ "$_CMD" == "vol-down" || "$_CMD" == "voldown" ]]; then
     _CMD="button voldown"
+elif [[ "$_CMD" == "safe-mode" || "$_CMD" == "safe_mode" ]]; then
+    _CMD="safemode"
 elif [[ "$_CMD" == "shortcut "* ]]; then
     _CMD="shortcut:${_CMD#shortcut }"
 elif [[ "$_CMD" == "log" ]]; then

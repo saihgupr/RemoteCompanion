@@ -477,6 +477,23 @@ Maintainer: Saihgupr
 Author: Saihgupr
 Section: Tweaks
 Architecture: iphoneos-arm
+Version: 3.6.0
+Installed-Size: 2644
+Filename: ./com.saihgupr.remotecompanion_3.6.0_iphoneos-arm.deb
+Size: 932134
+MD5sum: 2841c22460adf1023e425400d305697a
+SHA1: aee3b49374ce6ec3ccb6bb17ba1de769e1e2fcd5
+SHA256: beb9477ec37172d7e8e56a90eb4093958ff6189447db4cd910f4200566e755d4
+
+Package: com.saihgupr.remotecompanion
+Name: RemoteCompanion
+Depends: mobilesubstrate
+Description: A modern Activator replacement for rootless and rootful jailbreaks. Bind triggers like Touch ID, Power/Volume buttons, and Status Bar gestures to system actions, Siri automation, and custom TCP commands. Includes native arm64e support for iOS 14. https://github.com/saihgupr/RemoteCompanion
+Icon: https://saihgupr.github.io/remotecompanion/CydiaIcon.png
+Maintainer: Saihgupr
+Author: Saihgupr
+Section: Tweaks
+Architecture: iphoneos-arm
 Version: 3.3.1
 Installed-Size: 2308
 Filename: ./com.saihgupr.remotecompanion_3.3.1_iphoneos-arm.deb
@@ -629,6 +646,23 @@ Size: 247746
 MD5sum: 18d80968e586a03e10a1263ab5d650a8
 SHA1: 87d859934be58ac7c474bccb1e9f49792c996971
 SHA256: ac7bc08313bf45ffe4312d8b6ea7e9e1b74c829a2f7e9b32a460d042f138d3cc
+
+Package: com.saihgupr.remotecompanion
+Name: RemoteCompanion
+Depends: mobilesubstrate
+Description: A modern Activator replacement for rootless and rootful jailbreaks. Bind triggers like Touch ID, Power/Volume buttons, and Status Bar gestures to system actions, Siri automation, and custom TCP commands. Includes native arm64e support for iOS 14. https://github.com/saihgupr/RemoteCompanion
+Icon: https://saihgupr.github.io/remotecompanion/CydiaIcon.png
+Maintainer: Saihgupr
+Author: Saihgupr
+Section: Tweaks
+Architecture: iphoneos-arm64
+Version: 3.6.0
+Installed-Size: 2644
+Filename: ./com.saihgupr.remotecompanion_3.6.0_iphoneos-arm64.deb
+Size: 931990
+MD5sum: f5835627e8369c1eb94ea060e18b6850
+SHA1: c69f27477c247c1a02e7cc46108af2af91eed902
+SHA256: 8800548c11d7902a4afccf5abcdd1f71bdca600c0648b181adf5ae78c302f5bf
 
 Package: com.saihgupr.remotecompanion
 Name: RemoteCompanion

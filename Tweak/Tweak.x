@@ -7143,6 +7143,8 @@ static NSString* get_local_ip_address(void) {
     return address;
 }
 
+static int g_actualWebPort = 8080;
+
 static NSDictionary* get_system_diagnostics(void) {
     [UIDevice currentDevice].batteryMonitoringEnabled = YES;
     float batteryLevelVal = [UIDevice currentDevice].batteryLevel;
@@ -7231,8 +7233,8 @@ static NSDictionary* get_system_diagnostics(void) {
     NSString *modelName = [UIDevice currentDevice].model ?: @"iPhone";
     NSString *ipAddress = get_local_ip_address();
     NSString *webUIUrl = (![ipAddress isEqualToString:@"Unavailable"]) 
-        ? [NSString stringWithFormat:@"http://%@:8080", ipAddress]
-        : @"http://127.0.0.1:8080";
+        ? [NSString stringWithFormat:@"http://%@:%d", ipAddress, g_actualWebPort]
+        : [NSString stringWithFormat:@"http://127.0.0.1:%d", g_actualWebPort];
 
     // Log File Info
     NSString *logPath = @"/tmp/remotecommand.log";
@@ -7280,37 +7282,65 @@ static NSDictionary* get_system_diagnostics(void) {
 static void start_web_server() {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         int server_fd, new_socket;
-        struct sockaddr_in address;
+        struct sockaddr_in6 address;
         int opt = 1;
-        int addrlen = sizeof(address);
+        int off = 0;
         
-        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-            SRLog(@"[WebUI] socket failed");
-            return;
+        // Use AF_INET6 with IPV6_V6ONLY=0 for seamless dual-stack IPv6/IPv4 listening
+        if ((server_fd = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
+            // Fallback to IPv4 socket if IPv6 creation fails
+            if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+                SRLog(@"[WebUI] socket failed");
+                return;
+            }
+        } else {
+            setsockopt(server_fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
         }
         
-        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-            SRLog(@"[WebUI] setsockopt failed");
-            return;
-        }
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef SO_REUSEPORT
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
         
         int port = 8080;
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = INADDR_ANY;
+        memset(&address, 0, sizeof(address));
+        address.sin6_family = AF_INET6;
+        address.sin6_addr = in6addr_any;
         
-        while (port < 8100) {
-            address.sin_port = htons(port);
+        // Strongly prefer default port 8080; retry briefly in case a previous respring is releasing it
+        BOOL bound = NO;
+        for (int retry = 0; retry < 5; retry++) {
+            address.sin6_port = htons(8080);
             if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) >= 0) {
+                bound = YES;
+                port = 8080;
                 break;
             }
-            port++;
+            if (retry < 4) {
+                usleep(200000); // 200ms wait between retries on port 8080
+            }
         }
         
-        if (port >= 8100) {
+        // If 8080 is still taken by another service, scan sequential fallback ports
+        if (!bound) {
+            port = 8081;
+            while (port < 8100) {
+                address.sin6_port = htons(port);
+                if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) >= 0) {
+                    bound = YES;
+                    break;
+                }
+                port++;
+            }
+        }
+        
+        if (!bound || port >= 8100) {
             SRLog(@"[WebUI] bind failed (ports 8080-8099 all taken)");
             close(server_fd);
             return;
         }
+        
+        g_actualWebPort = port;
         
         if (listen(server_fd, 5) < 0) {
             SRLog(@"[WebUI] listen failed");
@@ -7321,7 +7351,9 @@ static void start_web_server() {
         SRLog(@"[WebUI] Server listening on port %d", port);
 
         while (1) {
-            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+            struct sockaddr_storage client_addr;
+            socklen_t client_addrlen = sizeof(client_addr);
+            if ((new_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_addrlen)) < 0) {
                 continue;
             }
             
@@ -9782,7 +9814,7 @@ static void update_edge_gestures() {
 
 %ctor {
     NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-    if ([bundleID isEqualToString:@"com.apple.springboard"] || [bundleID isEqualToString:@"com.apple.calculator"]) {
+    if ([bundleID isEqualToString:@"com.apple.springboard"]) {
         %init(_ungrouped);
         
         SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);

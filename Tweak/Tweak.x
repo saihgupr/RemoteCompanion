@@ -2825,6 +2825,17 @@ static uint32_t rc_resolve_target_context(double x, double y) {
 #include <spawn.h>
 #include <sys/wait.h>
 
+static int rc_posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
+    posix_spawnattr_t local_attr;
+    posix_spawnattr_init(&local_attr);
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    posix_spawnattr_setflags(&local_attr, POSIX_SPAWN_CLOEXEC_DEFAULT);
+#endif
+    int ret = posix_spawn(pid, path, file_actions, &local_attr, argv, envp);
+    posix_spawnattr_destroy(&local_attr);
+    return ret;
+}
+
 static void rc_spawn_root_iohid(NSString *subcommand, NSArray *args) {
     extern char **environ;
     NSString *rcRootPath = @"/var/jb/usr/bin/rc-root";
@@ -2843,7 +2854,7 @@ static void rc_spawn_root_iohid(NSString *subcommand, NSArray *args) {
     argv[argc] = NULL;
     
     pid_t pid;
-    int status = posix_spawn(&pid, [rcRootPath UTF8String], NULL, NULL, argv, environ);
+    int status = rc_posix_spawn(&pid, [rcRootPath UTF8String], NULL, NULL, argv, environ);
     if (status == 0) {
         int exit_status;
         waitpid(pid, &exit_status, 0);
@@ -4689,11 +4700,25 @@ static void rc_execute_shortcut(NSString *shortcutName, NSString *inputArg) {
                 
                 pid_t pid;
                 extern char **environ;
-                int result = posix_spawn(&pid, [springcutsPath UTF8String], NULL, NULL, argv, environ);
+                int result = rc_posix_spawn(&pid, [springcutsPath UTF8String], NULL, NULL, argv, environ);
                 free(argv);
                 
                 if (result == 0) {
                     SRLog(@"[Shortcut] Spawned springcuts pid=%d for '%@'", pid, cleanName);
+                    // Background watchdog reaper: monitor completion and terminate if stuck
+                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+                        int status;
+                        for (int i = 0; i < 30; i++) { // 30 x 500ms = 15s max
+                            pid_t w = waitpid(pid, &status, WNOHANG);
+                            if (w == pid || w < 0) {
+                                return; // Exited cleanly
+                            }
+                            usleep(500000);
+                        }
+                        SRLog(@"[Shortcut] springcuts pid=%d timed out (15s limit) - terminating", pid);
+                        kill(pid, SIGKILL);
+                        waitpid(pid, &status, 0);
+                    });
                     return;
                 } else {
                     SRLog(@"[Shortcut] posix_spawn springcuts failed: %d (%s)", result, strerror(result));
@@ -6652,7 +6677,7 @@ static NSString *handle_command(NSString *cmd) {
             char *args[] = {(char *)rcRootPath, (char *)[shellCmd UTF8String], NULL};
 
             extern char **environ;
-            int spawn_result = posix_spawn(&pid, rcRootPath, NULL, NULL, args, environ);
+            int spawn_result = rc_posix_spawn(&pid, rcRootPath, NULL, NULL, args, environ);
 
             int result = -1;
             if (spawn_result == 0) {
@@ -6706,7 +6731,7 @@ static NSString *handle_command(NSString *cmd) {
                 // Execute with sh -c
                 pid_t pid;
                 char *args[] = {"/bin/sh", "-c", (char*)[shellCmd UTF8String], NULL};
-                int spawn_result = posix_spawn(&pid, "/bin/sh", NULL, NULL, args, newEnviron);
+                int spawn_result = rc_posix_spawn(&pid, "/bin/sh", NULL, NULL, args, newEnviron);
 
                 int result = -1;
                 if (spawn_result == 0) {
@@ -6965,7 +6990,7 @@ static NSString *handle_command(NSString *cmd) {
                 pid_t pid;
                 const char* sbreload_args[] = { [sbreload UTF8String], NULL };
                 extern char **environ;
-                int res = posix_spawn(&pid, [sbreload UTF8String], NULL, NULL, (char* const*)sbreload_args, environ);
+                int res = rc_posix_spawn(&pid, [sbreload UTF8String], NULL, NULL, (char* const*)sbreload_args, environ);
                 if (res == 0) {
                     SRLog(@"Respring spawned sbreload pid=%d", pid);
                     return;
@@ -7032,7 +7057,7 @@ static NSString *handle_command(NSString *cmd) {
             NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/ldrestart", root_prefix()];
             if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/usr/bin/ldrestart";
             const char* args[] = { [binPath UTF8String], NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
+            rc_posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
         });
         return @"Triggering ldrestart...\n";
     } else if ([cleanCmd isEqualToString:@"uicache"]) {
@@ -7042,7 +7067,7 @@ static NSString *handle_command(NSString *cmd) {
             NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/uicache", root_prefix()];
             if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/usr/bin/uicache";
             const char* args[] = { [binPath UTF8String], "-a", NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
+            rc_posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
         });
         return @"Triggering uicache...\n";
     } else if ([cleanCmd isEqualToString:@"userspace-reboot"]) {
@@ -7052,7 +7077,7 @@ static NSString *handle_command(NSString *cmd) {
             NSString *binPath = [NSString stringWithFormat:@"%@/bin/launchctl", root_prefix()];
             if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/bin/launchctl";
             const char* args[] = { [binPath UTF8String], "reboot", "userspace", NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
+            rc_posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
         });
         return @"Triggering userspace-reboot...\n";
     } else if ([cleanCmd isEqualToString:@"list-triggers"]) {
@@ -7117,7 +7142,7 @@ static void execute_shell_command(const char *cmd) {
     } else {
         pid_t pid;
         char *argv[] = {"sh", "-c", (char *)cmd, NULL};
-        posix_spawn(&pid, "/bin/sh", NULL, NULL, argv, NULL);
+        rc_posix_spawn(&pid, "/bin/sh", NULL, NULL, argv, NULL);
     }
 }
 
@@ -7297,6 +7322,9 @@ static void start_web_server() {
             setsockopt(server_fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
         }
         
+        // Prevent socket file descriptor inheritance to child processes
+        fcntl(server_fd, F_SETFD, FD_CLOEXEC);
+        
         setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 #ifdef SO_REUSEPORT
         setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
@@ -7357,11 +7385,17 @@ static void start_web_server() {
                 continue;
             }
             
+            // Prevent inheritance to child processes and prevent SIGPIPE
+            fcntl(new_socket, F_SETFD, FD_CLOEXEC);
+            int nosigpipe = 1;
+            setsockopt(new_socket, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, sizeof(nosigpipe));
+            
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 struct timeval tv;
                 tv.tv_sec = 2;
                 tv.tv_usec = 0;
                 setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+                setsockopt(new_socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv);
 
                 char buffer[16384] = {0};
                 ssize_t valread = read(new_socket, buffer, 16384 - 1);
@@ -7986,6 +8020,9 @@ static void start_server() {
             return;
         }
 
+        // Prevent socket file descriptor inheritance to child processes
+        fcntl(server_fd, F_SETFD, FD_CLOEXEC);
+
         // Unlink any existing socket file
         unlink([socketPath UTF8String]);
         
@@ -8020,11 +8057,17 @@ static void start_server() {
                  continue;
             }
             
+            // Prevent inheritance to child processes and prevent SIGPIPE
+            fcntl(new_socket, F_SETFD, FD_CLOEXEC);
+            int nosigpipe = 1;
+            setsockopt(new_socket, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, sizeof(nosigpipe));
+            
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 struct timeval tv;
                 tv.tv_sec = 5;
                 tv.tv_usec = 0;
                 setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+                setsockopt(new_socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv);
 
                 char local_buffer[1024] = {0};
                 ssize_t valread = read(new_socket, local_buffer, 1024);

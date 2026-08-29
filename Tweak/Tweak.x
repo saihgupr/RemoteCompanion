@@ -9086,24 +9086,6 @@ static void setup_background_hid_listener() {
     SRLog(@"Power Button DOWN (Actions) - enabled=%d", enabled);
 
     if (enabled) {
-        // Automatically enable proximity sensor monitoring during power button press
-        g_forceProximityDetection = YES;
-        id manager = g_proximitySensorManager;
-        if (!manager) {
-            Class cls = objc_getClass("SBProximitySensorManager");
-            if (cls && [cls respondsToSelector:@selector(sharedInstance)]) {
-                manager = [cls performSelector:@selector(sharedInstance)];
-            }
-        }
-        if (manager) {
-            if ([manager respondsToSelector:@selector(_enableProx)]) {
-                [manager _enableProx];
-            } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
-                [manager _setProximityDetectionEnabled:YES];
-            }
-        }
-        [UIDevice currentDevice].proximityMonitoringEnabled = YES;
-
         if (g_lockButtonTimer == nil && !g_lockButtonTriggered) {
             g_lockButtonTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
                 g_lockButtonTriggered = YES;
@@ -9139,24 +9121,6 @@ static void setup_background_hid_listener() {
     SRLog(@"performButtonUpPreActions on %@", [self class]);
     SRLog(@"Power Button UP (Actions)");
     g_powerIsDown = NO;
-
-    // Automatically disable proximity sensor monitoring when power button is released
-    g_forceProximityDetection = NO;
-    id manager = g_proximitySensorManager;
-    if (!manager) {
-        Class cls = objc_getClass("SBProximitySensorManager");
-        if (cls && [cls respondsToSelector:@selector(sharedInstance)]) {
-            manager = [cls performSelector:@selector(sharedInstance)];
-        }
-    }
-    if (manager) {
-        if ([manager respondsToSelector:@selector(_disableProx)]) {
-            [manager _disableProx];
-        } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
-            [manager _setProximityDetectionEnabled:NO];
-        }
-    }
-    [UIDevice currentDevice].proximityMonitoringEnabled = NO;
 
     if (g_lockButtonTimer) {
         [g_lockButtonTimer invalidate];

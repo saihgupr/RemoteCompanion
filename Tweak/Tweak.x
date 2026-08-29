@@ -5032,13 +5032,7 @@ static NSString *rc_open_camera_unified(NSInteger mode, NSInteger device, double
             [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
         }
         
-        // Post notification again to catch running instances
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            notify_post("com.saihgupr.remotecompanion.camera_intent");
-        });
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            notify_post("com.saihgupr.remotecompanion.camera_intent");
-        });
+        notify_post("com.saihgupr.remotecompanion.camera_intent");
     });
     
     // 4. Automated Touch Assistance Fallback for Zoom
@@ -10448,36 +10442,35 @@ static void rc_apply_camera_intent_to_viewfinder(id viewfinder) {
     SRLog(@"[CameraHook] Executing intent (UUID=%@): targetMode=%ld, targetDevice=%ld, targetZoom=%.1f, targetFlash=%ld, autoShutter=%d on %@", 
           uuid, (long)targetMode, (long)targetDevice, targetZoom, (long)targetFlash, autoShutter, viewfinder);
     
-    void (^applyModeAndZoom)(NSString *) = ^(NSString *phase) {
-        SRLog(@"[CameraHook] [%@] Applying Mode & Zoom (mode=%ld, device=%ld, zoom=%.1f, flash=%ld)...", phase, (long)targetMode, (long)targetDevice, targetZoom, (long)targetFlash);
-        
-        // 1. Primary CameraUI Master Handler: _handleUserChangedToMode:device:zoomFactor:
-        if ([viewfinder respondsToSelector:@selector(_handleUserChangedToMode:device:zoomFactor:)]) {
-            SRLog(@"[CameraHook] [%@] Invoking _handleUserChangedToMode:%ld device:%ld zoomFactor:%.1f", phase, (long)targetMode, (long)targetDevice, targetZoom);
-            ((void (*)(id, SEL, NSInteger, NSInteger, double))objc_msgSend)(viewfinder, @selector(_handleUserChangedToMode:device:zoomFactor:), targetMode, targetDevice, targetZoom);
+    // 1. Primary Mode & Device Switch
+    if ([viewfinder respondsToSelector:@selector(_handleUserChangedToMode:device:zoomFactor:)]) {
+        SRLog(@"[CameraHook] Invoking _handleUserChangedToMode:%ld device:%ld zoomFactor:%.1f", (long)targetMode, (long)targetDevice, targetZoom);
+        ((void (*)(id, SEL, NSInteger, NSInteger, double))objc_msgSend)(viewfinder, @selector(_handleUserChangedToMode:device:zoomFactor:), targetMode, targetDevice, targetZoom);
+    } else if ([viewfinder respondsToSelector:@selector(changeToCaptureMode:device:animated:)]) {
+        [viewfinder changeToCaptureMode:targetMode device:targetDevice animated:NO];
+    }
+    
+    // 2. Zoom Control Notification
+    if (targetDevice == 0 && [viewfinder respondsToSelector:@selector(zoomControl:didChangeZoomFactor:interactionType:)]) {
+        id zc = nil;
+        if ([viewfinder respondsToSelector:@selector(zoomControl)]) {
+            zc = [viewfinder performSelector:@selector(zoomControl)];
         }
-        
-        // 2. Zoom Control Notification fallback
-        if (targetDevice == 0 && [viewfinder respondsToSelector:@selector(zoomControl:didChangeZoomFactor:interactionType:)]) {
-            id zc = nil;
-            if ([viewfinder respondsToSelector:@selector(zoomControl)]) {
-                zc = [viewfinder performSelector:@selector(zoomControl)];
-            }
-            SRLog(@"[CameraHook] [%@] Invoking zoomControl:didChangeZoomFactor:%.1f interactionType:1", phase, targetZoom);
-            ((void (*)(id, SEL, id, double, NSInteger))objc_msgSend)(viewfinder, @selector(zoomControl:didChangeZoomFactor:interactionType:), zc, targetZoom, 1);
+        ((void (*)(id, SEL, id, double, NSInteger))objc_msgSend)(viewfinder, @selector(zoomControl:didChangeZoomFactor:interactionType:), zc, targetZoom, 1);
+    }
+    
+    // 3. Mode Dial fallback
+    if ([viewfinder respondsToSelector:@selector(modeDial)]) {
+        id dial = [viewfinder performSelector:@selector(modeDial)];
+        if (dial && [dial respondsToSelector:@selector(setSelectedMode:animated:)]) {
+            [dial performSelector:@selector(setSelectedMode:animated:) withObject:@(targetMode) withObject:@(NO)];
         }
-        
-        // 3. Mode Dial fallback
-        if ([viewfinder respondsToSelector:@selector(modeDial)]) {
-            id dial = [viewfinder performSelector:@selector(modeDial)];
-            if (dial && [dial respondsToSelector:@selector(setSelectedMode:animated:)]) {
-                SRLog(@"[CameraHook] [%@] Setting modeDial selectedMode:%ld", phase, (long)targetMode);
-                [dial performSelector:@selector(setSelectedMode:animated:) withObject:@(targetMode) withObject:@(NO)];
-            }
-        }
-        
-        // 4. Flash / Torch Control
-        if (targetFlash == 1) {
+    }
+    
+    // 4. Flash / Torch Control (applied cleanly once capture session is ready)
+    if (targetFlash == 1) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SRLog(@"[CameraHook] Engaging Flash/Torch ON once");
             if ([viewfinder respondsToSelector:@selector(_setResolvedTorchMode:animated:)]) {
                 ((void (*)(id, SEL, NSInteger, BOOL))objc_msgSend)(viewfinder, @selector(_setResolvedTorchMode:animated:), 1, NO);
             }
@@ -10501,30 +10494,19 @@ static void rc_apply_camera_intent_to_viewfinder(id viewfinder) {
                     ((void (*)(id, SEL, NSInteger))objc_msgSend)(tb, @selector(setTorchMode:), 1);
                 }
             }
-        }
-    };
+        });
+    }
     
-    // Staggered invocation across lifecycle
-    applyModeAndZoom(@"immediate");
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        applyModeAndZoom(@"t+250ms");
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.60 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        applyModeAndZoom(@"t+600ms");
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.00 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        applyModeAndZoom(@"t+1000ms");
-        
-        // 5. Auto Shutter trigger (fires exactly once)
-        if (autoShutter) {
-            if (uuid && [uuid isEqualToString:s_last_autoshutter_uuid]) {
-                return;
-            }
+    // 5. Auto Shutter trigger (fires exactly once if requested)
+    if (autoShutter) {
+        if (!uuid || ![uuid isEqualToString:s_last_autoshutter_uuid]) {
             s_last_autoshutter_uuid = [uuid copy];
-            SRLog(@"[CameraHook] Auto-triggering shutter once for intent %@...", uuid);
-            rc_trigger_camera_shutter(viewfinder);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.80 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                SRLog(@"[CameraHook] Auto-triggering shutter once for intent %@...", uuid);
+                rc_trigger_camera_shutter(viewfinder);
+            });
         }
-    });
+    }
 }
 
 static void rc_camera_intent_notification_callback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {

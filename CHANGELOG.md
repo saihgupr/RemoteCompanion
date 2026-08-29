@@ -9,6 +9,29 @@ All notable changes to this project will be documented in this file.
 - **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`), HTTP Basic Authentication, and self-signed SSL certificates.
 - **Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
 
+## [3.5.2] - 2026-08-29
+
+### Fixed
+- **Siri Shortcuts Execution & Discovery**:
+  - Modernized native shortcut invocation using `VoiceShortcutClient` (`WFSiriWorkflowRunRequest` / `WFSiriWorkflowRunnerClient`) and `WorkflowKit` (`WFWorkflowRunnerClient`).
+  - Added robust fallback via `springcuts` `posix_spawn` with a background watchdog process to prevent hanging.
+  - Added URL scheme fallback (`shortcuts://run-shortcut?name=...`) for background execution on iOS 15+.
+  - Added `popen` fallback to the companion app shortcut picker to guarantee shortcut discovery even when `NSTask` fails.
+- **SpringBoard Respring Fallback**:
+  - Improved respring reliability across jailbreaks by chaining `sbreload` -> `_relaunchSpringBoardNow` -> `FBSystemService` -> `exit(0)`.
+- **Volume Button Dual-Press & Combo Detection**:
+  - Fixed race conditions and accidental single-press execution when performing simultaneous Volume Up + Volume Down or Power + Volume button combos.
+- **Web UI & Server Reliability**:
+  - Set `FD_CLOEXEC` on server listening sockets and child process spawns to prevent socket leaks and port locking.
+  - Added IPv6/IPv4 dual-stack binding with quick 8080 retry and graceful sequential port fallback.
+
+## [3.5.1] - 2026-08-13
+
+### Fixed
+- **Dynamic Config Path Resolution (`find_config_path`)**: Fixed trigger resolution in rootless, NathanLR, and Sileo environments by checking file modification timestamps (`NSFileModificationDate`) across shared (`/var/mobile/Documents/`), rootless (`/var/jb/var/mobile/Documents/`), and app container (`/var/mobile/Containers/Data/Application/*/Documents/`) paths to ensure trigger updates saved in the companion app are immediately picked up by SpringBoard.
+- **Notification Trigger Observer**: Moved `%hook BBServer` before `%ctor` so that `%init(_ungrouped)` correctly registers notification hooks.
+- **Immediate Tweak Observer Registration**: Config loading and Darwin notification listeners now initialize synchronously on tweak load instead of waiting on a delayed 5-second timer.
+
 ## [3.5.0] - 2026-08-09
 
 ### Added

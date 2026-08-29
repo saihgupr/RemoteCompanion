@@ -2,7 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [3.5.2] - 2026-08-29
+
+### Fixed
+- **Siri Shortcuts Execution & Discovery**:
+  - Modernized native shortcut invocation using `VoiceShortcutClient` (`WFSiriWorkflowRunRequest` / `WFSiriWorkflowRunnerClient`) and `WorkflowKit` (`WFWorkflowRunnerClient`).
+  - Added robust fallback via `springcuts` `posix_spawn` with a background watchdog process to prevent hanging.
+  - Added URL scheme fallback (`shortcuts://run-shortcut?name=...`) for background execution on iOS 15+.
+  - Added `popen` fallback to the companion app shortcut picker to guarantee shortcut discovery even when `NSTask` fails.
+- **SpringBoard Respring Fallback**:
+  - Improved respring reliability across jailbreaks by chaining `sbreload` -> `_relaunchSpringBoardNow` -> `FBSystemService` -> `exit(0)`.
+- **Volume Button Dual-Press & Combo Detection**:
+  - Fixed race conditions and accidental single-press execution when performing simultaneous Volume Up + Volume Down or Power + Volume button combos.
+- **Web UI & Server Reliability**:
+  - Set `FD_CLOEXEC` on server listening sockets and child process spawns to prevent socket leaks and port locking.
+  - Added IPv6/IPv4 dual-stack binding with quick 8080 retry and graceful sequential port fallback.
 
 ## [3.5.1] - 2026-08-13
 

@@ -104,6 +104,39 @@
         } @catch (NSException *e) {
             [debugLog appendFormat:@"❌ NSTask crashed: %@\n", e];
         }
+
+        // Fallback to popen if NSTask was unavailable or produced no results
+        if (results.count == 0) {
+            NSString *binPath = @"/var/jb/usr/bin/springcuts";
+            if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
+                binPath = @"/usr/bin/springcuts";
+            }
+            if ([[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
+                NSString *cmd = [NSString stringWithFormat:@"%@ -l", binPath];
+                FILE *fp = popen([cmd UTF8String], "r");
+                if (fp) {
+                    char buf[1024];
+                    NSMutableString *output = [NSMutableString string];
+                    while (fgets(buf, sizeof(buf), fp) != NULL) {
+                        NSString *lineStr = [NSString stringWithUTF8String:buf];
+                        if (lineStr) [output appendString:lineStr];
+                    }
+                    pclose(fp);
+                    NSArray *lines = [output componentsSeparatedByString:@"\n"];
+                    for (NSString *line in lines) {
+                        NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                        if (trimmed.length > 0 && ![trimmed isEqualToString:@"Shortcut names:"]) {
+                            if ([trimmed hasSuffix:@","]) {
+                                trimmed = [trimmed substringToIndex:trimmed.length - 1];
+                            }
+                            if (![results containsObject:trimmed]) {
+                                [results addObject:trimmed];
+                            }
+                        }
+                    }
+                }
+            }
+        }
         
         dispatch_async(dispatch_get_main_queue(), ^{
             self.shortcuts = [results sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];

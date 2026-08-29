@@ -1072,7 +1072,7 @@ static NSString* root_prefix() {
     static NSString *prefix = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb/usr/bin/nc"]) {
+        if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb"]) {
             prefix = @"/var/jb";
         } else {
             prefix = @"";
@@ -1245,23 +1245,15 @@ static NSDictionary *g_triggerConfig = nil;
 static NSString *g_resolvedConfigPath = nil;
 
 // Find config file - check shared path first, then search app containers
-// Find config file - check shared path, rootless path, and app containers, selecting the newest file
 static NSString *find_config_path() {
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSMutableArray *candidatePaths = [NSMutableArray array];
     
     // First try the shared path
     if ([fm fileExistsAtPath:kTriggerConfigPath]) {
-        [candidatePaths addObject:kTriggerConfigPath];
+        return kTriggerConfigPath;
     }
     
-    // Try rootless shared path
-    NSString *rootlessShared = @"/var/jb/var/mobile/Documents/rc_triggers.plist";
-    if ([fm fileExistsAtPath:rootlessShared]) {
-        [candidatePaths addObject:rootlessShared];
-    }
-    
-    // Search for RemoteCompanion app container(s)
+    // Search for RemoteCompanion app container
     NSString *containersPath = @"/var/mobile/Containers/Data/Application";
     NSArray *uuids = [fm contentsOfDirectoryAtPath:containersPath error:nil];
     
@@ -1269,31 +1261,12 @@ static NSString *find_config_path() {
         NSString *configPath = [NSString stringWithFormat:@"%@/%@/Documents/%@", 
                                 containersPath, uuid, kTriggerConfigFilename];
         if ([fm fileExistsAtPath:configPath]) {
-            [candidatePaths addObject:configPath];
+            SRLog(@"Found config in container: %@", configPath);
+            return configPath;
         }
     }
     
-    if (candidatePaths.count == 0) return nil;
-    
-    // Select the file with the most recent modification date
-    NSString *newestPath = nil;
-    NSDate *newestDate = [NSDate distantPast];
-    
-    for (NSString *path in candidatePaths) {
-        NSDictionary *attrs = [fm attributesOfItemAtPath:path error:nil];
-        NSDate *modDate = [attrs fileModificationDate];
-        if (modDate && [modDate compare:newestDate] == NSOrderedDescending) {
-            newestDate = modDate;
-            newestPath = path;
-        }
-    }
-    
-    if (newestPath) {
-        SRLog(@"find_config_path selected newest config at %@ (modified: %@)", newestPath, newestDate);
-        return newestPath;
-    }
-    
-    return [candidatePaths firstObject];
+    return nil;
 }
 // ============ BLACKLIST SYSTEM ============
 
@@ -2852,6 +2825,17 @@ static uint32_t rc_resolve_target_context(double x, double y) {
 #include <spawn.h>
 #include <sys/wait.h>
 
+static int rc_posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
+    posix_spawnattr_t local_attr;
+    posix_spawnattr_init(&local_attr);
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    posix_spawnattr_setflags(&local_attr, POSIX_SPAWN_CLOEXEC_DEFAULT);
+#endif
+    int ret = posix_spawn(pid, path, file_actions, &local_attr, argv, envp);
+    posix_spawnattr_destroy(&local_attr);
+    return ret;
+}
+
 static void rc_spawn_root_iohid(NSString *subcommand, NSArray *args) {
     extern char **environ;
     NSString *rcRootPath = @"/var/jb/usr/bin/rc-root";
@@ -2870,7 +2854,7 @@ static void rc_spawn_root_iohid(NSString *subcommand, NSArray *args) {
     argv[argc] = NULL;
     
     pid_t pid;
-    int status = posix_spawn(&pid, [rcRootPath UTF8String], NULL, NULL, argv, environ);
+    int status = rc_posix_spawn(&pid, [rcRootPath UTF8String], NULL, NULL, argv, environ);
     if (status == 0) {
         int exit_status;
         waitpid(pid, &exit_status, 0);
@@ -4174,6 +4158,30 @@ static NSString *formatIvarValue(id obj, Ivar ivar) {
     return [NSString stringWithFormat:@"<type %s at offset %td>", type, offset];
 }
 
+@interface RCInsecureSessionDelegate : NSObject <NSURLSessionDelegate>
++ (instancetype)sharedDelegate;
+@end
+
+@implementation RCInsecureSessionDelegate
++ (instancetype)sharedDelegate {
+    static RCInsecureSessionDelegate *del = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        del = [[RCInsecureSessionDelegate alloc] init];
+    });
+    return del;
+}
+
+- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler {
+    if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
+        // Accept self-signed or local network certificates (-k mode)
+        completionHandler(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]);
+    } else {
+        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
+    }
+}
+@end
+
 static NSDictionary *rc_execute_ha_request(NSString *endpointPath, NSString *httpMethod, NSDictionary *bodyDict, NSString *overrideUrl, NSString *overrideToken) {
     if (!g_triggerConfig) load_trigger_config();
     NSString *baseUrl = overrideUrl.length > 0 ? overrideUrl : g_triggerConfig[@"haUrl"];
@@ -4209,7 +4217,11 @@ static NSDictionary *rc_execute_ha_request(NSString *endpointPath, NSString *htt
     __block NSDictionary *resultDict = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
     
-    NSURLSession *session = [NSURLSession sharedSession];
+    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    sessionConfig.timeoutIntervalForRequest = 10.0;
+    sessionConfig.timeoutIntervalForResource = 10.0;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
+    
     NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error) {
             resultDict = @{@"ok": @NO, @"error": error.localizedDescription ?: @"Connection failed"};
@@ -4333,6 +4345,422 @@ static NSString *rc_execute_ha_command(NSString *cmdArgs) {
     }
 }
 
+static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *httpMethod, NSDictionary *queryParams, NSString *overrideUrl, NSString *overrideUser, NSString *overridePass) {
+    if (!g_triggerConfig) load_trigger_config();
+    NSString *baseUrl = overrideUrl.length > 0 ? overrideUrl : g_triggerConfig[@"kmUrl"];
+    NSString *user = overrideUser.length > 0 ? overrideUser : g_triggerConfig[@"kmUser"];
+    NSString *pass = overridePass.length > 0 ? overridePass : g_triggerConfig[@"kmPassword"];
+    
+    if (![baseUrl isKindOfClass:[NSString class]] || baseUrl.length == 0) {
+        return @{@"ok": @NO, @"error": @"Keyboard Maestro URL must be configured in Settings."};
+    }
+    
+    if (![baseUrl hasPrefix:@"http://"] && ![baseUrl hasPrefix:@"https://"]) {
+        baseUrl = [NSString stringWithFormat:@"http://%@", baseUrl];
+    }
+    
+    if ([baseUrl hasSuffix:@"/"]) {
+        baseUrl = [baseUrl substringToIndex:baseUrl.length - 1];
+    }
+    
+    NSString *fullUrlStr = nil;
+    if ([baseUrl containsString:@"/action.html"] || [baseUrl containsString:@"/authenticatedaction.html"]) {
+        fullUrlStr = baseUrl;
+    } else {
+        NSString *ep = endpointPath;
+        if (!ep || ep.length == 0) {
+            ep = (user.length > 0 || pass.length > 0) ? @"/authenticatedaction.html" : @"/action.html";
+        }
+        if (![ep hasPrefix:@"/"] && ![ep hasPrefix:@"?"]) {
+            ep = [NSString stringWithFormat:@"/%@", ep];
+        }
+        fullUrlStr = [NSString stringWithFormat:@"%@%@", baseUrl, ep];
+    }
+    
+    if (queryParams.count > 0) {
+        NSMutableArray *queryItems = [NSMutableArray array];
+        NSCharacterSet *allowedChars = [NSCharacterSet URLQueryAllowedCharacterSet];
+        for (NSString *key in queryParams) {
+            NSString *val = [NSString stringWithFormat:@"%@", queryParams[key]];
+            NSString *encKey = [key stringByAddingPercentEncodingWithAllowedCharacters:allowedChars];
+            NSString *encVal = [val stringByAddingPercentEncodingWithAllowedCharacters:allowedChars];
+            [queryItems addObject:[NSString stringWithFormat:@"%@=%@", encKey, encVal]];
+        }
+        NSString *delim = [fullUrlStr containsString:@"?"] ? @"&" : @"?";
+        fullUrlStr = [NSString stringWithFormat:@"%@%@%@", fullUrlStr, delim, [queryItems componentsJoinedByString:@"&"]];
+    }
+    
+    NSURL *url = [NSURL URLWithString:fullUrlStr];
+    if (!url) {
+        return @{@"ok": @NO, @"error": [NSString stringWithFormat:@"Invalid Keyboard Maestro URL: %@", fullUrlStr]};
+    }
+    
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0];
+    [request setHTTPMethod:httpMethod ?: @"GET"];
+    
+    if (user.length > 0 || pass.length > 0) {
+        NSString *authStr = [NSString stringWithFormat:@"%@:%@", user ?: @"", pass ?: @""];
+        NSData *authData = [authStr dataUsingEncoding:NSUTF8StringEncoding];
+        NSString *base64Auth = [authData base64EncodedStringWithOptions:0];
+        [request setValue:[NSString stringWithFormat:@"Basic %@", base64Auth] forHTTPHeaderField:@"Authorization"];
+    }
+    
+    __block NSDictionary *resultDict = nil;
+    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+    
+    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    sessionConfig.timeoutIntervalForRequest = 10.0;
+    sessionConfig.timeoutIntervalForResource = 10.0;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
+    
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (error) {
+            resultDict = @{@"ok": @NO, @"error": error.localizedDescription ?: @"Connection failed"};
+        } else {
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            NSInteger statusCode = httpResp.statusCode;
+            NSString *respText = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"";
+            
+            if (statusCode >= 200 && statusCode < 400) {
+                resultDict = @{
+                    @"ok": @YES,
+                    @"statusCode": @(statusCode),
+                    @"data": respText ?: @""
+                };
+            } else if (statusCode == 401) {
+                resultDict = @{
+                    @"ok": @NO,
+                    @"statusCode": @(statusCode),
+                    @"error": @"HTTP 401: Unauthorized (check Web Server username/password)"
+                };
+            } else if (statusCode == 400 || statusCode == 404) {
+                // KM Web server returns 400/404 if macro name is not found, but connection itself succeeded
+                resultDict = @{
+                    @"ok": @YES,
+                    @"statusCode": @(statusCode),
+                    @"data": respText ?: @""
+                };
+            } else {
+                resultDict = @{
+                    @"ok": @NO,
+                    @"statusCode": @(statusCode),
+                    @"error": [NSString stringWithFormat:@"HTTP %ld: %@", (long)statusCode, respText.length > 0 ? respText : @"Server returned error"]
+                };
+            }
+        }
+        dispatch_semaphore_signal(sema);
+    }];
+    [task resume];
+    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC));
+    
+    return resultDict ?: @{@"ok": @NO, @"error": @"Request timed out"};
+}
+
+static NSString *rc_execute_km_command(NSString *cmdArgs) {
+    if (!g_triggerConfig) load_trigger_config();
+    BOOL kmEnabled = [g_triggerConfig[@"kmEnabled"] boolValue];
+    if (!kmEnabled) {
+        return @"Error: Keyboard Maestro is disabled in settings\n";
+    }
+    
+    NSString *cleanArgs = [cmdArgs stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cleanArgs.length == 0) {
+        return @"Error: Missing Keyboard Maestro command parameters. Usage: 'km trigger <macro_name_or_uuid> [value]' or 'km <macro_name_or_uuid>'\n";
+    }
+    
+    if ([cleanArgs hasPrefix:@"url "] || [cleanArgs hasPrefix:@"http://"] || [cleanArgs hasPrefix:@"https://"]) {
+        NSString *urlStr = [cleanArgs hasPrefix:@"url "] ? [cleanArgs substringFromIndex:4] : cleanArgs;
+        urlStr = [urlStr stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        NSURL *url = [NSURL URLWithString:urlStr];
+        if (!url) {
+            return [NSString stringWithFormat:@"Error: Invalid URL: %@\n", urlStr];
+        }
+        
+        NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0];
+        [req setHTTPMethod:@"GET"];
+        
+        NSString *user = g_triggerConfig[@"kmUser"];
+        NSString *pass = g_triggerConfig[@"kmPassword"];
+        if (user.length > 0 || pass.length > 0) {
+            NSString *authStr = [NSString stringWithFormat:@"%@:%@", user ?: @"", pass ?: @""];
+            NSData *authData = [authStr dataUsingEncoding:NSUTF8StringEncoding];
+            NSString *base64Auth = [authData base64EncodedStringWithOptions:0];
+            [req setValue:[NSString stringWithFormat:@"Basic %@", base64Auth] forHTTPHeaderField:@"Authorization"];
+        }
+        
+        __block NSString *respMsg = nil;
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+        NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        sessionConfig.timeoutIntervalForRequest = 10.0;
+        sessionConfig.timeoutIntervalForResource = 10.0;
+        NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
+        [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+            if (err) {
+                respMsg = [NSString stringWithFormat:@"Error: %@\n", err.localizedDescription];
+            } else {
+                NSHTTPURLResponse *http = (NSHTTPURLResponse *)resp;
+                if (http.statusCode >= 200 && http.statusCode < 400) {
+                    rc_show_hud_toast(@"Keyboard Maestro", @"Triggered URL Macro", @"command");
+                    respMsg = [NSString stringWithFormat:@"Keyboard Maestro trigger succeeded (HTTP %ld)\n", (long)http.statusCode];
+                } else if (http.statusCode == 401) {
+                    respMsg = @"Keyboard Maestro error (HTTP 401: Unauthorized - Check Username/Password)\n";
+                } else {
+                    respMsg = [NSString stringWithFormat:@"Keyboard Maestro error (HTTP %ld)\n", (long)http.statusCode];
+                }
+            }
+            dispatch_semaphore_signal(sema);
+        }] resume];
+        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC));
+        return respMsg ?: @"Keyboard Maestro URL request sent\n";
+    }
+    
+    NSString *macroName = nil;
+    NSString *triggerValue = nil;
+    
+    if ([cleanArgs hasPrefix:@"trigger "]) {
+        NSString *afterTrigger = [[cleanArgs substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([afterTrigger hasPrefix:@"\""]) {
+            NSRange endQuote = [afterTrigger rangeOfString:@"\"" options:0 range:NSMakeRange(1, afterTrigger.length - 1)];
+            if (endQuote.location != NSNotFound) {
+                macroName = [afterTrigger substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+                NSString *rem = [[afterTrigger substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (rem.length > 0) {
+                    if ([rem hasPrefix:@"\""] && [rem hasSuffix:@"\""] && rem.length >= 2) {
+                        triggerValue = [rem substringWithRange:NSMakeRange(1, rem.length - 2)];
+                    } else {
+                        triggerValue = rem;
+                    }
+                }
+            }
+        }
+        if (!macroName) {
+            NSArray *parts = [afterTrigger componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSMutableArray *cleanParts = [NSMutableArray array];
+            for (NSString *p in parts) {
+                if (p.length > 0) [cleanParts addObject:p];
+            }
+            if (cleanParts.count > 0) {
+                macroName = cleanParts[0];
+                if (cleanParts.count > 1) {
+                    triggerValue = [[cleanParts subarrayWithRange:NSMakeRange(1, cleanParts.count - 1)] componentsJoinedByString:@" "];
+                }
+            }
+        }
+    } else {
+        if ([cleanArgs hasPrefix:@"\""]) {
+            NSRange endQuote = [cleanArgs rangeOfString:@"\"" options:0 range:NSMakeRange(1, cleanArgs.length - 1)];
+            if (endQuote.location != NSNotFound) {
+                macroName = [cleanArgs substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+                NSString *rem = [[cleanArgs substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (rem.length > 0) triggerValue = rem;
+            }
+        }
+        if (!macroName) {
+            macroName = cleanArgs;
+        }
+    }
+    
+    if (!macroName || macroName.length == 0) {
+        return @"Error: Missing macro name or UUID\n";
+    }
+    
+    NSMutableDictionary *params = [NSMutableDictionary dictionary];
+    params[@"macro"] = macroName;
+    if (triggerValue.length > 0) {
+        params[@"value"] = triggerValue;
+    }
+    
+    NSString *user = g_triggerConfig[@"kmUser"];
+    NSString *pass = g_triggerConfig[@"kmPassword"];
+    NSString *defaultEndpoint = (user.length > 0 || pass.length > 0) ? @"/authenticatedaction.html" : @"/action.html";
+    
+    NSDictionary *res = rc_execute_km_request(defaultEndpoint, @"GET", params, nil, nil, nil);
+    if (![res[@"ok"] boolValue] && [defaultEndpoint isEqualToString:@"/authenticatedaction.html"]) {
+        NSDictionary *fallbackRes = rc_execute_km_request(@"/action.html", @"GET", params, nil, nil, nil);
+        if ([fallbackRes[@"ok"] boolValue]) {
+            res = fallbackRes;
+        }
+    }
+    
+    if ([res[@"ok"] boolValue]) {
+        NSString *toastMsg = [NSString stringWithFormat:@"Triggered %@", macroName];
+        rc_show_hud_toast(@"Keyboard Maestro", toastMsg, @"command");
+        return [NSString stringWithFormat:@"Keyboard Maestro macro triggered: %@\n", macroName];
+    } else {
+        return [NSString stringWithFormat:@"Keyboard Maestro trigger failed: %@\n", res[@"error"] ?: @"Unknown error"];
+    }
+}
+
+static void rc_execute_shortcut(NSString *shortcutName, NSString *inputArg) {
+    if (!shortcutName || shortcutName.length == 0) return;
+    
+    NSString *cleanName = [shortcutName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([cleanName hasPrefix:@"\""] && [cleanName hasSuffix:@"\""] && cleanName.length >= 2) {
+        cleanName = [cleanName substringWithRange:NSMakeRange(1, cleanName.length - 2)];
+    }
+    
+    SRLog(@"[Shortcut] Attempting execution for: '%@'", cleanName);
+    
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        @try {
+            // 1. Try Native VoiceShortcutClient / WorkflowKit execution (iOS 15 / 16 / 17)
+            dlopen("/System/Library/PrivateFrameworks/VoiceShortcutClient.framework/VoiceShortcutClient", RTLD_NOW);
+            dlopen("/System/Library/PrivateFrameworks/WorkflowKit.framework/WorkflowKit", RTLD_NOW);
+            
+            Class WFSiriRunRequestClass = objc_getClass("WFSiriWorkflowRunRequest");
+            Class WFSiriClientClass = objc_getClass("WFSiriWorkflowRunnerClient");
+            if (WFSiriRunRequestClass && WFSiriClientClass) {
+                id req = nil;
+                if ([WFSiriRunRequestClass respondsToSelector:@selector(alloc)]) {
+                    id allocReq = [WFSiriRunRequestClass alloc];
+                    SEL initSel = NSSelectorFromString(@"initWithWorkflowName:input:");
+                    if ([allocReq respondsToSelector:initSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        req = [allocReq performSelector:initSel withObject:cleanName withObject:inputArg];
+#pragma clang diagnostic pop
+                    }
+                }
+                if (req) {
+                    id client = nil;
+                    SEL initClientSel = NSSelectorFromString(@"initWithRunRequest:");
+                    if ([WFSiriClientClass instancesRespondToSelector:initClientSel]) {
+                        id allocClient = [WFSiriClientClass alloc];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        client = [allocClient performSelector:initClientSel withObject:req];
+#pragma clang diagnostic pop
+                    }
+                    if (client && [client respondsToSelector:@selector(start)]) {
+                        [client performSelector:@selector(start)];
+                        SRLog(@"[Shortcut] Started via WFSiriWorkflowRunnerClient for '%@'", cleanName);
+                        return;
+                    }
+                }
+            }
+            
+            Class WFWorkflowDescriptorClass = objc_getClass("WFWorkflowDescriptor");
+            Class WFWorkflowRunnerClientClass = objc_getClass("WFWorkflowRunnerClient");
+            if (WFWorkflowDescriptorClass && WFWorkflowRunnerClientClass) {
+                id descriptor = [WFWorkflowDescriptorClass alloc];
+                if ([descriptor respondsToSelector:@selector(initWithName:)]) {
+                    descriptor = [descriptor initWithName:cleanName];
+                } else {
+                    SEL sel = NSSelectorFromString(@"initWithIdentifier:");
+                    if ([descriptor respondsToSelector:sel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        descriptor = [descriptor performSelector:sel withObject:cleanName];
+#pragma clang diagnostic pop
+                    } else {
+                        descriptor = nil;
+                    }
+                }
+                if (descriptor) {
+                    WFWorkflowRunnerClient *client = (WFWorkflowRunnerClient *)[[WFWorkflowRunnerClientClass alloc] initWithWorkflowDescriptor:descriptor input:inputArg parseInput:NO output:nil completion:^(id output, NSError *error) {
+                        if (error) {
+                            SRLog(@"[Shortcut] '%@' failed: %@", cleanName, error);
+                        } else {
+                            SRLog(@"[Shortcut] '%@' completed successfully", cleanName);
+                        }
+                    }];
+                    if (client) {
+                        [client start];
+                        SRLog(@"[Shortcut] Started via WFWorkflowRunnerClient for '%@'", cleanName);
+                        return;
+                    }
+                }
+            }
+            
+            // 2. Fallback to springcuts binary via posix_spawn
+            NSString *springcutsPath = [NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()];
+            if (![[NSFileManager defaultManager] fileExistsAtPath:springcutsPath]) {
+                springcutsPath = @"/var/jb/usr/bin/springcuts";
+            }
+            if (![[NSFileManager defaultManager] fileExistsAtPath:springcutsPath]) {
+                springcutsPath = @"/usr/bin/springcuts";
+            }
+            
+            if ([[NSFileManager defaultManager] fileExistsAtPath:springcutsPath]) {
+                NSMutableArray *args = [NSMutableArray array];
+                [args addObject:springcutsPath];
+                [args addObject:@"-r"];
+                [args addObject:cleanName];
+                if (inputArg && inputArg.length > 0) {
+                    [args addObject:@"-p"];
+                    [args addObject:inputArg];
+                }
+                
+                char **argv = (char **)malloc((args.count + 1) * sizeof(char *));
+                for (NSUInteger i = 0; i < args.count; i++) {
+                    argv[i] = (char *)[args[i] UTF8String];
+                }
+                argv[args.count] = NULL;
+                
+                pid_t pid;
+                extern char **environ;
+                int result = rc_posix_spawn(&pid, [springcutsPath UTF8String], NULL, NULL, argv, environ);
+                free(argv);
+                
+                if (result == 0) {
+                    SRLog(@"[Shortcut] Spawned springcuts pid=%d for '%@'", pid, cleanName);
+                    // Background watchdog reaper: monitor completion and terminate if stuck
+                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+                        int status;
+                        for (int i = 0; i < 30; i++) { // 30 x 500ms = 15s max
+                            pid_t w = waitpid(pid, &status, WNOHANG);
+                            if (w == pid || w < 0) {
+                                return; // Exited cleanly
+                            }
+                            usleep(500000);
+                        }
+                        SRLog(@"[Shortcut] springcuts pid=%d timed out (15s limit) - terminating", pid);
+                        kill(pid, SIGKILL);
+                        waitpid(pid, &status, 0);
+                    });
+                    return;
+                } else {
+                    SRLog(@"[Shortcut] posix_spawn springcuts failed: %d (%s)", result, strerror(result));
+                }
+            }
+            
+            // 3. Fallback to shortcuts://run-shortcut URL Scheme
+            NSString *encodedName = [cleanName stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+            NSMutableString *urlStr = [NSMutableString stringWithFormat:@"shortcuts://run-shortcut?name=%@", encodedName];
+            if (inputArg && inputArg.length > 0) {
+                NSString *encodedInput = [inputArg stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+                [urlStr appendFormat:@"&input=text&text=%@", encodedInput];
+            }
+            NSURL *url = [NSURL URLWithString:urlStr];
+            if (url) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    Class LSWorkspaceClass = objc_getClass("LSApplicationWorkspace");
+                    if (LSWorkspaceClass && [LSWorkspaceClass respondsToSelector:@selector(defaultWorkspace)]) {
+                        id ws = [LSWorkspaceClass performSelector:@selector(defaultWorkspace)];
+                        if ([ws respondsToSelector:@selector(openURL:)]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                            [ws performSelector:@selector(openURL:) withObject:url];
+#pragma clang diagnostic pop
+                            SRLog(@"[Shortcut] Invoked via LSApplicationWorkspace URL: %@", urlStr);
+                            return;
+                        }
+                    }
+                    if ([[UIApplication sharedApplication] respondsToSelector:@selector(openURL:options:completionHandler:)]) {
+                        [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
+                            SRLog(@"[Shortcut] UIApplication openURL success=%d: %@", success, urlStr);
+                        }];
+                    }
+                });
+                return;
+            }
+        } @catch (NSException *e) {
+            SRLog(@"[Shortcut] Exception running shortcut '%@': %@", cleanName, e);
+        }
+    });
+}
+
 static NSString *handle_command(NSString *cmd) {
     if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
         SRLog(@"ERROR: handle_command received nil or invalid command string");
@@ -4345,6 +4773,11 @@ static NSString *handle_command(NSString *cmd) {
     if ([cleanCmd isEqualToString:@"ha"] || [cleanCmd hasPrefix:@"ha "]) {
         NSString *subArgs = [cleanCmd isEqualToString:@"ha"] ? @"" : [cleanCmd substringFromIndex:3];
         return rc_execute_ha_command(subArgs);
+    }
+    
+    if ([cleanCmd isEqualToString:@"km"] || [cleanCmd hasPrefix:@"km "]) {
+        NSString *subArgs = [cleanCmd isEqualToString:@"km"] ? @"" : [cleanCmd substringFromIndex:3];
+        return rc_execute_km_command(subArgs);
     }
     
     // Debug hex dump of command
@@ -4706,241 +5139,52 @@ static NSString *handle_command(NSString *cmd) {
         
         send_notification(title, body, urgent);
         return @"OK\n";
-    } else if ([cleanCmd hasPrefix:@"shortcut-direct "] || [cleanCmd hasPrefix:@"sd "]) {
-        // Direct posix_spawn of springcuts binary for fastest execution
-        NSString *argsString;
-        if ([cleanCmd hasPrefix:@"sd "]) {
-            argsString = [[cleanCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else {
-            argsString = [[cleanCmd substringFromIndex:16] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        }
-        
-        // Build arguments: springcuts -r "ShortcutName" [-p "Input"]
-        NSMutableArray *args = [NSMutableArray array];
-        [args addObject:@"-r"];
-        
-        // Parse the shortcut name (may be quoted)
-        if ([argsString hasPrefix:@"\""]) {
-            NSRange endQuote = [argsString rangeOfString:@"\"" options:0 range:NSMakeRange(1, argsString.length - 1)];
-            if (endQuote.location != NSNotFound) {
-                NSString *name = [argsString substringWithRange:NSMakeRange(1, endQuote.location - 1)];
-                [args addObject:name];
-                
-                // Check for -p parameter
-                NSString *remaining = [argsString substringFromIndex:endQuote.location + 1];
-                remaining = [remaining stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if ([remaining hasPrefix:@"-p "]) {
-                    [args addObject:@"-p"];
-                    NSString *input = [remaining substringFromIndex:3];
-                    input = [input stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                    if ([input hasPrefix:@"\""]) {
-                        NSRange inputEnd = [input rangeOfString:@"\"" options:0 range:NSMakeRange(1, input.length - 1)];
-                        if (inputEnd.location != NSNotFound) {
-                            [args addObject:[input substringWithRange:NSMakeRange(1, inputEnd.location - 1)]];
-                        } else {
-                            [args addObject:[input substringFromIndex:1]];
-                        }
-                    } else {
-                        [args addObject:input];
-                    }
-                }
-            } else {
-                [args addObject:[argsString substringFromIndex:1]];
-            }
-        } else {
-            // No quotes - find -p if present
-            NSRange pRange = [argsString rangeOfString:@" -p "];
-            if (pRange.location != NSNotFound) {
-                // Split at -p
-                NSString *name = [[argsString substringToIndex:pRange.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                [args addObject:name];
-                [args addObject:@"-p"];
-                
-                NSString *input = [[argsString substringFromIndex:pRange.location + 4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                // Remove quotes if present
-                if ([input hasPrefix:@"\""] && [input hasSuffix:@"\""]) {
-                    input = [input substringWithRange:NSMakeRange(1, input.length - 2)];
-                } else if ([input hasPrefix:@"\""]) {
-                    NSRange endQuote = [input rangeOfString:@"\"" options:0 range:NSMakeRange(1, input.length - 1)];
-                    if (endQuote.location != NSNotFound) {
-                        input = [input substringWithRange:NSMakeRange(1, endQuote.location - 1)];
-                    }
-                }
-                [args addObject:input];
-            } else {
-                // Just the shortcut name
-                [args addObject:argsString];
-            }
-        }
-        
-        SRLog(@"Direct spawn springcuts with: %@", args);
-        
-        const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
-        if (access(springcutsPath, X_OK) != 0) {
-            springcutsPath = "/usr/bin/springcuts";
-        }
-        
-        // Check if binary exists
-        if (access(springcutsPath, X_OK) != 0) {
-            SRLog(@"ERROR: springcuts binary not found");
-            send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-            return @"Error: SpringCuts not installed\n";
-        }
-        SRLog(@"springcuts binary found, preparing spawn...");
-        
-        char **argv = (char **)malloc((args.count + 2) * sizeof(char *));
-        argv[0] = (char *)springcutsPath;
-        for (NSUInteger i = 0; i < args.count; i++) {
-            argv[i + 1] = (char *)[args[i] UTF8String];
-        }
-        argv[args.count + 1] = NULL;
-        
-        // Log the full command
-        NSMutableString *cmdStr = [NSMutableString stringWithString:@"spawning:"];
-        for (int i = 0; argv[i] != NULL; i++) {
-            [cmdStr appendFormat:@" %s", argv[i]];
-        }
-        SRLog(@"%@", cmdStr);
-        
-        pid_t pid;
-        extern char **environ;
-        int result = posix_spawn(&pid, springcutsPath, NULL, NULL, argv, environ);
-        free(argv);
-        
-        if (result == 0) {
-            SRLog(@"Spawned springcuts pid=%d", pid);
-        } else {
-            SRLog(@"posix_spawn failed with error: %d (%s)", result, strerror(result));
-        }
-    } else if ([cleanCmd hasPrefix:@"shortcut "] || [cleanCmd hasPrefix:@"springcut "]) {
-        // Parse the shortcut name (and arguments if any) from the full command
-        NSString *argsString;
-        if ([cleanCmd hasPrefix:@"springcut "]) {
-            argsString = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        } else {
+    } else if ([cleanCmd hasPrefix:@"shortcut:"] || [cleanCmd hasPrefix:@"shortcut "] || [cleanCmd hasPrefix:@"springcut "] || [cleanCmd hasPrefix:@"shortcut-direct "] || [cleanCmd hasPrefix:@"sd "]) {
+        NSString *argsString = nil;
+        if ([cleanCmd hasPrefix:@"shortcut:"]) {
             argsString = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"shortcut "]) {
+            argsString = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"springcut "]) {
+            argsString = [[cleanCmd substringFromIndex:10] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"shortcut-direct "]) {
+            argsString = [[cleanCmd substringFromIndex:16] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if ([cleanCmd hasPrefix:@"sd "]) {
+            argsString = [[cleanCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         }
         
-        // Very basic parse to extract name (assumes first quoted term is name, ignores inputs for the native implementation for now, or just passes the full string if no quotes)
         NSString *shortcutName = argsString;
+        NSString *inputParam = nil;
+        
+        // Parse name and optional -p parameter
         if ([argsString hasPrefix:@"\""]) {
             NSRange endQuote = [argsString rangeOfString:@"\"" options:0 range:NSMakeRange(1, argsString.length - 1)];
             if (endQuote.location != NSNotFound) {
                 shortcutName = [argsString substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+                NSString *remaining = [[argsString substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                if ([remaining hasPrefix:@"-p "]) {
+                    inputParam = [[remaining substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                    if ([inputParam hasPrefix:@"\""] && [inputParam hasSuffix:@"\""] && inputParam.length >= 2) {
+                        inputParam = [inputParam substringWithRange:NSMakeRange(1, inputParam.length - 2)];
+                    }
+                }
+            }
+        } else {
+            NSRange pRange = [argsString rangeOfString:@" -p "];
+            if (pRange.location != NSNotFound) {
+                shortcutName = [[argsString substringToIndex:pRange.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                inputParam = [[argsString substringFromIndex:pRange.location + 4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                if ([inputParam hasPrefix:@"\""] && [inputParam hasSuffix:@"\""] && inputParam.length >= 2) {
+                    inputParam = [inputParam substringWithRange:NSMakeRange(1, inputParam.length - 2)];
+                }
             }
         }
         
-        SRLog(@"Attempting native shortcut spawn for: %@", shortcutName);
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            @try {
-                 // Try native WorkflowKit execution first
-                 void *wfHandle = dlopen("/System/Library/PrivateFrameworks/WorkflowKit.framework/WorkflowKit", RTLD_NOW);
-                 if (wfHandle) {
-                     Class WFWorkflowDescriptorClass = objc_getClass("WFWorkflowDescriptor");
-                     Class WFWorkflowRunnerClientClass = objc_getClass("WFWorkflowRunnerClient");
-                     
-                     if (WFWorkflowDescriptorClass && WFWorkflowRunnerClientClass) {
-                         SRLog(@"WorkflowKit loaded, preparing to run shortcut: %@", shortcutName);
-                         id descriptor = [WFWorkflowDescriptorClass alloc];
-                         if ([descriptor respondsToSelector:@selector(initWithName:)]) {
-                             descriptor = [descriptor initWithName:shortcutName];
-                         } else {
-                             SRLog(@"[RemoteCommand] WFWorkflowDescriptor missing initWithName:, attempting identifier fallback");
-                             SEL sel = NSSelectorFromString(@"initWithIdentifier:");
-                             if ([descriptor respondsToSelector:sel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                                 descriptor = [descriptor performSelector:sel withObject:shortcutName];
-#pragma clang diagnostic pop
-                             } else {
-                                 descriptor = nil;
-                             }
-                         }
-
-                         if (descriptor) {
-                             WFWorkflowRunnerClient *client = (WFWorkflowRunnerClient *)[[WFWorkflowRunnerClientClass alloc] initWithWorkflowDescriptor:descriptor 
-                                                                                                   input:nil 
-                                                                                              parseInput:NO 
-                                                                                                  output:nil 
-                                                                                              completion:^(id output, NSError *error) {
-                                 if (error) {
-                                     SRLog(@"Shortcut '%@' failed: %@", shortcutName, error);
-                                 } else {
-                                     SRLog(@"Shortcut '%@' completed successfully", shortcutName);
-                                 }
-                             }];
-                             
-                             if (client) {
-                                 [client start];
-                                 SRLog(@"Started WFWorkflowRunnerClient for '%@'", shortcutName);
-                                 return; // Success, exit block!
-                             }
-                         } else {
-                             SRLog(@"[RemoteCommand] Failed to create descriptor for shortcut: %@", shortcutName);
-                         }
-                      }
-                  }
-                  
-                  // Fallback to springcuts CLI if WorkflowKit approach fails
-                 SRLog(@"WorkflowKit execution unavailable, falling back to springcuts...");
-                 NSMutableArray *args = [NSMutableArray array];
-                 
-                 // Simple parsing: split by spaces but respect quotes
-                 NSScanner *scanner = [NSScanner scannerWithString:argsString];
-                 scanner.charactersToBeSkipped = nil;
-                 
-                 while (![scanner isAtEnd]) {
-                     [scanner scanCharactersFromSet:[NSCharacterSet whitespaceCharacterSet] intoString:nil];
-                     if ([scanner isAtEnd]) break;
-                     
-                     NSString *arg = nil;
-                     if ([argsString characterAtIndex:scanner.scanLocation] == '"') {
-                         scanner.scanLocation++;
-                         [scanner scanUpToString:@"\"" intoString:&arg];
-                         if (![scanner isAtEnd]) scanner.scanLocation++;
-                     } else {
-                         [scanner scanUpToCharactersFromSet:[NSCharacterSet whitespaceCharacterSet] intoString:&arg];
-                     }
-                     if (arg) [args addObject:arg];
-                 }
-                 
-                 const char *springcutsPath = [[NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()] UTF8String];
-                 if (access(springcutsPath, X_OK) != 0) {
-                     springcutsPath = "/usr/bin/springcuts";
-                 }
-                 
-                 if (access(springcutsPath, X_OK) != 0) {
-                     SRLog(@"ERROR: springcuts not found");
-                     send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-                     return;
-                 }
-                 
-                 char **argv = (char **)malloc((args.count + 2) * sizeof(char *));
-                 argv[0] = (char *)springcutsPath;
-                 for (NSUInteger i = 0; i < args.count; i++) {
-                     argv[i + 1] = (char *)[args[i] UTF8String];
-                 }
-                 argv[args.count + 1] = NULL;
-                 
-                 pid_t pid;
-                 extern char **environ;
-                 int result = posix_spawn(&pid, springcutsPath, NULL, NULL, argv, environ);
-                 free(argv);
-                 
-                 if (result == 0) {
-                     SRLog(@"Spawned springcuts pid=%d", pid);
-                 } else {
-                     SRLog(@"posix_spawn failed: %d (%s)", result, strerror(result));
-                 }
-            } @catch (NSException *e) {
-                SRLog(@"Crash launching shortcut fallback: %@", e);
-            }
-        });
-        
+        rc_execute_shortcut(shortcutName, inputParam);
         return [NSString stringWithFormat:@"Triggered shortcut: %@\n", shortcutName];
+    } else if ([cleanCmd hasPrefix:@"anc "] || [cleanCmd isEqualToString:@"anc"]) {
         // ANC control - triggers Sonitus hooks
-        NSString *mode = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *mode = [cleanCmd length] > 4 ? [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : @"";
         NSString *listeningMode = nil;
         
         if ([mode isEqualToString:@"on"] || [mode isEqualToString:@"nc"]) {
@@ -6433,7 +6677,7 @@ static NSString *handle_command(NSString *cmd) {
             char *args[] = {(char *)rcRootPath, (char *)[shellCmd UTF8String], NULL};
 
             extern char **environ;
-            int spawn_result = posix_spawn(&pid, rcRootPath, NULL, NULL, args, environ);
+            int spawn_result = rc_posix_spawn(&pid, rcRootPath, NULL, NULL, args, environ);
 
             int result = -1;
             if (spawn_result == 0) {
@@ -6487,7 +6731,7 @@ static NSString *handle_command(NSString *cmd) {
                 // Execute with sh -c
                 pid_t pid;
                 char *args[] = {"/bin/sh", "-c", (char*)[shellCmd UTF8String], NULL};
-                int spawn_result = posix_spawn(&pid, "/bin/sh", NULL, NULL, args, newEnviron);
+                int spawn_result = rc_posix_spawn(&pid, "/bin/sh", NULL, NULL, args, newEnviron);
 
                 int result = -1;
                 if (spawn_result == 0) {
@@ -6731,20 +6975,81 @@ static NSString *handle_command(NSString *cmd) {
         }
         return @"Usage: rc webui <on|off|status>\n";
     } else if ([cleanCmd isEqualToString:@"respring"]) {
-        SRLog(@"Triggering Respring via killbackboardd");
+        SRLog(@"Triggering Respring");
         
         dispatch_async(dispatch_get_main_queue(), ^{
-            pid_t pid;
-            const char* args[] = { "killall", "-9", "backboardd", NULL };
-            NSString *killallPath = [NSString stringWithFormat:@"%@/usr/bin/killall", root_prefix()];
-            posix_spawn(&pid, [killallPath UTF8String], NULL, NULL, (char* const*)args, NULL);
-            
-            if (pid <= 0) {
-                 const char* args2[] = { "killall", "-9", "backboardd", NULL };
-                 posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char* const*)args2, NULL);
+            // 1. Try sbreload (Rootless / Dopamine / Procursus)
+            NSString *sbreload = [NSString stringWithFormat:@"%@/usr/bin/sbreload", root_prefix()];
+            if (![[NSFileManager defaultManager] fileExistsAtPath:sbreload]) {
+                sbreload = @"/var/jb/usr/bin/sbreload";
             }
+            if (![[NSFileManager defaultManager] fileExistsAtPath:sbreload]) {
+                sbreload = @"/usr/bin/sbreload";
+            }
+            if ([[NSFileManager defaultManager] fileExistsAtPath:sbreload]) {
+                pid_t pid;
+                const char* sbreload_args[] = { [sbreload UTF8String], NULL };
+                extern char **environ;
+                int res = rc_posix_spawn(&pid, [sbreload UTF8String], NULL, NULL, (char* const*)sbreload_args, environ);
+                if (res == 0) {
+                    SRLog(@"Respring spawned sbreload pid=%d", pid);
+                    return;
+                }
+            }
+            
+            // 2. Direct SpringBoard relaunch API
+            Class sbClass = objc_getClass("SpringBoard");
+            if (sbClass && [sbClass respondsToSelector:@selector(sharedApplication)]) {
+                id sb = [sbClass performSelector:@selector(sharedApplication)];
+                SEL relaunchSel = NSSelectorFromString(@"_relaunchSpringBoardNow");
+                if ([sb respondsToSelector:relaunchSel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                    [sb performSelector:relaunchSel];
+#pragma clang diagnostic pop
+                    return;
+                }
+            }
+            
+            // 3. FBSystemService exitAndRelaunch
+            Class fbServiceClass = objc_getClass("FBSystemService");
+            if (fbServiceClass && [fbServiceClass respondsToSelector:@selector(sharedInstance)]) {
+                id fbService = [fbServiceClass performSelector:@selector(sharedInstance)];
+                if ([fbService respondsToSelector:@selector(exitAndRelaunch:)]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                    [fbService performSelector:@selector(exitAndRelaunch:) withObject:@YES];
+#pragma clang diagnostic pop
+                    return;
+                }
+            }
+            
+            // 4. SpringBoard exit(0)
+            exit(0);
         });
         return @"Device Respringing...\n";
+    } else if ([cleanCmd isEqualToString:@"safemode"] || [cleanCmd isEqualToString:@"safe-mode"] || [cleanCmd isEqualToString:@"safe_mode"]) {
+        SRLog(@"Triggering Safe Mode");
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // 1. Create safe mode flag file markers (Substrate, ElleKit, Substitute)
+            NSString *safemodePath1 = @"/var/mobile/Library/SafeMode/safemode";
+            NSString *safemodePath2 = [NSString stringWithFormat:@"%@/var/mobile/Library/SafeMode/safemode", root_prefix()];
+            NSString *safemodePath3 = @"/var/mobile/Library/SafariSafeMode";
+            
+            [[NSFileManager defaultManager] createDirectoryAtPath:[safemodePath1 stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+            [[NSFileManager defaultManager] createDirectoryAtPath:[safemodePath2 stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+            
+            [[NSFileManager defaultManager] createFileAtPath:safemodePath1 contents:[NSData data] attributes:nil];
+            [[NSFileManager defaultManager] createFileAtPath:safemodePath2 contents:[NSData data] attributes:nil];
+            [[NSFileManager defaultManager] createFileAtPath:safemodePath3 contents:[NSData data] attributes:nil];
+            
+            // 2. Kill SpringBoard with SIGSEGV to trigger Safe Mode handler
+            kill(getpid(), SIGSEGV);
+            
+            // Fallback
+            abort();
+        });
+        return @"Device entering Safe Mode...\n";
     } else if ([cleanCmd isEqualToString:@"ldrestart"]) {
         SRLog(@"Triggering ldrestart");
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -6752,7 +7057,7 @@ static NSString *handle_command(NSString *cmd) {
             NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/ldrestart", root_prefix()];
             if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/usr/bin/ldrestart";
             const char* args[] = { [binPath UTF8String], NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
+            rc_posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
         });
         return @"Triggering ldrestart...\n";
     } else if ([cleanCmd isEqualToString:@"uicache"]) {
@@ -6762,7 +7067,7 @@ static NSString *handle_command(NSString *cmd) {
             NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/uicache", root_prefix()];
             if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/usr/bin/uicache";
             const char* args[] = { [binPath UTF8String], "-a", NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
+            rc_posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
         });
         return @"Triggering uicache...\n";
     } else if ([cleanCmd isEqualToString:@"userspace-reboot"]) {
@@ -6772,93 +7077,9 @@ static NSString *handle_command(NSString *cmd) {
             NSString *binPath = [NSString stringWithFormat:@"%@/bin/launchctl", root_prefix()];
             if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) binPath = @"/bin/launchctl";
             const char* args[] = { [binPath UTF8String], "reboot", "userspace", NULL };
-            posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
+            rc_posix_spawn(&pid, [binPath UTF8String], NULL, NULL, (char* const*)args, NULL);
         });
         return @"Triggering userspace-reboot...\n";
-    } else if ([cleanCmd hasPrefix:@"shortcut:"]) {
-        NSString *shortcutName = [[cleanCmd substringFromIndex:9] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        
-        SRLog(@"Attempting to run shortcut natively: %@", shortcutName);
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            @try {
-                 // Try native WorkflowKit execution first
-                 void *wfHandle = dlopen("/System/Library/PrivateFrameworks/WorkflowKit.framework/WorkflowKit", RTLD_NOW);
-                 if (wfHandle) {
-                     Class WFWorkflowDescriptorClass = objc_getClass("WFWorkflowDescriptor");
-                     Class WFWorkflowRunnerClientClass = objc_getClass("WFWorkflowRunnerClient");
-                     
-                     if (WFWorkflowDescriptorClass && WFWorkflowRunnerClientClass) {
-                         SRLog(@"WorkflowKit loaded, preparing to run shortcut: %@", shortcutName);
-                         id descriptor = [WFWorkflowDescriptorClass alloc];
-                         if ([descriptor respondsToSelector:@selector(initWithName:)]) {
-                             descriptor = [descriptor initWithName:shortcutName];
-                         } else {
-                             SRLog(@"[RemoteCommand] WFWorkflowDescriptor missing initWithName:, attempting identifier fallback");
-                             SEL sel = NSSelectorFromString(@"initWithIdentifier:");
-                             if ([descriptor respondsToSelector:sel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                                 descriptor = [descriptor performSelector:sel withObject:shortcutName];
-#pragma clang diagnostic pop
-                             } else {
-                                 descriptor = nil;
-                             }
-                         }
-
-                         if (descriptor) {
-                             WFWorkflowRunnerClient *client = (WFWorkflowRunnerClient *)[[WFWorkflowRunnerClientClass alloc] initWithWorkflowDescriptor:descriptor 
-                                                                                                   input:nil 
-                                                                                              parseInput:NO 
-                                                                                                  output:nil 
-                                                                                              completion:^(id output, NSError *error) {
-                                 if (error) {
-                                     SRLog(@"Shortcut '%@' failed: %@", shortcutName, error);
-                                 } else {
-                                     SRLog(@"Shortcut '%@' completed successfully", shortcutName);
-                                 }
-                             }];
-                             
-                             if (client) {
-                                 [client start];
-                                 SRLog(@"Started WFWorkflowRunnerClient for '%@'", shortcutName);
-                                 return; // Success, exit block!
-                             }
-                         } else {
-                             SRLog(@"[RemoteCommand] Failed to create descriptor for shortcut: %@", shortcutName);
-                         }
-                      }
-                  }
-                  
-                  // Fallback to springcuts CLI if WorkflowKit approach fails
-                 SRLog(@"WorkflowKit execution unavailable, falling back to springcuts...");
-                 Class NSTaskClass = NSClassFromString(@"NSTask");
-                 if (NSTaskClass) {
-                     id task = [[NSTaskClass alloc] init];
-                     
-                     NSString *binPath = [NSString stringWithFormat:@"%@/usr/bin/springcuts", root_prefix()];
-                     if (![[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
-                         binPath = @"/usr/bin/springcuts";
-                     }
-                     
-                     if ([[NSFileManager defaultManager] fileExistsAtPath:binPath]) {
-                         [task performSelector:@selector(setLaunchPath:) withObject:binPath];
-                         [task performSelector:@selector(setArguments:) withObject:@[@"-r", shortcutName]];
-                         [task performSelector:@selector(launch)];
-                         SRLog(@"Launched springcuts for '%@'", shortcutName);
-                     } else {
-                         SRLog(@"Error: springcuts binary not found");
-                         send_notification(@"RemoteCompanion", @"Please install SpringCuts to use shortcuts.", YES);
-                     }
-                 } else {
-                     SRLog(@"Error: NSTask class not found");
-                 }
-            } @catch (NSException *e) {
-                SRLog(@"Crash launching shortcut: %@", e);
-            }
-        });
-        
-        return [NSString stringWithFormat:@"Triggered shortcut: %@\n", shortcutName];
     } else if ([cleanCmd isEqualToString:@"list-triggers"]) {
         load_trigger_config();
         if (!g_triggerConfig) return @"Error: No trigger config found\n";
@@ -6921,7 +7142,7 @@ static void execute_shell_command(const char *cmd) {
     } else {
         pid_t pid;
         char *argv[] = {"sh", "-c", (char *)cmd, NULL};
-        posix_spawn(&pid, "/bin/sh", NULL, NULL, argv, NULL);
+        rc_posix_spawn(&pid, "/bin/sh", NULL, NULL, argv, NULL);
     }
 }
 
@@ -6946,6 +7167,8 @@ static NSString* get_local_ip_address(void) {
     if (interfaces) freeifaddrs(interfaces);
     return address;
 }
+
+static int g_actualWebPort = 8080;
 
 static NSDictionary* get_system_diagnostics(void) {
     [UIDevice currentDevice].batteryMonitoringEnabled = YES;
@@ -7035,8 +7258,8 @@ static NSDictionary* get_system_diagnostics(void) {
     NSString *modelName = [UIDevice currentDevice].model ?: @"iPhone";
     NSString *ipAddress = get_local_ip_address();
     NSString *webUIUrl = (![ipAddress isEqualToString:@"Unavailable"]) 
-        ? [NSString stringWithFormat:@"http://%@:8080", ipAddress]
-        : @"http://127.0.0.1:8080";
+        ? [NSString stringWithFormat:@"http://%@:%d", ipAddress, g_actualWebPort]
+        : [NSString stringWithFormat:@"http://127.0.0.1:%d", g_actualWebPort];
 
     // Log File Info
     NSString *logPath = @"/tmp/remotecommand.log";
@@ -7084,37 +7307,68 @@ static NSDictionary* get_system_diagnostics(void) {
 static void start_web_server() {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         int server_fd, new_socket;
-        struct sockaddr_in address;
+        struct sockaddr_in6 address;
         int opt = 1;
-        int addrlen = sizeof(address);
+        int off = 0;
         
-        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-            SRLog(@"[WebUI] socket failed");
-            return;
+        // Use AF_INET6 with IPV6_V6ONLY=0 for seamless dual-stack IPv6/IPv4 listening
+        if ((server_fd = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
+            // Fallback to IPv4 socket if IPv6 creation fails
+            if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+                SRLog(@"[WebUI] socket failed");
+                return;
+            }
+        } else {
+            setsockopt(server_fd, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
         }
         
-        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-            SRLog(@"[WebUI] setsockopt failed");
-            return;
-        }
+        // Prevent socket file descriptor inheritance to child processes
+        fcntl(server_fd, F_SETFD, FD_CLOEXEC);
+        
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef SO_REUSEPORT
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
         
         int port = 8080;
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = INADDR_ANY;
+        memset(&address, 0, sizeof(address));
+        address.sin6_family = AF_INET6;
+        address.sin6_addr = in6addr_any;
         
-        while (port < 8100) {
-            address.sin_port = htons(port);
+        // Strongly prefer default port 8080; retry briefly in case a previous respring is releasing it
+        BOOL bound = NO;
+        for (int retry = 0; retry < 5; retry++) {
+            address.sin6_port = htons(8080);
             if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) >= 0) {
+                bound = YES;
+                port = 8080;
                 break;
             }
-            port++;
+            if (retry < 4) {
+                usleep(200000); // 200ms wait between retries on port 8080
+            }
         }
         
-        if (port >= 8100) {
+        // If 8080 is still taken by another service, scan sequential fallback ports
+        if (!bound) {
+            port = 8081;
+            while (port < 8100) {
+                address.sin6_port = htons(port);
+                if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) >= 0) {
+                    bound = YES;
+                    break;
+                }
+                port++;
+            }
+        }
+        
+        if (!bound || port >= 8100) {
             SRLog(@"[WebUI] bind failed (ports 8080-8099 all taken)");
             close(server_fd);
             return;
         }
+        
+        g_actualWebPort = port;
         
         if (listen(server_fd, 5) < 0) {
             SRLog(@"[WebUI] listen failed");
@@ -7125,15 +7379,23 @@ static void start_web_server() {
         SRLog(@"[WebUI] Server listening on port %d", port);
 
         while (1) {
-            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+            struct sockaddr_storage client_addr;
+            socklen_t client_addrlen = sizeof(client_addr);
+            if ((new_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_addrlen)) < 0) {
                 continue;
             }
+            
+            // Prevent inheritance to child processes and prevent SIGPIPE
+            fcntl(new_socket, F_SETFD, FD_CLOEXEC);
+            int nosigpipe = 1;
+            setsockopt(new_socket, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, sizeof(nosigpipe));
             
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 struct timeval tv;
                 tv.tv_sec = 2;
                 tv.tv_usec = 0;
                 setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+                setsockopt(new_socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv);
 
                 char buffer[16384] = {0};
                 ssize_t valread = read(new_socket, buffer, 16384 - 1);
@@ -7279,6 +7541,11 @@ static void start_web_server() {
                                     NSString *logPath = @"/tmp/remotecommand.log";
                                     [@"" writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
+                                } else if ([path isEqualToString:@"/api/sysaction/safemode"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                    dispatch_async(dispatch_get_main_queue(), ^{
+                                        handle_command(@"safemode");
+                                    });
+                                    responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
                                 } else if ([path isEqualToString:@"/api/ha/test"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
                                     load_trigger_config();
                                     NSString *overrideUrl = nil;
@@ -7352,6 +7619,97 @@ static void start_web_server() {
                                     NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
                                     NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                } else if ([path isEqualToString:@"/api/km/test"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                     load_trigger_config();
+                                     NSString *overrideUrl = nil;
+                                     NSString *overrideUser = nil;
+                                     NSString *overridePass = nil;
+                                     if ([method isEqualToString:@"POST"]) {
+                                         NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                         int contentLength = 0;
+                                         if (clRange.location != NSNotFound) {
+                                             NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                             contentLength = [afterCl intValue];
+                                         }
+                                         const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                         if (headersEnd != NULL) {
+                                             size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                             size_t availableBodyLength = valread - headerBytesOffset;
+                                             NSMutableData *bodyData = [NSMutableData data];
+                                             if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                             while (bodyData.length < contentLength) {
+                                                 char chunk[4096];
+                                                 ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                                 if (chunkRead <= 0) break;
+                                                 [bodyData appendBytes:chunk length:chunkRead];
+                                             }
+                                             NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                             if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                                 overrideUrl = jsonObj[@"kmUrl"];
+                                                 overrideUser = jsonObj[@"kmUser"];
+                                                 overridePass = jsonObj[@"kmPassword"];
+                                             }
+                                         }
+                                     }
+                                     NSDictionary *res = rc_execute_km_request(nil, @"GET", nil, overrideUrl, overrideUser, overridePass);
+                                     NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                     if ([res[@"ok"] boolValue]) {
+                                         resp[@"ok"] = @YES;
+                                         resp[@"message"] = @"Connected to Keyboard Maestro Web Server";
+                                     } else {
+                                         resp[@"ok"] = @NO;
+                                         resp[@"error"] = res[@"error"] ?: @"Connection failed";
+                                     }
+                                     NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                     NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                 } else if ([path isEqualToString:@"/api/km/trigger"] && [method isEqualToString:@"POST"]) {
+                                     load_trigger_config();
+                                     NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                     int contentLength = 0;
+                                     if (clRange.location != NSNotFound) {
+                                         NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                         contentLength = [afterCl intValue];
+                                     }
+                                     const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                     NSString *macro = nil;
+                                     NSString *value = nil;
+                                     NSString *fullUrl = nil;
+                                     if (headersEnd != NULL) {
+                                         size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                         size_t availableBodyLength = valread - headerBytesOffset;
+                                         NSMutableData *bodyData = [NSMutableData data];
+                                         if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                         while (bodyData.length < contentLength) {
+                                             char chunk[4096];
+                                             ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                             if (chunkRead <= 0) break;
+                                             [bodyData appendBytes:chunk length:chunkRead];
+                                         }
+                                         NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                         if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                             macro = jsonObj[@"macro"];
+                                             value = jsonObj[@"value"];
+                                             fullUrl = jsonObj[@"url"];
+                                         }
+                                     }
+                                     NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                     if (fullUrl.length > 0) {
+                                         NSString *kmRes = rc_execute_km_command([NSString stringWithFormat:@"url %@", fullUrl]);
+                                         resp[@"ok"] = [kmRes containsString:@"Error:"] ? @NO : @YES;
+                                         resp[@"output"] = kmRes;
+                                     } else if (macro.length > 0) {
+                                         NSString *cmdStr = value.length > 0 ? [NSString stringWithFormat:@"trigger %@ %@", macro, value] : [NSString stringWithFormat:@"trigger %@", macro];
+                                         NSString *kmRes = rc_execute_km_command(cmdStr);
+                                         resp[@"ok"] = [kmRes containsString:@"Error:"] ? @NO : @YES;
+                                         resp[@"output"] = kmRes;
+                                     } else {
+                                         resp[@"ok"] = @NO;
+                                         resp[@"error"] = @"Missing macro parameter";
+                                     }
+                                     NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                     NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
                                 NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];
@@ -7505,6 +7863,7 @@ static void start_web_server() {
                                     @{@"command": @"open <bundleId>", @"desc": @"System: Launch an application by bundle identifier"},
                                     @{@"command": @"kill <bundleId>", @"desc": @"System: Force-close an application"},
                                     @{@"command": @"respring", @"desc": @"System: Restart SpringBoard"},
+                                    @{@"command": @"safemode", @"desc": @"System: Enter Safe Mode (restart SpringBoard with tweaks disabled)"},
                                     @{@"command": @"ldrestart", @"desc": @"System: Soft-reboot the device"},
 
                                     // Media & Volume
@@ -7661,6 +8020,9 @@ static void start_server() {
             return;
         }
 
+        // Prevent socket file descriptor inheritance to child processes
+        fcntl(server_fd, F_SETFD, FD_CLOEXEC);
+
         // Unlink any existing socket file
         unlink([socketPath UTF8String]);
         
@@ -7695,11 +8057,17 @@ static void start_server() {
                  continue;
             }
             
+            // Prevent inheritance to child processes and prevent SIGPIPE
+            fcntl(new_socket, F_SETFD, FD_CLOEXEC);
+            int nosigpipe = 1;
+            setsockopt(new_socket, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, sizeof(nosigpipe));
+            
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 struct timeval tv;
                 tv.tv_sec = 5;
                 tv.tv_usec = 0;
                 setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+                setsockopt(new_socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv);
 
                 char local_buffer[1024] = {0};
                 ssize_t valread = read(new_socket, local_buffer, 1024);
@@ -7733,6 +8101,8 @@ static BOOL g_volDownTriggered = NO;
 static BOOL g_volUpIsDown = NO;
 static BOOL g_volDownIsDown = NO;
 static BOOL g_volComboTriggered = NO;
+static NSTimeInterval g_lastVolUpPressTime = 0;
+static NSTimeInterval g_lastVolDownPressTime = 0;
 
 static NSTimer *g_lockButtonTimer = nil;
 static BOOL g_lockButtonTriggered = NO;
@@ -7864,16 +8234,49 @@ static BOOL g_isSwappingVolume = NO;
         return;
     }
 
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    g_volUpIsDown = YES;
+    g_lastVolUpPressTime = now;
+
+    // 1. Check for Power + Volume Up combination
     if (g_powerIsDown) {
         load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"power_volume_up"][@"enabled"] boolValue]) {
-            SRLog(@"Suppressing Volume Up because Power is DOWN (Combo)");
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][@"power_volume_up"][@"enabled"] boolValue];
+        if (enabled) {
+            SRLog(@"Power + Volume Up combo triggered (from Vol Up Hook)");
+            g_powerVolComboTriggered = YES;
+            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+            trigger_haptic();
+            RCExecuteTrigger(@"power_volume_up");
             return;
         }
     }
 
-    g_volUpIsDown = YES;
-    
+    // 2. Check for simultaneous Volume Up + Volume Down dual press
+    BOOL isDualPress = g_volDownIsDown || (g_lastVolDownPressTime > 0 && (now - g_lastVolDownPressTime) < 0.20);
+    if (isDualPress) {
+        load_trigger_config();
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
+        
+        if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+        if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+        g_volUpTriggered = NO;
+        g_volDownTriggered = NO;
+
+        if (comboEnabled && !g_volComboTriggered) {
+            g_volComboTriggered = YES;
+            SRLog(@"Volume Both Press combo triggered (from Vol Up Hook)");
+            trigger_haptic();
+            RCExecuteTrigger(@"volume_both_press");
+        } else {
+            g_volComboTriggered = YES;
+        }
+        return;
+    }
+
     dispatch_async(dispatch_get_main_queue(), ^{
         load_trigger_config();
         BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
@@ -7883,7 +8286,7 @@ static BOOL g_isSwappingVolume = NO;
         if (holdEnabled || comboEnabled) {
             if (g_volUpTimer) [g_volUpTimer invalidate];
             g_volUpTimer = [NSTimer scheduledTimerWithTimeInterval:0.35 repeats:NO block:^(NSTimer *timer) {
-                if (g_volComboTriggered) return;
+                if (g_volComboTriggered || g_powerVolComboTriggered || g_volDownIsDown) return;
                 g_volUpTimer = nil;
                 if (holdEnabled) {
                     g_volUpTriggered = YES;
@@ -7915,6 +8318,12 @@ static BOOL g_isSwappingVolume = NO;
 
     if (g_volComboTriggered) {
         if (!g_volDownIsDown) g_volComboTriggered = NO;
+        if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+        return;
+    }
+
+    if (g_powerVolComboTriggered) {
+        if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
         return;
     }
 
@@ -7957,15 +8366,48 @@ static BOOL g_isSwappingVolume = NO;
         return;
     }
 
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    g_volDownIsDown = YES;
+    g_lastVolDownPressTime = now;
+
+    // 1. Check for Power + Volume Down combination
     if (g_powerIsDown) {
         load_trigger_config();
-        if ([g_triggerConfig[@"masterEnabled"] boolValue] && [g_triggerConfig[@"triggers"][@"power_volume_down"][@"enabled"] boolValue]) {
-            SRLog(@"Suppressing Volume Down because Power is DOWN (Combo)");
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][@"power_volume_down"][@"enabled"] boolValue];
+        if (enabled) {
+            SRLog(@"Power + Volume Down combo triggered (from Vol Down Hook)");
+            g_powerVolComboTriggered = YES;
+            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+            trigger_haptic();
+            RCExecuteTrigger(@"power_volume_down");
             return;
         }
     }
 
-    g_volDownIsDown = YES;
+    // 2. Check for simultaneous Volume Up + Volume Down dual press
+    BOOL isDualPress = g_volUpIsDown || (g_lastVolUpPressTime > 0 && (now - g_lastVolUpPressTime) < 0.20);
+    if (isDualPress) {
+        load_trigger_config();
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL comboEnabled = masterEnabled && [g_triggerConfig[@"triggers"][@"volume_both_press"][@"enabled"] boolValue];
+        
+        if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+        if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+        g_volUpTriggered = NO;
+        g_volDownTriggered = NO;
+
+        if (comboEnabled && !g_volComboTriggered) {
+            g_volComboTriggered = YES;
+            SRLog(@"Volume Both Press combo triggered (from Vol Down Hook)");
+            trigger_haptic();
+            RCExecuteTrigger(@"volume_both_press");
+        } else {
+            g_volComboTriggered = YES;
+        }
+        return;
+    }
 
     dispatch_async(dispatch_get_main_queue(), ^{
         load_trigger_config();
@@ -7976,7 +8418,7 @@ static BOOL g_isSwappingVolume = NO;
         if (holdEnabled || comboEnabled) {
             if (g_volDownTimer) [g_volDownTimer invalidate];
             g_volDownTimer = [NSTimer scheduledTimerWithTimeInterval:0.35 repeats:NO block:^(NSTimer *timer) {
-                if (g_volComboTriggered) return;
+                if (g_volComboTriggered || g_powerVolComboTriggered || g_volUpIsDown) return;
                 g_volDownTimer = nil;
                 if (holdEnabled) {
                     g_volDownTriggered = YES;
@@ -8008,6 +8450,12 @@ static BOOL g_isSwappingVolume = NO;
 
     if (g_volComboTriggered) {
         if (!g_volUpIsDown) g_volComboTriggered = NO;
+        if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+        return;
+    }
+
+    if (g_powerVolComboTriggered) {
+        if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
         return;
     }
 
@@ -8611,7 +9059,26 @@ static void setup_background_hid_listener() {
         return;
     }
     SRLog(@"performInitialButtonDownActions on %@", [self class]);
-    // Removed g_powerBtnActive
+    g_powerIsDown = YES;
+    
+    // Check for simultaneous press if Volume is already down
+    if (g_volUpIsDown || g_volDownIsDown) {
+        NSString *triggerKey = g_volUpIsDown ? @"power_volume_up" : @"power_volume_down";
+        load_trigger_config();
+        BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+        BOOL enabled = masterEnabled && [g_triggerConfig[@"triggers"][triggerKey][@"enabled"] boolValue];
+        
+        if (enabled && !g_powerVolComboTriggered) {
+            SRLog(@"Power + Volume combo detected (from Lock button down): %@", triggerKey);
+            g_powerVolComboTriggered = YES;
+            if (g_volUpTimer) { [g_volUpTimer invalidate]; g_volUpTimer = nil; }
+            if (g_volDownTimer) { [g_volDownTimer invalidate]; g_volDownTimer = nil; }
+            trigger_haptic();
+            RCExecuteTrigger(triggerKey);
+            return;
+        }
+    }
+    
     load_trigger_config();
     BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
                    [g_triggerConfig[@"triggers"][@"power_long_press"][@"enabled"] boolValue];
@@ -8652,9 +9119,6 @@ static void setup_background_hid_listener() {
                      g_systemPowerOffTimer = nil;
                      
                      // Manually invoke the action again, but this time g_forceSystemLongPress is YES
-                     // We need an instance to call it on. 'self' inside this block is captured? 
-                     // No, 'self' in block refers to captured SBLockHardwareButtonActions instance.
-                     // IMPORTANT: 'self' in block is valid.
                      [self performLongPressActions];
                 }];
             }];
@@ -8673,8 +9137,8 @@ static void setup_background_hid_listener() {
 
 - (void)performButtonUpPreActions {
     SRLog(@"performButtonUpPreActions on %@", [self class]);
-    // Removed g_powerBtnActive access
     SRLog(@"Power Button UP (Actions)");
+    g_powerIsDown = NO;
 
     // Automatically disable proximity sensor monitoring when power button is released
     g_forceProximityDetection = NO;
@@ -9391,6 +9855,36 @@ static void update_edge_gestures() {
 
 %end
 
+%ctor {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    if ([bundleID isEqualToString:@"com.apple.springboard"]) {
+        %init(_ungrouped);
+        
+        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
+        
+        // Start Background HID Listener immediately (safe for NFC)
+        setup_background_hid_listener();
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SRLog(@"Delayed Initialization & Gesture Setup...");
+            
+            load_trigger_config();
+            register_config_observer();
+            register_simulation_observers();
+            register_system_event_observers(); // WiFi/BT Triggers
+            start_server();
+            start_web_server();
+            start_schedule_timer();
+            
+            // Conditionally register edge gestures based on config
+            update_edge_gestures();
+            
+            SRLog(@"Initialization Complete.");
+        });
+    } else {
+        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
+    }
+}
 %hook BBServer
 - (void)publishBulletin:(id)bulletin destinations:(NSUInteger)destinations {
     %orig;
@@ -9438,36 +9932,3 @@ static void update_edge_gestures() {
     }
 }
 %end
-
-%ctor {
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-    if ([bundleID isEqualToString:@"com.apple.springboard"] || [bundleID isEqualToString:@"com.apple.calculator"]) {
-        %init(_ungrouped);
-        
-        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
-        
-        // Load config & register observer immediately
-        load_trigger_config();
-        register_config_observer();
-        
-        // Start Background HID Listener immediately (safe for NFC)
-        setup_background_hid_listener();
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SRLog(@"Delayed Initialization & Gesture Setup...");
-            
-            register_simulation_observers();
-            register_system_event_observers(); // WiFi/BT Triggers
-            start_server();
-            start_web_server();
-            start_schedule_timer();
-            
-            // Conditionally register edge gestures based on config
-            update_edge_gestures();
-            
-            SRLog(@"Initialization Complete.");
-        });
-    } else {
-        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
-    }
-}

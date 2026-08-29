@@ -299,7 +299,14 @@ int main(int argc, char *argv[]) {
 
     char *shell_args[] = {(char *)shell_path, "-c", cmd, NULL};
 
-    int status = posix_spawn(&pid, shell_path, NULL, NULL, shell_args, new_env);
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT);
+#endif
+
+    int status = posix_spawn(&pid, shell_path, NULL, &attr, shell_args, new_env);
+    posix_spawnattr_destroy(&attr);
 
     if (status != 0) {
         fprintf(stderr, "Error: posix_spawn failed with status %d\n", status);

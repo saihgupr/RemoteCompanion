@@ -914,6 +914,25 @@
       text-transform: uppercase; color: #8e8e93;
       padding: 0 32px; margin: 24px 0 6px;
     }
+    .app-picker-list .picker-section-header {
+      padding: 10px 14px 4px;
+      margin: 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: #8e8e93;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: #2c2c2e;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .app-picker-list .list-card {
+      margin: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+    }
     .picker-row {
       display: flex; align-items: center;
       min-height: 50px;
@@ -1484,19 +1503,22 @@
   </div>
 </div>
 
-<!-- ══ ACTION PICKER PANEL ════════════════════════════════════════════════ -->
-<div class="rc-panel" id="picker-panel">
-  <div class="panel-navbar">
-    <button class="panel-back" onclick="closePickerPanel()">
-      <i class="f7-icons">xmark</i> Cancel
-    </button>
-    <div class="panel-title">Select Action</div>
-    <div style="width:80px"></div>
+<!-- ══ ACTION PICKER DIALOG ════════════════════════════════════════════════ -->
+<div class="dialog-backdrop" id="picker-dialog-backdrop" onclick="_pickerBackdropClick(event)">
+  <div class="dialog-box app-launch-dialog" style="max-width: 480px; width: 90%;">
+    <div class="dialog-title">Select Action</div>
+    <div class="dialog-msg" style="text-align:center;padding:0 16px 6px">Choose an action to add to this trigger.</div>
+    <div style="padding:0 14px 10px; display:flex; flex-direction:column; flex:1; min-height:0;">
+      <div class="app-picker-search-wrap">
+        <i class="f7-icons" style="font-size:16px;color:#8e8e93;flex-shrink:0">search</i>
+        <input class="app-picker-search" type="text" placeholder="Search actions…" id="action-search" autocorrect="off" autocapitalize="none" spellcheck="false" oninput="renderPickerSections()">
+      </div>
+      <div class="app-picker-list" id="picker-content" style="max-height: 48vh; max-height: 48dvh; overflow-y: auto;"></div>
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closePickerPanel()">Cancel</button>
+    </div>
   </div>
-  <div class="search-wrap">
-    <input class="search-input" type="search" placeholder="Search Actions" id="action-search" oninput="renderPickerSections()">
-  </div>
-  <div id="picker-content"></div>
 </div>
 
 <!-- ══ SETTINGS PANEL ════════════════════════════════════════════════════ -->
@@ -3665,6 +3687,33 @@ function toggleDisableAction(idx) {
 
 function removeAction(idx) {
   const actions = triggerData(currentKey).actions || [];
+  if (idx < 0 || idx >= actions.length) return;
+  const action = actions[idx];
+  const isIf = typeof action === 'object' && action !== null && (action.type || '').toLowerCase() === 'if';
+
+  if (isIf) {
+    let depth = 1;
+    let matchingEndIdx = -1;
+    for (let i = idx + 1; i < actions.length; i++) {
+      const a = actions[i];
+      if (typeof a === 'object' && a !== null) {
+        const t = (a.type || '').toLowerCase();
+        if (t === 'if') {
+          depth++;
+        } else if (t === 'end_if' || t === 'end') {
+          depth--;
+          if (depth === 0) {
+            matchingEndIdx = i;
+            break;
+          }
+        }
+      }
+    }
+    if (matchingEndIdx !== -1) {
+      actions.splice(matchingEndIdx, 1);
+    }
+  }
+
   actions.splice(idx, 1);
   saveConfig();
   renderActionList();
@@ -4306,15 +4355,20 @@ function editAction(idx) {
   }
 }
 
-// ── Action picker panel ───────────────────────────────────────────────────────
+// ── Action picker dialog ───────────────────────────────────────────────────────
 function showActionPickerPanel() {
   document.getElementById('action-search').value = '';
   renderPickerSections();
-  document.getElementById('picker-panel').classList.add('active');
+  document.getElementById('picker-dialog-backdrop').classList.add('visible');
+  setTimeout(() => document.getElementById('action-search').focus(), 100);
 }
 
 function closePickerPanel() {
-  document.getElementById('picker-panel').classList.remove('active');
+  document.getElementById('picker-dialog-backdrop').classList.remove('visible');
+}
+
+function _pickerBackdropClick(e) {
+  if (e.target === document.getElementById('picker-dialog-backdrop')) closePickerPanel();
 }
 
 function renderPickerSections() {

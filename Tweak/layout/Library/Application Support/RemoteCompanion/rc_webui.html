@@ -2390,6 +2390,7 @@ const CMD_NAMES = {
   'bluetooth on':'Bluetooth On','bluetooth off':'Bluetooth Off','bluetooth toggle':'Bluetooth Toggle',
   'airplane on':'Airplane On','airplane off':'Airplane Off','airplane toggle':'Airplane Toggle',
   'haptic':'Haptic Feedback','screenshot':'Screenshot',
+  'camera video 2x':'Open Video Camera (2x)','camera video':'Open Video Camera','open camera video 2x':'Open Video Camera (2x)','open camera video':'Open Video Camera',
   'sneakycam photo':'SneakyCam Photo','sneakycam takephoto':'SneakyCam Photo','sneakycam video':'SneakyCam Video','sneakycam startstopvideo':'SneakyCam Video','sneakycam record':'SneakyCam Video',
   'lock':'Lock Device','unlock':'Unlock Device',
   'dnd on':'Do Not Disturb On','dnd off':'Do Not Disturb Off','dnd toggle':'Do Not Disturb Toggle',
@@ -2425,6 +2426,12 @@ function nameForCmd(cmd) {
   }
   const lowCmd = cmd.toLowerCase().trim();
   if (CMD_NAMES[lowCmd]) return CMD_NAMES[lowCmd];
+  if (lowCmd === 'camera video 2x' || lowCmd === 'open camera video 2x' || lowCmd === 'camera 2x' || lowCmd === 'open camera 2x') return 'Open Video Camera (2x)';
+  if (lowCmd === 'camera video' || lowCmd === 'open camera video') return 'Open Video Camera (2x)';
+  if (lowCmd.startsWith('camera video ') || lowCmd.startsWith('open camera video ')) {
+    const zoom = lowCmd.replace(/^open /, '').replace(/^camera video /, '').trim();
+    return `Open Video Camera (${zoom})`;
+  }
   if (lowCmd.startsWith('sneakycam photo') || lowCmd === 'sneakycam takephoto') return 'SneakyCam Photo';
   if (lowCmd.startsWith('sneakycam video') || lowCmd === 'sneakycam record' || lowCmd === 'sneakycam startstopvideo') return 'SneakyCam Video';
   if (lowCmd.startsWith('flashlight ')) return `Flashlight ${cmd.slice(11)}%`;
@@ -2548,6 +2555,7 @@ function iconForCmd(cmd) {
     'mute':'speaker_slash_fill','mute on':'speaker_slash_fill','mute off':'speaker_3_fill','mute toggle':'speaker_slash_fill',
   };
   const lowCmd = cmd.toLowerCase().trim();
+  if (lowCmd.startsWith('camera video') || lowCmd.startsWith('open camera video') || lowCmd.startsWith('camera 2x') || lowCmd.startsWith('open camera 2x')) return { icon:'video_fill', cls:'icon-indigo' };
   if (lowCmd.startsWith('sneakycam photo') || lowCmd === 'sneakycam takephoto') return { icon:'camera_fill', cls:'icon-purple' };
   if (lowCmd.startsWith('sneakycam video') || lowCmd === 'sneakycam record' || lowCmd === 'sneakycam startstopvideo') return { icon:'video_fill', cls:'icon-indigo' };
   if (map[lowCmd]) return { icon:map[lowCmd], cls:'icon-dark' };
@@ -2588,6 +2596,7 @@ const ACTION_SECTIONS = [
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
     { name:'Mute',              cmd:'mute toggle',  icon:'speaker_slash_fill', is_toggle:true },
+    { name:'Open Video Camera (2x)', cmd:'camera video 2x', icon:'video_fill' },
     { name:'Queue Current Album', cmd:'queuealbum', icon:'music_note_list' },
     { name:'Queue Artist (Shuffle)', cmd:'queueartist', icon:'music_mic' },
     { name:'Shuffle All Songs', cmd:'shuffleall',   icon:'shuffle' },

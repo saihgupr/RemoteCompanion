@@ -4833,6 +4833,122 @@ static void rc_execute_shortcut(NSString *shortcutName, NSString *inputArg) {
     });
 }
 
+static NSString *rc_open_camera_video(double zoomFactor) {
+    if (zoomFactor <= 0) zoomFactor = 2.0;
+    
+    SRLog(@"[Camera] Opening Camera in Video Mode with zoom factor: %.1fx", zoomFactor);
+    
+    // 1. Write camera intent payload for com.apple.camera hook
+    @try {
+        NSDictionary *intent = @{
+            @"mode": @(1), // 1 = Video mode
+            @"zoom": @(zoomFactor),
+            @"timestamp": @([[NSDate date] timeIntervalSince1970])
+        };
+        [intent writeToFile:@"/tmp/rc_camera_intent.plist" atomically:YES];
+        notify_post("com.saihgupr.remotecompanion.camera_intent");
+    } @catch (NSException *e) {
+        SRLog(@"[Camera] Error writing camera intent: %@", e);
+    }
+    
+    // 2. Configure Camera preferences in com.apple.camera (as fallback)
+    @try {
+        CFStringRef appID = CFSTR("com.apple.camera");
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesCaptureMode"), (CFPropertyListRef)@(1), appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesCaptureModeKey"), (CFPropertyListRef)@(1), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesExplicitCaptureModeKey"), (CFPropertyListRef)@(1), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesPreserveCaptureModeKey"), (CFPropertyListRef)@YES, appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesPreserveCaptureModeKey"), (CFPropertyListRef)@YES, appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesCameraDeviceKey"), (CFPropertyListRef)@(0), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesCameraDeviceKey"), (CFPropertyListRef)@(0), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesVideoZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesBackCameraZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesBackCameraVideoZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesLastZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        CFPreferencesAppSynchronize(appID);
+    } @catch (NSException *e) {
+        SRLog(@"[Camera] Error writing camera preferences: %@", e);
+    }
+    
+    // 3. Launch com.apple.camera via FBSOpenApplicationService on main thread
+    dispatch_async(dispatch_get_main_queue(), ^{
+        Class fbsOptionsClass = objc_getClass("FBSOpenApplicationOptions");
+        Class fbsServiceClass = objc_getClass("FBSOpenApplicationService");
+        
+        NSDictionary *optionsDict = @{
+            @"__PayloadOptions": @{
+                @"CAMUserPreferencesCaptureModeKey": @(1),
+                @"CAMCaptureMode": @(1),
+                @"WFCameraCaptureMode": @"Video",
+                @"AVCaptureDeviceType": @"AVCaptureDeviceTypeBuiltInTelephotoCamera",
+                @"UserPreferencesZoomFactor": @(zoomFactor),
+                @"CAMUserPreferencesZoomFactor": @(zoomFactor)
+            },
+            @"__UnlockDevice": @YES,
+            @"__PromptUnlockDevice": @YES
+        };
+        
+        id options = nil;
+        if (fbsOptionsClass && [fbsOptionsClass respondsToSelector:@selector(optionsWithDictionary:)]) {
+            options = [fbsOptionsClass optionsWithDictionary:optionsDict];
+        }
+        
+        if (fbsServiceClass) {
+            FBSOpenApplicationService *service = [fbsServiceClass serviceWithDefaultShellEndpoint];
+            [service openApplication:@"com.apple.camera" withOptions:options completion:^(id response, NSError *error) {
+                if (error) {
+                    SRLog(@"[Camera] FBS openApplication error: %@", error);
+                } else {
+                    SRLog(@"[Camera] Opened com.apple.camera with Video/%.1fx options", zoomFactor);
+                }
+            }];
+        } else {
+            NSURL *url = [NSURL URLWithString:@"camera://"];
+            [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+        }
+        
+        // Post notification again after brief delay to catch already-running camera instances
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            notify_post("com.saihgupr.remotecompanion.camera_intent");
+        });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            notify_post("com.saihgupr.remotecompanion.camera_intent");
+        });
+    });
+    
+    // 4. Automated Touch Assistance Fallback (in case hook is not active or needs extra assist)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.65 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        rc_load_touch_symbols();
+        __block CGSize s = CGSizeZero;
+        rc_dispatch_sync_main_safe(^{
+            s = [UIScreen mainScreen].bounds.size;
+        });
+        double sw = MIN(s.width, s.height);
+        double sh = MAX(s.width, s.height);
+        if (sw <= 0) sw = 375.0;
+        if (sh <= 0) sh = 667.0;
+        
+        // Tap the 2x / telephoto zoom pill button if 2x (or corresponding lens)
+        if (zoomFactor >= 1.9 && zoomFactor <= 2.5) {
+            rc_simulate_tap(sw * 0.61, sh * 0.71);
+        } else if (zoomFactor >= 2.9) {
+            rc_simulate_tap(sw * 0.72, sh * 0.71);
+        } else if (zoomFactor >= 0.9 && zoomFactor <= 1.1) {
+            rc_simulate_tap(sw * 0.50, sh * 0.71);
+        } else if (zoomFactor < 0.9) {
+            rc_simulate_tap(sw * 0.38, sh * 0.71);
+        }
+    });
+    
+    NSString *zoomLabel = (zoomFactor == (int)zoomFactor)
+        ? [NSString stringWithFormat:@"%dx", (int)zoomFactor]
+        : [NSString stringWithFormat:@"%.1fx", zoomFactor];
+    rc_show_hud_toast(@"Camera", [NSString stringWithFormat:@"Video Mode (%@)", zoomLabel], @"video.fill");
+    return [NSString stringWithFormat:@"Opened Camera in Video Mode (%@)\n", zoomLabel];
+}
+
 static NSString *handle_command(NSString *cmd) {
     if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
         SRLog(@"ERROR: handle_command received nil or invalid command string");
@@ -6258,6 +6374,19 @@ static NSString *handle_command(NSString *cmd) {
              }
         }
         return @"Error: AVSystemController failed.\n";
+    } else if ([cleanCmd isEqualToString:@"camera video 2x"] || [cleanCmd isEqualToString:@"open camera video 2x"] || [cleanCmd isEqualToString:@"camera 2x"] || [cleanCmd isEqualToString:@"open camera 2x"]) {
+        return rc_open_camera_video(2.0);
+    } else if ([cleanCmd isEqualToString:@"camera video"] || [cleanCmd isEqualToString:@"open camera video"]) {
+        return rc_open_camera_video(2.0);
+    } else if ([cleanCmd hasPrefix:@"camera video "] || [cleanCmd hasPrefix:@"open camera video "]) {
+        NSString *rawParam = [cleanCmd hasPrefix:@"open camera video "] ? [cleanCmd substringFromIndex:18] : [cleanCmd substringFromIndex:13];
+        rawParam = [rawParam stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([rawParam hasSuffix:@"x"] || [rawParam hasSuffix:@"X"]) {
+            rawParam = [rawParam substringToIndex:rawParam.length - 1];
+        }
+        double zoom = [rawParam doubleValue];
+        if (zoom <= 0) zoom = 2.0;
+        return rc_open_camera_video(zoom);
     } else if ([cleanCmd hasPrefix:@"uiopen "]) {
         NSString *bundleId = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         NSLog(@"[RemoteCommand] UIOPEN Bundle ID: %@", bundleId);
@@ -7961,6 +8090,7 @@ static void start_web_server() {
                                     @{@"command": @"unlock <passcode>", @"desc": @"Security: Unlock device screen (INSECURE: Passcode sent in plain text!)"},
                                     @{@"command": @"home", @"desc": @"System: Simulate a Home Button press"},
                                     @{@"command": @"screenshot", @"desc": @"System: Take a screenshot"},
+                                    @{@"command": @"camera video [2x]", @"desc": @"Camera: Open Camera in Video mode (2x zoom factor)"},
                                     @{@"command": @"open control center", @"desc": @"System: Open Control Center"},
                                     @{@"command": @"app switcher", @"desc": @"System: Open App Switcher"},
                                     @{@"command": @"open <bundleId>", @"desc": @"System: Launch an application by bundle identifier"},
@@ -9923,36 +10053,6 @@ static void update_edge_gestures() {
 
 %end
 
-%ctor {
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-    if ([bundleID isEqualToString:@"com.apple.springboard"]) {
-        %init(_ungrouped);
-        
-        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
-        
-        // Start Background HID Listener immediately (safe for NFC)
-        setup_background_hid_listener();
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SRLog(@"Delayed Initialization & Gesture Setup...");
-            
-            load_trigger_config();
-            register_config_observer();
-            register_simulation_observers();
-            register_system_event_observers(); // WiFi/BT Triggers
-            start_server();
-            start_web_server();
-            start_schedule_timer();
-            
-            // Conditionally register edge gestures based on config
-            update_edge_gestures();
-            
-            SRLog(@"Initialization Complete.");
-        });
-    } else {
-        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
-    }
-}
 %hook BBServer
 - (void)publishBulletin:(id)bulletin destinations:(NSUInteger)destinations {
     %orig;
@@ -10000,3 +10100,179 @@ static void update_edge_gestures() {
     }
 }
 %end
+
+// ==========================================
+// Camera App Hooks (com.apple.camera)
+// ==========================================
+
+@interface CAMViewfinderViewController : UIViewController
+- (void)changeToCaptureMode:(NSInteger)mode device:(NSInteger)device animated:(BOOL)animated;
+- (void)changeToCaptureMode:(NSInteger)mode animated:(BOOL)animated;
+- (void)changeToCaptureMode:(NSInteger)mode;
+- (void)changeToZoomFactor:(double)zoom animated:(BOOL)animated;
+- (void)setZoomFactor:(double)zoom;
+- (void)_setZoomFactor:(double)zoom;
+- (id)zoomControl;
+@end
+
+@interface CAMZoomControl : UIControl
+- (void)setZoomFactor:(double)zoom animated:(BOOL)animated;
+- (void)setZoomFactor:(double)zoom;
+- (void)setSelectedZoomFactor:(double)zoom;
+@end
+
+%group CameraHook
+
+static void rc_apply_camera_intent_to_viewfinder(id viewfinder) {
+    if (!viewfinder) return;
+    NSDictionary *intent = [NSDictionary dictionaryWithContentsOfFile:@"/tmp/rc_camera_intent.plist"];
+    if (!intent) return;
+    
+    NSTimeInterval ts = [intent[@"timestamp"] doubleValue];
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (now - ts > 12.0) return; // Expired (older than 12 seconds)
+    
+    NSInteger targetMode = [intent[@"mode"] integerValue]; // 1 = Video
+    double targetZoom = [intent[@"zoom"] doubleValue];
+    if (targetZoom <= 0) targetZoom = 2.0;
+    
+    SRLog(@"[CameraHook] Executing intent: targetMode=%ld, targetZoom=%.1f on %@", (long)targetMode, targetZoom, viewfinder);
+    
+    void (^applyModeAndZoom)(NSString *) = ^(NSString *phase) {
+        SRLog(@"[CameraHook] [%@] Applying Mode & Zoom (mode=%ld, zoom=%.1f)...", phase, (long)targetMode, targetZoom);
+        
+        // 1. Primary CameraUI Master Handler: _handleUserChangedToMode:device:zoomFactor:
+        if ([viewfinder respondsToSelector:@selector(_handleUserChangedToMode:device:zoomFactor:)]) {
+            SRLog(@"[CameraHook] [%@] Invoking _handleUserChangedToMode:%ld device:0 zoomFactor:%.1f", phase, (long)targetMode, targetZoom);
+            ((void (*)(id, SEL, NSInteger, NSInteger, double))objc_msgSend)(viewfinder, @selector(_handleUserChangedToMode:device:zoomFactor:), targetMode, 0, targetZoom);
+        }
+        
+        // 2. Zoom Control Notification fallback
+        if ([viewfinder respondsToSelector:@selector(zoomControl:didChangeZoomFactor:interactionType:)]) {
+            id zc = nil;
+            if ([viewfinder respondsToSelector:@selector(zoomControl)]) {
+                zc = [viewfinder performSelector:@selector(zoomControl)];
+            }
+            SRLog(@"[CameraHook] [%@] Invoking zoomControl:didChangeZoomFactor:%.1f interactionType:1", phase, targetZoom);
+            ((void (*)(id, SEL, id, double, NSInteger))objc_msgSend)(viewfinder, @selector(zoomControl:didChangeZoomFactor:interactionType:), zc, targetZoom, 1);
+        }
+        
+        // 3. Mode Dial fallback
+        if ([viewfinder respondsToSelector:@selector(modeDial)]) {
+            id dial = [viewfinder performSelector:@selector(modeDial)];
+            if (dial && [dial respondsToSelector:@selector(setSelectedMode:animated:)]) {
+                SRLog(@"[CameraHook] [%@] Setting modeDial selectedMode:%ld", phase, (long)targetMode);
+                [dial performSelector:@selector(setSelectedMode:animated:) withObject:@(targetMode) withObject:@(NO)];
+            }
+        }
+    };
+    
+    // Staggered invocation across lifecycle
+    applyModeAndZoom(@"immediate");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        applyModeAndZoom(@"t+250ms");
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.60 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        applyModeAndZoom(@"t+600ms");
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.00 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        applyModeAndZoom(@"t+1000ms");
+    });
+}
+
+static void rc_camera_intent_notification_callback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    id vf = (__bridge id)observer;
+    if (vf) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            rc_apply_camera_intent_to_viewfinder(vf);
+        });
+    }
+}
+
+%hook CAMViewfinderViewController
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    SRLog(@"[CameraHook] viewDidAppear called on %@", self);
+    rc_apply_camera_intent_to_viewfinder(self);
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    SRLog(@"[CameraHook] viewWillAppear called on %@", self);
+    rc_apply_camera_intent_to_viewfinder(self);
+}
+
+- (void)viewDidLoad {
+    %orig;
+    SRLog(@"[CameraHook] viewDidLoad called on %@", self);
+    
+    // Dump methods containing 'mode' or 'zoom' for diagnostics
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList([self class], &count);
+    for (unsigned int i = 0; i < count; i++) {
+        NSString *sel = NSStringFromSelector(method_getName(methods[i]));
+        if ([sel rangeOfString:@"mode" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+            [sel rangeOfString:@"zoom" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            SRLog(@"[CAMViewfinderVC Method] %@", sel);
+        }
+    }
+    if (methods) free(methods);
+    
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge const void *)(self),
+        (CFNotificationCallback)rc_camera_intent_notification_callback,
+        CFSTR("com.saihgupr.remotecompanion.camera_intent"),
+        NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately
+    );
+}
+
+- (void)dealloc {
+    CFNotificationCenterRemoveObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge const void *)(self),
+        CFSTR("com.saihgupr.remotecompanion.camera_intent"),
+        NULL
+    );
+    %orig;
+}
+
+%end
+
+%end
+
+%ctor {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    if ([bundleID isEqualToString:@"com.apple.springboard"]) {
+        %init(_ungrouped);
+        
+        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
+        
+        // Start Background HID Listener immediately (safe for NFC)
+        setup_background_hid_listener();
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SRLog(@"Delayed Initialization & Gesture Setup...");
+            
+            load_trigger_config();
+            register_config_observer();
+            register_simulation_observers();
+            register_system_event_observers(); // WiFi/BT Triggers
+            start_server();
+            start_web_server();
+            start_schedule_timer();
+            
+            // Conditionally register edge gestures based on config
+            update_edge_gestures();
+            
+            SRLog(@"Initialization Complete.");
+        });
+    } else if ([bundleID isEqualToString:@"com.apple.camera"]) {
+        %init(CameraHook);
+        SRLog(@"[RemoteCompanion] Loaded inside com.apple.camera");
+    } else {
+        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
+    }
+}

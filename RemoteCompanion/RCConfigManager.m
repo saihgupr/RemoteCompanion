@@ -863,13 +863,23 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"sneakycam takephoto": @"SneakyCam Photo",
         @"sneakycam video": @"SneakyCam Video",
         @"sneakycam record": @"SneakyCam Video",
-        @"sneakycam startstopvideo": @"SneakyCam Video"
+        @"sneakycam startstopvideo": @"SneakyCam Video",
+        @"camera video 2x": @"Open Video Camera (2x)",
+        @"camera video": @"Open Video Camera (2x)",
+        @"open camera video 2x": @"Open Video Camera (2x)",
+        @"open camera video": @"Open Video Camera (2x)",
+        @"camera 2x": @"Open Video Camera (2x)",
+        @"open camera 2x": @"Open Video Camera (2x)"
     };
     
     NSString *result = names[cmd];
     
     if (!result) {
-        if ([cmd hasPrefix:@"root "]) {
+        if ([cmd hasPrefix:@"camera video "] || [cmd hasPrefix:@"open camera video "]) {
+            NSString *zoom = [cmd hasPrefix:@"open camera video "] ? [cmd substringFromIndex:18] : [cmd substringFromIndex:13];
+            zoom = [zoom stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            result = [NSString stringWithFormat:@"Open Video Camera (%@)", zoom];
+        } else if ([cmd hasPrefix:@"root "]) {
             result = [NSString stringWithFormat:@"[root] %@", [cmd substringFromIndex:5]];
         } else if ([cmd hasPrefix:@"exec-root "]) {
             result = [NSString stringWithFormat:@"[root] %@", [cmd substringFromIndex:10]];
@@ -1060,6 +1070,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return @"questionmark";
     }
     NSString *cmd = [[(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    if ([cmd hasPrefix:@"camera video"] || [cmd hasPrefix:@"open camera video"] || [cmd hasPrefix:@"camera 2x"] || [cmd hasPrefix:@"open camera 2x"]) return @"video.fill";
     if ([cmd hasPrefix:@"sneakycam photo"] || [cmd isEqualToString:@"sneakycam takephoto"]) return @"camera.aperture";
     if ([cmd hasPrefix:@"sneakycam video"] || [cmd isEqualToString:@"sneakycam record"] || [cmd isEqualToString:@"sneakycam startstopvideo"]) return @"video.fill";
     if ([cmd hasPrefix:@"ha "] || [cmd isEqualToString:@"ha"]) return @"house.fill";

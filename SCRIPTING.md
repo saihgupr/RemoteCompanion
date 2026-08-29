@@ -63,6 +63,8 @@ A sequence is a **JSON array** of actions. Each action is either:
 | `previous app` | Switch to previous app |
 | `open control center` | Open Control Center |
 | `screenshot` | Take a screenshot |
+| `camera video 2x` | Open Camera app in Video mode with 2x zoom |
+| `camera video` | Open Camera app in Video mode |
 | `haptic` | Trigger haptic feedback |
 | `siri` | Activate Siri |
 | `respring` | Respring (restart SpringBoard) |

@@ -754,22 +754,19 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             return [self nameForCommand:dict[@"command"] truncate:shouldTruncate];
         }
         NSString *type = [[dict[@"type"] description] lowercaseString];
-        if ([type isEqualToString:@"if"]) {
+        if ([type isEqualToString:@"if"] || [type isEqualToString:@"else_if"]) {
             NSString *conditionTitle = dict[@"conditionTitle"] ?: dict[@"conditionName"];
-            NSString *expectedTitle = dict[@"expectedTitle"] ?: dict[@"expectedLabel"];
+            NSString *expectedTitle = dict[@"expectedTitle"] ?: dict[@"expectedLabel"] ?: dict[@"expectedValue"];
+            NSString *prefix = [type isEqualToString:@"else_if"] ? @"Else If" : @"If";
+            NSString *condKey = dict[@"conditionKey"] ?: dict[@"conditionName"] ?: @"";
+            if ([condKey isEqualToString:@"time_between"] || [conditionTitle.lowercaseString containsString:@"time"]) {
+                return [NSString stringWithFormat:@"%@ Time is Between %@", prefix, expectedTitle ?: @"Time Range"];
+            }
             if (conditionTitle.length > 0 && expectedTitle.length > 0) {
-                return [NSString stringWithFormat:@"If %@ is %@", conditionTitle, expectedTitle];
+                return [NSString stringWithFormat:@"%@ %@ is %@", prefix, conditionTitle, expectedTitle];
             }
             NSString *legacy = dict[@"condition"] ?: @"Condition";
-            return [NSString stringWithFormat:@"If %@", legacy];
-        } else if ([type isEqualToString:@"else_if"]) {
-            NSString *conditionTitle = dict[@"conditionTitle"] ?: dict[@"conditionName"];
-            NSString *expectedTitle = dict[@"expectedTitle"] ?: dict[@"expectedLabel"];
-            if (conditionTitle.length > 0 && expectedTitle.length > 0) {
-                return [NSString stringWithFormat:@"Else If %@ is %@", conditionTitle, expectedTitle];
-            }
-            NSString *legacy = dict[@"condition"] ?: @"Condition";
-            return [NSString stringWithFormat:@"Else If %@", legacy];
+            return [NSString stringWithFormat:@"%@ %@", prefix, legacy];
         } else if ([type isEqualToString:@"else"]) {
             return @"Else";
         } else if ([type isEqualToString:@"repeat"]) {

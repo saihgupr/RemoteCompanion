@@ -156,21 +156,21 @@ Run arbitrary Lua code on the device.
 ```
 
 ### If / Else Condition
-Branch based on device state. Currently supported condition: **front app**.
+Branch based on device state or time of day. Supported conditions: **front app**, **time of day (between)**, **lock status**, **player status**, **wifi**, **bluetooth**, **airplane mode**, **vibration**, etc.
 
 ```json
 {
   "type": "if",
-  "conditionKey": "front_app",
-  "conditionTitle": "Front Application",
-  "expectedValue": "com.spotify.client",
-  "expectedTitle": "Spotify"
+  "conditionKey": "time_between",
+  "conditionTitle": "Time of Day",
+  "expectedValue": "09:00 - 17:00",
+  "expectedTitle": "9:00 AM – 5:00 PM"
 },
-"pause",
+"volume 25",
 {
   "type": "else"
 },
-"play"
+"volume 75"
 ```
 
 - Everything after `"type": "if"` up to `"type": "else"` runs when the condition is **true**

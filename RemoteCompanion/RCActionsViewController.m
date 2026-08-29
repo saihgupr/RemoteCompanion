@@ -949,6 +949,10 @@ static id g_actionClipboard = nil;
 - (NSArray<NSDictionary *> *)ifConditionDefinitions {
     return @[
         @{
+            @"key": @"time_between",
+            @"title": @"Time of Day (Between)"
+        },
+        @{
             @"key": @"lock",
             @"title": @"Lock Status",
             @"values": @[
@@ -1047,6 +1051,74 @@ static id g_actionClipboard = nil;
 
 - (void)presentIfValuePickerForCondition:(NSDictionary *)condition existingIndex:(NSInteger)existingIndex insertIndex:(NSInteger)insertIndex type:(NSString *)type {
     NSString *actionType = type ?: @"if";
+    
+    if ([condition[@"key"] isEqualToString:@"time_between"]) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Time of Day Condition"
+                                                                       message:@"Enter start and end time (e.g. 09:00 - 17:00 or 9:00 AM - 5:00 PM):"
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+            textField.placeholder = @"Start Time (e.g. 09:00)";
+            textField.keyboardType = UIKeyboardTypeDefault;
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)self.actions.count) {
+                NSDictionary *act = self.actions[existingIndex];
+                if ([act isKindOfClass:[NSDictionary class]]) {
+                    NSString *val = act[@"expectedValue"] ?: @"";
+                    NSArray *p = [val componentsSeparatedByString:@"-"];
+                    if (p.count > 0) textField.text = [p[0] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                }
+            } else {
+                textField.text = @"09:00";
+            }
+        }];
+        [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+            textField.placeholder = @"End Time (e.g. 17:00)";
+            textField.keyboardType = UIKeyboardTypeDefault;
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)self.actions.count) {
+                NSDictionary *act = self.actions[existingIndex];
+                if ([act isKindOfClass:[NSDictionary class]]) {
+                    NSString *val = act[@"expectedValue"] ?: @"";
+                    NSArray *p = [val componentsSeparatedByString:@"-"];
+                    if (p.count > 1) textField.text = [p[1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                }
+            } else {
+                textField.text = @"17:00";
+            }
+        }];
+        __weak typeof(self) weakSelf = self;
+        [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            NSString *start = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSString *end = [alert.textFields[1].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (start.length == 0) start = @"09:00";
+            if (end.length == 0) end = @"17:00";
+            NSString *rangeVal = [NSString stringWithFormat:@"%@ - %@", start, end];
+            
+            NSDictionary *ifAction = @{
+                @"type": actionType,
+                @"conditionKey": @"time_between",
+                @"conditionTitle": @"Time of Day",
+                @"expectedValue": rangeVal,
+                @"expectedTitle": rangeVal
+            };
+            
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)strongSelf.actions.count) {
+                strongSelf.actions[existingIndex] = ifAction;
+            } else if (insertIndex != NSNotFound && insertIndex >= 0 && insertIndex <= (NSInteger)strongSelf.actions.count) {
+                [strongSelf.actions insertObject:ifAction atIndex:insertIndex];
+                [strongSelf.actions insertObject:@{ @"type": @"end_if" } atIndex:insertIndex + 1];
+            } else {
+                [strongSelf.actions addObject:ifAction];
+                [strongSelf.actions addObject:@{ @"type": @"end_if" }];
+            }
+            [strongSelf saveActions];
+            [strongSelf.tableView reloadData];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        [self configurePopoverSourceForAlert:alert];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
     
     if ([condition[@"key"] isEqualToString:@"front_app"]) {
         RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];

@@ -1651,24 +1651,105 @@ static NSString *rc_canonical_status_value_for_condition_key(NSString *condition
     return nil;
 }
 
+static NSInteger rc_parse_time_to_minutes(NSString *timeStr) {
+    if (![timeStr isKindOfClass:[NSString class]] || timeStr.length == 0) return -1;
+    
+    NSString *clean = [[timeStr stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] uppercaseString];
+    BOOL isPM = [clean containsString:@"PM"];
+    BOOL isAM = [clean containsString:@"AM"];
+    
+    NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:@"0123456789:"];
+    NSMutableString *digitsAndColons = [NSMutableString string];
+    for (NSUInteger i = 0; i < clean.length; i++) {
+        unichar c = [clean characterAtIndex:i];
+        if ([allowed characterIsMember:c]) {
+            [digitsAndColons appendFormat:@"%C", c];
+        }
+    }
+    
+    NSArray *parts = [digitsAndColons componentsSeparatedByString:@":"];
+    if (parts.count == 0 || [parts[0] length] == 0) return -1;
+    
+    NSInteger hour = [parts[0] integerValue];
+    NSInteger min = (parts.count > 1) ? [parts[1] integerValue] : 0;
+    
+    if (isPM) {
+        if (hour < 12) hour += 12;
+    } else if (isAM) {
+        if (hour == 12) hour = 0;
+    }
+    
+    if (hour < 0) hour = 0;
+    if (hour > 23) hour = 23;
+    if (min < 0) min = 0;
+    if (min > 59) min = 59;
+    
+    return hour * 60 + min;
+}
+
+static BOOL rc_is_current_time_in_range(NSString *rangeString) {
+    if (![rangeString isKindOfClass:[NSString class]] || rangeString.length == 0) return NO;
+    
+    NSString *s = rangeString;
+    s = [s stringByReplacingOccurrencesOfString:@"–" withString:@"-"];
+    s = [s stringByReplacingOccurrencesOfString:@"—" withString:@"-"];
+    s = [s stringByReplacingOccurrencesOfString:@" to " withString:@"-" options:NSCaseInsensitiveSearch range:NSMakeRange(0, s.length)];
+    s = [s stringByReplacingOccurrencesOfString:@" and " withString:@"-" options:NSCaseInsensitiveSearch range:NSMakeRange(0, s.length)];
+    s = [s stringByReplacingOccurrencesOfString:@"," withString:@"-"];
+    
+    NSArray *comps = [s componentsSeparatedByString:@"-"];
+    if (comps.count < 2) return NO;
+    
+    NSInteger startMin = rc_parse_time_to_minutes(comps[0]);
+    NSInteger endMin = rc_parse_time_to_minutes(comps[1]);
+    if (startMin < 0 || endMin < 0) return NO;
+    
+    NSCalendar *calendar = [NSCalendar currentCalendar];
+    NSDateComponents *nowComps = [calendar components:(NSCalendarUnitHour | NSCalendarUnitMinute) fromDate:[NSDate date]];
+    NSInteger currentMin = nowComps.hour * 60 + nowComps.minute;
+    
+    if (startMin <= endMin) {
+        return (currentMin >= startMin && currentMin <= endMin);
+    } else {
+        // Crosses midnight (e.g. 22:00 to 06:00)
+        return (currentMin >= startMin || currentMin <= endMin);
+    }
+}
+
 static BOOL rc_evaluate_if_condition(NSDictionary *ifAction) {
     if (![ifAction isKindOfClass:[NSDictionary class]]) return NO;
     
-    NSString *conditionKey = ifAction[@"conditionKey"];
-    NSString *expectedValue = rc_trimmed_uppercase_string(ifAction[@"expectedValue"] ?: ifAction[@"expected"]);
+    NSString *conditionKey = ifAction[@"conditionKey"] ?: ifAction[@"conditionName"];
+    NSString *expectedValue = rc_trimmed_uppercase_string(ifAction[@"expectedValue"] ?: ifAction[@"expected"] ?: ifAction[@"expectedLabel"]);
     
     if (conditionKey.length == 0) {
-        // Backward compatibility for older formats where "condition" contained a command.
+        // Backward compatibility for older formats where "condition" contained a command or key:value.
         NSString *legacyCondition = ifAction[@"condition"];
         if (legacyCondition.length == 0) return NO;
-        NSString *legacyOutput = handle_command(legacyCondition);
-        NSString *legacyUpper = rc_trimmed_uppercase_string(legacyOutput);
-        return [legacyUpper isEqualToString:@"YES"] ||
-               [legacyUpper isEqualToString:@"TRUE"] ||
-               [legacyUpper isEqualToString:@"1"] ||
-               [legacyUpper hasPrefix:@"ON"] ||
-               [legacyUpper hasPrefix:@"LOCKED"] ||
-               [legacyUpper hasPrefix:@"PLAYING"];
+        NSRange colon = [legacyCondition rangeOfString:@":"];
+        if (colon.location != NSNotFound) {
+            conditionKey = [legacyCondition substringToIndex:colon.location];
+            NSString *rawExpected = [legacyCondition substringFromIndex:colon.location + 1];
+            if ([conditionKey isEqualToString:@"time_between"] || [conditionKey isEqualToString:@"time"] || [conditionKey isEqualToString:@"time_range"] || [conditionKey isEqualToString:@"time_of_day"]) {
+                return rc_is_current_time_in_range(rawExpected);
+            }
+            expectedValue = rc_trimmed_uppercase_string(rawExpected);
+        } else {
+            NSString *legacyOutput = handle_command(legacyCondition);
+            NSString *legacyUpper = rc_trimmed_uppercase_string(legacyOutput);
+            return [legacyUpper isEqualToString:@"YES"] ||
+                   [legacyUpper isEqualToString:@"TRUE"] ||
+                   [legacyUpper isEqualToString:@"1"] ||
+                   [legacyUpper hasPrefix:@"ON"] ||
+                   [legacyUpper hasPrefix:@"LOCKED"] ||
+                   [legacyUpper hasPrefix:@"PLAYING"];
+        }
+    }
+    
+    if ([conditionKey isEqualToString:@"time_between"] || [conditionKey isEqualToString:@"time"] || [conditionKey isEqualToString:@"time_range"] || [conditionKey isEqualToString:@"time_of_day"]) {
+        NSString *rawRange = ifAction[@"expectedValue"] ?: ifAction[@"expected"] ?: ifAction[@"expectedLabel"] ?: ifAction[@"expectedTitle"];
+        if (rawRange.length == 0) return NO;
+        return rc_is_current_time_in_range(rawRange);
     }
     
     if ([conditionKey isEqualToString:@"front_app"]) {
@@ -10128,6 +10209,20 @@ static void update_edge_gestures() {
 %end
 
 
+static NSTimeInterval s_last_camera_app_trigger = 0;
+
+static void rc_camera_launched_notification_callback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+        if (now - s_last_camera_app_trigger > 2.0) {
+            s_last_camera_app_trigger = now;
+            g_currentAppBundleId = @"com.apple.camera";
+            SRLog(@"[AppLaunch] Camera App Launched event received (lockscreen or unlocked), triggering app_launch_com.apple.camera");
+            RCExecuteTrigger(@"app_launch_com.apple.camera");
+        }
+    });
+}
+
 %hook SpringBoard
 
 - (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
@@ -10157,6 +10252,9 @@ static void update_edge_gestures() {
             NSString *effectiveBundleId = bundleId ?: @"com.apple.springboard";
             if (![effectiveBundleId isEqualToString:lastApp]) {
                 lastApp = effectiveBundleId;
+                if ([effectiveBundleId isEqualToString:@"com.apple.camera"]) {
+                    s_last_camera_app_trigger = [[NSDate date] timeIntervalSince1970];
+                }
                 SRLog(@"[AppLaunch] App became Active: %@", effectiveBundleId);
                 NSString *triggerKey = [NSString stringWithFormat:@"app_launch_%@", effectiveBundleId];
                 RCExecuteTrigger(triggerKey);
@@ -10440,10 +10538,19 @@ static void rc_camera_intent_notification_callback(CFNotificationCenterRef cente
 
 %hook CAMViewfinderViewController
 
+static NSTimeInterval s_last_camera_launch_notify = 0;
+
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     SRLog(@"[CameraHook] viewDidAppear called on %@", self);
     rc_apply_camera_intent_to_viewfinder(self);
+    
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (now - s_last_camera_launch_notify > 2.0) {
+        s_last_camera_launch_notify = now;
+        SRLog(@"[CameraHook] Posting com.saihgupr.remotecompanion.camera_launched");
+        notify_post("com.saihgupr.remotecompanion.camera_launched");
+    }
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -10501,6 +10608,15 @@ static void rc_camera_intent_notification_callback(CFNotificationCenterRef cente
         %init(_ungrouped);
         
         SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
+        
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            (CFNotificationCallback)rc_camera_launched_notification_callback,
+            CFSTR("com.saihgupr.remotecompanion.camera_launched"),
+            NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately
+        );
         
         // Start Background HID Listener immediately (safe for NFC)
         setup_background_hid_listener();

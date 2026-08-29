@@ -1739,7 +1739,7 @@
 
 <!-- ══ APP LAUNCH TRIGGER DIALOG ═════════════════════════════════════════ -->
 <div class="dialog-backdrop" id="app-launch-dialog-backdrop">
-  <div class="dialog-box app-launch-dialog">
+  <div class="dialog-box app-launch-dialog" style="max-width: 460px; width: 90%;">
     <div class="dialog-title">New App Launch Trigger</div>
     <div class="dialog-msg" style="text-align:center;padding:0 16px 6px">Fires when an app is opened on the device.</div>
     <div style="padding:0 14px 10px">
@@ -1753,6 +1753,31 @@
     </div>
     <div class="dialog-btns">
       <button onclick="closeAppLaunchDialog()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TIME RANGE CONDITION DIALOG ═════════════════════════════════════ -->
+<div class="dialog-backdrop" id="time-cond-dialog-backdrop">
+  <div class="dialog-box" style="max-width: 440px; width: 90%;">
+    <div class="dialog-title" id="time-cond-dialog-title">Time of Day Condition</div>
+    <div class="dialog-msg" style="padding-bottom: 8px;">Run actions only between these times:</div>
+    <div style="padding:0 16px 14px; display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:10px;">
+        <span style="font-size:14px; color:#fff; font-weight:500;">Start Time</span>
+        <input type="time" id="time-cond-start" class="dialog-input" style="margin:0; width:130px; text-align:center; font-size:15px; padding:6px 10px;" value="09:00" oninput="updateTimeCondPreview()">
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:10px;">
+        <span style="font-size:14px; color:#fff; font-weight:500;">End Time</span>
+        <input type="time" id="time-cond-end" class="dialog-input" style="margin:0; width:130px; text-align:center; font-size:15px; padding:6px 10px;" value="17:00" oninput="updateTimeCondPreview()">
+      </div>
+      <div id="time-cond-hint" style="font-size:12px; color:#8e8e93; text-align:center; line-height:1.3; min-height:16px;">
+        Actions will only run if current time is between 9:00 AM and 5:00 PM.
+      </div>
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closeTimeCondDialog()" style="color:#ff3b30;">Cancel</button>
+      <button onclick="saveTimeCondDialog()" style="font-weight:600;">Save</button>
     </div>
   </div>
 </div>
@@ -2430,8 +2455,9 @@ function nameForCmd(cmd) {
       return nameForCmd(cmd.command);
     }
     const t = (cmd.type||'').toLowerCase();
-    if (t === 'if') return `If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
-    if (t === 'else_if') return `Else If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
+    const isTime = (cmd.conditionKey === 'time_between' || cmd.conditionName === 'time_between' || (cmd.conditionTitle||'').toLowerCase().includes('time'));
+    if (t === 'if') return isTime ? `If Time is Between ${cmd.expectedTitle||cmd.expectedValue||'Time Range'}` : `If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
+    if (t === 'else_if') return isTime ? `Else If Time is Between ${cmd.expectedTitle||cmd.expectedValue||'Time Range'}` : `Else If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
     if (t === 'else') return 'Else';
     if (t === 'end_if' || t === 'end') return 'End If';
     if (t === 'repeat') return `Repeat ${cmd.count||''}`;
@@ -2703,12 +2729,15 @@ const ACTION_SECTIONS = [
 ];
 
 const CONDITION_DEFS = [
+  { key:'time_between', title:'Time of Day (Between)', customTime:true },
   { key:'lock',       title:'Lock Status',  values:[{value:'LOCKED',title:'Locked'},{value:'UNLOCKED',title:'Unlocked'}] },
   { key:'player',     title:'Player',       values:[{value:'PLAYING',title:'Playing'},{value:'PAUSED',title:'Paused'},{value:'STOPPED',title:'Stopped'}] },
   { key:'wifi',       title:'Wi-Fi',        values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'bluetooth',  title:'Bluetooth',    values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'location',   title:'Location Services', values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'airplane',   title:'Airplane Mode',values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
+  { key:'silent_vibration', title:'Silent Vibration', values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
+  { key:'ring_vibration',   title:'Ring Vibration',   values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'orientation',title:'Orientation',  values:[{value:'PORTRAIT',title:'Portrait'},{value:'LANDSCAPE',title:'Landscape'}] },
   { key:'front_app',   title:'Front App is', values:null, freeText:true },
 ];
@@ -4209,7 +4238,15 @@ function editAction(idx) {
   const act = actions[idx];
   if (typeof act === 'object') {
     const type = (act.type||'').toLowerCase();
-    if (type === 'if' || type === 'else_if') promptIfCondition(idx);
+    if (type === 'if' || type === 'else_if') {
+      const condKey = act.conditionKey || act.conditionName;
+      if (condKey === 'time_between' || (act.conditionTitle||'').toLowerCase().includes('time')) {
+        const def = CONDITION_DEFS.find(d => d.key === 'time_between') || { key: 'time_between', title: 'Time of Day (Between)', customTime: true };
+        showTimeConditionDialog(def, idx);
+      } else {
+        promptIfCondition(idx);
+      }
+    }
     else if (type === 'repeat') {
       showDialog('Edit Repeat Count', 'Times to loop:', String(act.count||1), 'Save', val => {
         if (!val) return;
@@ -4428,11 +4465,96 @@ function promptCameraPicker(isVideo) {
   showContextMenu({ clientX: Math.max(10, window.innerWidth / 2 - 110), clientY: Math.max(10, window.innerHeight / 3), preventDefault: () => {} }, items);
 }
 
+// ── Time Condition Dialog System ──────────────────────────────────────────────
+let timeCondEditIdx = null;
+let timeCondDef = null;
+
+function formatTime12h(timeStr) {
+  if (!timeStr) return '';
+  const parts = String(timeStr).trim().split(':');
+  if (parts.length === 0) return timeStr;
+  let h = parseInt(parts[0], 10);
+  const m = parts[1] ? parts[1].slice(0, 2).padStart(2, '0') : '00';
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${m} ${ampm}`;
+}
+
+function updateTimeCondPreview() {
+  const start = document.getElementById('time-cond-start').value || '09:00';
+  const end = document.getElementById('time-cond-end').value || '17:00';
+  const s12 = formatTime12h(start);
+  const e12 = formatTime12h(end);
+  const hintEl = document.getElementById('time-cond-hint');
+  if (!hintEl) return;
+  
+  if (start === end) {
+    hintEl.textContent = `Actions will only run exactly at ${s12}.`;
+  } else if (start > end) {
+    hintEl.textContent = `Actions will run overnight between ${s12} and ${e12}.`;
+  } else {
+    hintEl.textContent = `Actions will only run between ${s12} and ${e12}.`;
+  }
+}
+
+function showTimeConditionDialog(def, editIdx = null) {
+  timeCondDef = def;
+  timeCondEditIdx = editIdx;
+  
+  let startVal = '09:00';
+  let endVal = '17:00';
+  
+  if (editIdx !== null) {
+    const actions = triggerData(currentKey).actions || [];
+    const act = actions[editIdx];
+    if (act) {
+      const raw = act.expectedValue || act.expected || act.expectedLabel || '';
+      const parts = raw.split(/[-–—]| to | and /i);
+      if (parts.length >= 2) {
+        const p0 = parts[0].trim();
+        const p1 = parts[1].trim();
+        if (p0) startVal = p0;
+        if (p1) endVal = p1;
+      }
+    }
+  }
+  
+  document.getElementById('time-cond-start').value = startVal;
+  document.getElementById('time-cond-end').value = endVal;
+  updateTimeCondPreview();
+  
+  document.getElementById('time-cond-dialog-backdrop').classList.add('visible');
+}
+
+function closeTimeCondDialog() {
+  document.getElementById('time-cond-dialog-backdrop').classList.remove('visible');
+  timeCondEditIdx = null;
+  timeCondDef = null;
+}
+
+function saveTimeCondDialog() {
+  const start = document.getElementById('time-cond-start').value || '09:00';
+  const end = document.getElementById('time-cond-end').value || '17:00';
+  const s12 = formatTime12h(start);
+  const e12 = formatTime12h(end);
+  
+  const def = timeCondDef || { key: 'time_between', title: 'Time of Day (Between)' };
+  const val = `${start} - ${end}`;
+  const title = `${s12} – ${e12}`;
+  
+  finishIfCondition(def, val, title, timeCondEditIdx);
+  closeTimeCondDialog();
+}
+
 function promptIfCondition(editIdx = null) {
   const options = CONDITION_DEFS.map(d => ({
     label: d.title,
     action() {
-      if (d.freeText) {
+      if (d.customTime) {
+        showTimeConditionDialog(d, editIdx);
+      } else if (d.freeText) {
         showDialog(d.title, 'Enter value:', '', 'Next', val => {
           if (val) promptIfConditionValue(d, val, editIdx);
         });
@@ -4457,16 +4579,22 @@ function promptIfConditionValue(def, customValue, editIdx) {
 }
 
 function finishIfCondition(def, value, valueTitle, editIdx) {
+  const actions = triggerData(currentKey).actions || [];
+  let existingType = 'if';
+  if (editIdx !== null && actions[editIdx] && actions[editIdx].type) {
+    existingType = actions[editIdx].type;
+  }
   const item = {
-    type: 'if',
+    type: existingType,
     condition: `${def.key}:${value}`,
+    conditionKey: def.key,
     conditionName: def.key,
     conditionTitle: def.title,
+    expectedValue: value,
     expectedLabel: value,
     expectedTitle: valueTitle
   };
 
-  const actions = triggerData(currentKey).actions || [];
   if (editIdx !== null) {
     actions[editIdx] = item;
   } else {

@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ## [3.6.1] - 2026-08-29
 
 ### Added
+- **Time of Day Condition Target (`time_between`)**: Added native conditional time evaluation (`If Time is Between ...` / `Else If Time is Between ...`) allowing automation sequences to branch based on the current time of day.
+  - **Web UI & iOS App**: Configurable time range selector supporting 12-hour AM/PM and 24-hour time ranges, live preview hints, and overnight ranges crossing midnight (e.g. `22:00` to `06:00`).
+  - **Backend**: Optimized `rc_is_current_time_in_range` evaluator handling all standard time formats in live action sequence executions.
+- **Lock Screen Camera Launch Trigger**: Added inter-process notification bridging between `com.apple.camera`'s `CAMViewfinderViewController` and `SpringBoard` so that `app_launch_com.apple.camera` triggers execute reliably even when the camera is opened directly from the Lock Screen / CoverSheet while the device is locked.
 - **Disable/Enable Actions**: Added the ability to disable and enable individual actions within action sequences without deleting them.
   - **iOS App**: Long-press any action to select **Disable Action** / **Enable Action**; disabled actions are automatically dimmed/greyed out.
   - **Web UI**: Right-click (or touch-and-hold) any action in the sequence builder to toggle disable/enable state.
@@ -13,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - **Streamlined Camera Action Picker**: Simplified camera options in the iOS and Web UI action pickers to clean, minimal **Open Camera** and **Open Video Camera** items while preserving specialized parameter variations when manually configured or imported.
+- **Wider Web UI Modals**: Increased the modal dialog widths for App Launch and Time Range trigger selectors for better readability on desktop and mobile browsers.
 
 ## [3.6.0] - 2026-08-25
 

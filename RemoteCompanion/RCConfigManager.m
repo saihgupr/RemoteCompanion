@@ -886,7 +886,11 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"camera slomo": @"Open Camera (Slo-Mo)",
         @"camera timelapse": @"Open Camera (Time-Lapse)",
         @"camera cinematic": @"Open Camera (Cinematic)",
-        @"camera pano": @"Open Camera (Pano)"
+        @"camera pano": @"Open Camera (Pano)",
+        @"camera shutter": @"Camera Shutter / Snap",
+        @"camera snap": @"Camera Shutter / Snap",
+        @"camera record": @"Camera Record Toggle",
+        @"camera record toggle": @"Camera Record Toggle"
     };
     
     NSString *result = names[cmd];

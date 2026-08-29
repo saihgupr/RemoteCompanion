@@ -4853,6 +4853,7 @@ static NSString *rc_open_camera_unified(NSInteger mode, NSInteger device, double
     // 1. Write camera intent payload for com.apple.camera hook
     @try {
         NSDictionary *intent = @{
+            @"uuid": [[NSUUID UUID] UUIDString],
             @"mode": @(mode),
             @"device": @(device),
             @"zoom": @(zoomFactor),
@@ -6421,7 +6422,7 @@ static NSString *handle_command(NSString *cmd) {
         
         // Mode detection
         NSInteger mode = 0; // 0 = Photo (default)
-        if ([lowCmd containsString:@"video"] || [lowCmd containsString:@"movie"] || [lowCmd containsString:@"vid"] || [lowCmd containsString:@"2x"]) {
+        if ([lowCmd containsString:@"video"] || [lowCmd containsString:@"movie"] || [lowCmd containsString:@"vid"] || [lowCmd containsString:@"2x"] || [lowCmd containsString:@"record"]) {
             mode = 1;
         }
         if ([lowCmd containsString:@"photo"] || [lowCmd containsString:@"still"] || [lowCmd containsString:@"pic"] || [lowCmd containsString:@"picture"]) {
@@ -6452,7 +6453,15 @@ static NSString *handle_command(NSString *cmd) {
         // Flash / Torch
         BOOL hasFlash = ([lowCmd containsString:@"flash"] || [lowCmd containsString:@"torch"]);
         
-        // Auto Shutter (record or snap)
+        // Standalone Shutter / Record Toggle commands
+        if ([lowCmd isEqualToString:@"camera shutter"] || [lowCmd isEqualToString:@"camera snap"] || 
+            [lowCmd isEqualToString:@"camera capture"] || [lowCmd isEqualToString:@"camera record toggle"] || 
+            [lowCmd isEqualToString:@"camera record-toggle"]) {
+            notify_post("com.saihgupr.remotecompanion.camera_shutter");
+            return [lowCmd containsString:@"record"] ? @"Toggled Camera Recording\n" : @"Triggered Camera Shutter\n";
+        }
+        
+        // Auto Shutter on launch
         BOOL autoShutter = ([lowCmd containsString:@"record"] || [lowCmd containsString:@"snap"] || [lowCmd containsString:@"capture"] || [lowCmd containsString:@"shoot"]);
         
         // Zoom factor extraction
@@ -10221,6 +10230,86 @@ static void update_edge_gestures() {
 
 %group CameraHook
 
+static NSTimeInterval s_last_shutter_time = 0;
+static NSString *s_last_intent_uuid = nil;
+static NSString *s_last_autoshutter_uuid = nil;
+
+static void rc_trigger_camera_shutter(id viewfinder) {
+    if (!viewfinder) return;
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (now - s_last_shutter_time < 1.2) {
+        SRLog(@"[CameraHook] rc_trigger_camera_shutter debounced (%.2fs ago)", now - s_last_shutter_time);
+        return;
+    }
+    s_last_shutter_time = now;
+    SRLog(@"[CameraHook] rc_trigger_camera_shutter executing on %@", viewfinder);
+    
+    // Method 1: CameraUI Master Shutter Handler
+    if ([viewfinder respondsToSelector:@selector(_handleShutterButtonActionWithEventTriggerDescription:)]) {
+        SRLog(@"[CameraHook] Calling _handleShutterButtonActionWithEventTriggerDescription:");
+        ((void (*)(id, SEL, id))objc_msgSend)(viewfinder, @selector(_handleShutterButtonActionWithEventTriggerDescription:), @"RemoteCompanion");
+        return;
+    }
+    
+    // Method 2: capturePhoto / direct capture
+    if ([viewfinder respondsToSelector:@selector(capturePhoto)]) {
+        SRLog(@"[CameraHook] Calling capturePhoto");
+        ((void (*)(id, SEL))objc_msgSend)(viewfinder, @selector(capturePhoto));
+        return;
+    }
+    
+    // Method 3: CAMViewfinderViewController direct methods
+    if ([viewfinder respondsToSelector:@selector(pressShutterButton)]) {
+        SRLog(@"[CameraHook] Calling pressShutterButton");
+        ((void (*)(id, SEL))objc_msgSend)(viewfinder, @selector(pressShutterButton));
+        return;
+    }
+    
+    // Method 4: Check for shutterButton property
+    if ([viewfinder respondsToSelector:@selector(shutterButton)]) {
+        id sb = [viewfinder performSelector:@selector(shutterButton)];
+        if (sb) {
+            SRLog(@"[CameraHook] Found shutterButton: %@", sb);
+            if ([sb respondsToSelector:@selector(sendActionsForControlEvents:)]) {
+                [sb performSelector:@selector(sendActionsForControlEvents:) withObject:@(UIControlEventTouchUpInside)];
+                return;
+            }
+        }
+    }
+    
+    // Method 5: Check bottomBar / shutterControl / viewfinder controls
+    if ([viewfinder respondsToSelector:@selector(bottomBar)]) {
+        id bb = [viewfinder performSelector:@selector(bottomBar)];
+        if (bb && [bb respondsToSelector:@selector(shutterButton)]) {
+            id sb = [bb performSelector:@selector(shutterButton)];
+            if (sb && [sb respondsToSelector:@selector(sendActionsForControlEvents:)]) {
+                SRLog(@"[CameraHook] Found bottomBar shutterButton: %@", sb);
+                [sb performSelector:@selector(sendActionsForControlEvents:) withObject:@(UIControlEventTouchUpInside)];
+                return;
+            }
+        }
+    }
+    
+    // Method 6: Simulated tap on physical/UI shutter button location
+    rc_load_touch_symbols();
+    CGSize s = [UIScreen mainScreen].bounds.size;
+    double sw = MIN(s.width, s.height);
+    double sh = MAX(s.width, s.height);
+    if (sw <= 0) sw = 375.0;
+    if (sh <= 0) sh = 667.0;
+    SRLog(@"[CameraHook] Simulating tap on shutter at (%.1f, %.1f)", sw * 0.50, sh * 0.88);
+    rc_simulate_tap(sw * 0.50, sh * 0.88);
+}
+
+static void rc_camera_shutter_notification_callback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    id vf = (__bridge id)observer;
+    if (vf) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            rc_trigger_camera_shutter(vf);
+        });
+    }
+}
+
 static void rc_apply_camera_intent_to_viewfinder(id viewfinder) {
     if (!viewfinder) return;
     NSDictionary *intent = [NSDictionary dictionaryWithContentsOfFile:@"/tmp/rc_camera_intent.plist"];
@@ -10230,6 +10319,12 @@ static void rc_apply_camera_intent_to_viewfinder(id viewfinder) {
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (now - ts > 12.0) return; // Expired (older than 12 seconds)
     
+    NSString *uuid = intent[@"uuid"];
+    if (uuid && [uuid isEqualToString:s_last_intent_uuid]) {
+        return; // Already processed this intent
+    }
+    s_last_intent_uuid = [uuid copy];
+    
     NSInteger targetMode = [intent[@"mode"] integerValue];
     NSInteger targetDevice = [intent[@"device"] integerValue]; // 0 = Back, 1 = Front
     double targetZoom = [intent[@"zoom"] doubleValue];
@@ -10237,8 +10332,8 @@ static void rc_apply_camera_intent_to_viewfinder(id viewfinder) {
     NSInteger targetFlash = [intent[@"flash"] integerValue]; // 1 = Flash / Torch ON
     BOOL autoShutter = [intent[@"autoShutter"] boolValue];
     
-    SRLog(@"[CameraHook] Executing intent: targetMode=%ld, targetDevice=%ld, targetZoom=%.1f, targetFlash=%ld, autoShutter=%d on %@", 
-          (long)targetMode, (long)targetDevice, targetZoom, (long)targetFlash, autoShutter, viewfinder);
+    SRLog(@"[CameraHook] Executing intent (UUID=%@): targetMode=%ld, targetDevice=%ld, targetZoom=%.1f, targetFlash=%ld, autoShutter=%d on %@", 
+          uuid, (long)targetMode, (long)targetDevice, targetZoom, (long)targetFlash, autoShutter, viewfinder);
     
     void (^applyModeAndZoom)(NSString *) = ^(NSString *phase) {
         SRLog(@"[CameraHook] [%@] Applying Mode & Zoom (mode=%ld, device=%ld, zoom=%.1f, flash=%ld)...", phase, (long)targetMode, (long)targetDevice, targetZoom, (long)targetFlash);
@@ -10307,16 +10402,14 @@ static void rc_apply_camera_intent_to_viewfinder(id viewfinder) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.00 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         applyModeAndZoom(@"t+1000ms");
         
-        // 5. Auto Shutter trigger
+        // 5. Auto Shutter trigger (fires exactly once)
         if (autoShutter) {
-            SRLog(@"[CameraHook] Triggering autoShutter...");
-            if ([viewfinder respondsToSelector:@selector(pressShutterButton)]) {
-                ((void (*)(id, SEL))objc_msgSend)(viewfinder, @selector(pressShutterButton));
-            } else if ([viewfinder respondsToSelector:@selector(_startRecordingWithSource:)]) {
-                ((void (*)(id, SEL, NSInteger))objc_msgSend)(viewfinder, @selector(_startRecordingWithSource:), 0);
-            } else if ([viewfinder respondsToSelector:@selector(_performCaptureWithSource:)]) {
-                ((void (*)(id, SEL, NSInteger))objc_msgSend)(viewfinder, @selector(_performCaptureWithSource:), 0);
+            if (uuid && [uuid isEqualToString:s_last_autoshutter_uuid]) {
+                return;
             }
+            s_last_autoshutter_uuid = [uuid copy];
+            SRLog(@"[CameraHook] Auto-triggering shutter once for intent %@...", uuid);
+            rc_trigger_camera_shutter(viewfinder);
         }
     });
 }
@@ -10348,23 +10441,20 @@ static void rc_camera_intent_notification_callback(CFNotificationCenterRef cente
     %orig;
     SRLog(@"[CameraHook] viewDidLoad called on %@", self);
     
-    // Dump methods containing 'mode' or 'zoom' for diagnostics
-    unsigned int count = 0;
-    Method *methods = class_copyMethodList([self class], &count);
-    for (unsigned int i = 0; i < count; i++) {
-        NSString *sel = NSStringFromSelector(method_getName(methods[i]));
-        if ([sel rangeOfString:@"mode" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-            [sel rangeOfString:@"zoom" options:NSCaseInsensitiveSearch].location != NSNotFound) {
-            SRLog(@"[CAMViewfinderVC Method] %@", sel);
-        }
-    }
-    if (methods) free(methods);
-    
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
         (__bridge const void *)(self),
         (CFNotificationCallback)rc_camera_intent_notification_callback,
         CFSTR("com.saihgupr.remotecompanion.camera_intent"),
+        NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately
+    );
+    
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge const void *)(self),
+        (CFNotificationCallback)rc_camera_shutter_notification_callback,
+        CFSTR("com.saihgupr.remotecompanion.camera_shutter"),
         NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately
     );
@@ -10375,6 +10465,12 @@ static void rc_camera_intent_notification_callback(CFNotificationCenterRef cente
         CFNotificationCenterGetDarwinNotifyCenter(),
         (__bridge const void *)(self),
         CFSTR("com.saihgupr.remotecompanion.camera_intent"),
+        NULL
+    );
+    CFNotificationCenterRemoveObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge const void *)(self),
+        CFSTR("com.saihgupr.remotecompanion.camera_shutter"),
         NULL
     );
     %orig;

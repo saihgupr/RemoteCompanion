@@ -104,7 +104,9 @@
                 @{ @"name": @"Open Video Camera (2x, Flash)", @"command": @"camera video 2x flash", @"icon": @"bolt.fill" },
                 @{ @"name": @"Open Camera (Front Selfie)", @"command": @"camera front", @"icon": @"person.fill" },
                 @{ @"name": @"Open Camera (Slo-Mo)", @"command": @"camera slomo", @"icon": @"video.fill" },
-                @{ @"name": @"Open Camera (Time-Lapse)", @"command": @"camera timelapse", @"icon": @"video.fill" }
+                @{ @"name": @"Open Camera (Time-Lapse)", @"command": @"camera timelapse", @"icon": @"video.fill" },
+                @{ @"name": @"Camera Shutter / Snap", @"command": @"camera shutter", @"icon": @"camera.circle.fill" },
+                @{ @"name": @"Camera Record Toggle", @"command": @"camera record", @"icon": @"record.circle.fill" }
             ]];
             NSArray *audioStreamPaths = @[
                 @"/Applications/AudioReceiver.app",

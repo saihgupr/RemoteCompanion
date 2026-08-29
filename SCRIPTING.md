@@ -71,6 +71,9 @@ A sequence is a **JSON array** of actions. Each action is either:
 | `camera front` | Open Camera in Front Selfie mode |
 | `camera slomo` | Open Camera in Slo-Mo mode |
 | `camera timelapse` | Open Camera in Time-Lapse mode |
+| `camera shutter` | Press Camera shutter button to take photo or toggle recording |
+| `camera snap` | Take a photo in Camera app |
+| `camera record` | Toggle video recording in Camera app |
 | `haptic` | Trigger haptic feedback |
 | `siri` | Activate Siri |
 | `respring` | Respring (restart SpringBoard) |

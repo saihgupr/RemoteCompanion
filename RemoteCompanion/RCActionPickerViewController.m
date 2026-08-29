@@ -97,14 +97,8 @@
                 @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
                 @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
                 @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
-                @{ @"name": @"Open Camera (Photo 0.5x)", @"command": @"camera photo 0.5x", @"icon": @"camera.fill" },
-                @{ @"name": @"Open Camera (Photo 2x)", @"command": @"camera photo 2x", @"icon": @"camera.fill" },
-                @{ @"name": @"Open Camera (Portrait 2x)", @"command": @"camera portrait 2x", @"icon": @"person.crop.square" },
-                @{ @"name": @"Open Video Camera (2x)", @"command": @"camera video 2x", @"icon": @"video.fill" },
-                @{ @"name": @"Open Video Camera (2x, Flash)", @"command": @"camera video 2x flash", @"icon": @"bolt.fill" },
-                @{ @"name": @"Open Camera (Front Selfie)", @"command": @"camera front", @"icon": @"person.fill" },
-                @{ @"name": @"Open Camera (Slo-Mo)", @"command": @"camera slomo", @"icon": @"video.fill" },
-                @{ @"name": @"Open Camera (Time-Lapse)", @"command": @"camera timelapse", @"icon": @"video.fill" },
+                @{ @"name": @"Open Camera...", @"command": @"__CAMERA_PICKER__", @"icon": @"camera.fill" },
+                @{ @"name": @"Open Video Camera...", @"command": @"__CAMERA_VIDEO_PICKER__", @"icon": @"video.fill" },
                 @{ @"name": @"Camera Shutter / Snap", @"command": @"camera shutter", @"icon": @"camera.circle.fill" },
                 @{ @"name": @"Camera Record Toggle", @"command": @"camera record", @"icon": @"record.circle.fill" }
             ]];
@@ -422,6 +416,16 @@
         return;
     }
 
+    if ([command isEqualToString:@"__CAMERA_PICKER__"]) {
+        [self handleCameraPicker:NO];
+        return;
+    }
+
+    if ([command isEqualToString:@"__CAMERA_VIDEO_PICKER__"]) {
+        [self handleCameraPicker:YES];
+        return;
+    }
+
     if (self.onActionSelected) {
         self.onActionSelected(command);
     }
@@ -436,6 +440,52 @@
         [self dismissViewControllerAnimated:YES completion:nil];
     }
 }
+
+- (void)handleCameraPicker:(BOOL)isVideo {
+    NSDictionary *toggleInfo = [[RCConfigManager sharedManager] toggleInfoForCommand:isVideo ? @"camera video 2x" : @"camera photo"];
+    if (!toggleInfo) return;
+    
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:toggleInfo[@"name"]
+                                                                   message:@"Select desired mode/lens"
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    NSArray *suffixes = toggleInfo[@"suffixes"];
+    NSArray *displaySuffixes = toggleInfo[@"displaySuffixes"];
+    NSString *canonicalPrefix = toggleInfo[@"prefixes"][0];
+    
+    __weak typeof(self) weakSelf = self;
+    for (NSUInteger idx = 0; idx < suffixes.count; idx++) {
+        NSString *suffix = suffixes[idx];
+        NSString *displaySuffix = displaySuffixes[idx];
+        
+        [sheet addAction:[UIAlertAction actionWithTitle:displaySuffix
+                                                  style:UIAlertActionStyleDefault
+                                                handler:^(__unused UIAlertAction * _Nonnull action) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            
+            NSString *chosenCmd = [NSString stringWithFormat:@"%@%@", canonicalPrefix, suffix];
+            if (strongSelf.onActionSelected) {
+                strongSelf.onActionSelected(chosenCmd);
+            }
+            if (strongSelf.searchController.isActive) {
+                [strongSelf.searchController dismissViewControllerAnimated:NO completion:^{
+                    [strongSelf dismissViewControllerAnimated:YES completion:nil];
+                }];
+            } else {
+                [strongSelf dismissViewControllerAnimated:YES completion:nil];
+            }
+        }]];
+    }
+    
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    
+    sheet.popoverPresentationController.sourceView = self.view;
+    sheet.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1);
+    
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
 - (void)handleTouchCoordInputWithTitle:(NSString *)title
                            placeholder:(NSString *)placeholder
                                  build:(NSString *(^)(NSString *))build {

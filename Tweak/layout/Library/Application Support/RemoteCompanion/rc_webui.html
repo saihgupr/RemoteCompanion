@@ -2639,14 +2639,8 @@ const ACTION_SECTIONS = [
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
     { name:'Mute',              cmd:'mute toggle',  icon:'speaker_slash_fill', is_toggle:true },
-    { name:'Open Camera (Photo 0.5x)', cmd:'camera photo 0.5x', icon:'camera_fill' },
-    { name:'Open Camera (Photo 2x)', cmd:'camera photo 2x', icon:'camera_fill' },
-    { name:'Open Camera (Portrait 2x)', cmd:'camera portrait 2x', icon:'person_crop_square' },
-    { name:'Open Video Camera (2x)', cmd:'camera video 2x', icon:'video_fill' },
-    { name:'Open Video Camera (2x, Flash)', cmd:'camera video 2x flash', icon:'bolt_fill' },
-    { name:'Open Camera (Front Selfie)', cmd:'camera front', icon:'person_fill' },
-    { name:'Open Camera (Slo-Mo)', cmd:'camera slomo', icon:'video_fill' },
-    { name:'Open Camera (Time-Lapse)', cmd:'camera timelapse', icon:'video_fill' },
+    { name:'Open Camera…',       cmd:'__CAMERA_PICKER__', icon:'camera_fill', needs_input:true },
+    { name:'Open Video Camera…', cmd:'__CAMERA_VIDEO_PICKER__', icon:'video_fill', needs_input:true },
     { name:'Camera Shutter / Snap', cmd:'camera shutter', icon:'camera_fill' },
     { name:'Camera Record Toggle', cmd:'camera record', icon:'circle_fill' },
     { name:'Queue Current Album', cmd:'queuealbum', icon:'music_note_list' },
@@ -3490,6 +3484,63 @@ function parseToggleCmd(cmd) {
     { key:'rotate', name:'Rotation Lock', icon:'lock_rotation', prefixes:['rotate '], suffixes:['lock','unlock','toggle'], displaySuffixes:['Lock','Unlock','Toggle'] },
     { key:'vibration_silent', name:'Silent Vibration', icon:'bell_slash', prefixes:['vibration silent-'], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
     { key:'vibration_ring', name:'Ring Vibration', icon:'bell', prefixes:['vibration ring-'], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    {
+      key: 'camera_video',
+      name: 'Open Video Camera',
+      icon: 'video_fill',
+      prefixes: ['camera video '],
+      suffixes: ['2x', '2x flash', '1x', 'flash', '0.5x', 'front'],
+      displaySuffixes: ['Video (2x)', 'Video (2x, Flash)', 'Video (1x)', 'Video (1x, Flash)', 'Video (0.5x)', 'Video (Front)'],
+      exactMatches: {
+        'camera video 2x': '2x',
+        'camera video': '2x',
+        'open camera video 2x': '2x',
+        'open camera video': '2x',
+        'camera video 2x flash': '2x flash',
+        'open camera video 2x flash': '2x flash',
+        'camera video 1x': '1x',
+        'open camera video 1x': '1x',
+        'camera video flash': 'flash',
+        'open camera video flash': 'flash',
+        'camera video 0.5x': '0.5x',
+        'open camera video 0.5x': '0.5x',
+        'camera video front': 'front',
+        'open camera video front': 'front'
+      }
+    },
+    {
+      key: 'camera_photo',
+      name: 'Open Camera',
+      icon: 'camera_fill',
+      prefixes: ['camera '],
+      suffixes: ['photo', 'photo 0.5x', 'photo 2x', 'portrait', 'portrait 2x', 'front', 'slomo', 'timelapse', 'cinematic', 'pano'],
+      displaySuffixes: ['Photo (1x)', 'Photo (0.5x)', 'Photo (2x)', 'Portrait (1x)', 'Portrait (2x)', 'Front Selfie', 'Slo-Mo', 'Time-Lapse', 'Cinematic', 'Pano'],
+      exactMatches: {
+        'camera photo': 'photo',
+        'camera': 'photo',
+        'open camera': 'photo',
+        'camera photo 0.5x': 'photo 0.5x',
+        'open camera photo 0.5x': 'photo 0.5x',
+        'camera photo 2x': 'photo 2x',
+        'open camera photo 2x': 'photo 2x',
+        'camera portrait': 'portrait',
+        'open camera portrait': 'portrait',
+        'camera portrait 2x': 'portrait 2x',
+        'open camera portrait 2x': 'portrait 2x',
+        'camera front': 'front',
+        'camera selfie': 'front',
+        'open camera front': 'front',
+        'open camera selfie': 'front',
+        'camera slomo': 'slomo',
+        'open camera slomo': 'slomo',
+        'camera timelapse': 'timelapse',
+        'open camera timelapse': 'timelapse',
+        'camera cinematic': 'cinematic',
+        'open camera cinematic': 'cinematic',
+        'camera pano': 'pano',
+        'open camera pano': 'pano'
+      }
+    },
     { key:'mute', name:'Mute', icon:'speaker_slash_fill', prefixes:['mute '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'], exactMatches: { 'mute':'toggle' } }
   ];
 
@@ -3535,8 +3586,10 @@ function parseToggleCmd(cmd) {
 
 function updateToggleAction(idx, newSuffix) {
   const actions = triggerData(currentKey).actions || [];
-  const action = actions[idx];
-  const toggleInfo = parseToggleCmd(action);
+  let action = actions[idx];
+  let isObj = (typeof action === 'object' && action !== null);
+  let rawCmd = isObj ? action.command : action;
+  const toggleInfo = parseToggleCmd(rawCmd);
   if (!toggleInfo) return;
   
   let newCmd;
@@ -3546,7 +3599,12 @@ function updateToggleAction(idx, newSuffix) {
     newCmd = `${toggleInfo.prefixes[0]}${newSuffix}`;
   }
   
-  actions[idx] = newCmd;
+  if (isObj) {
+    action.command = newCmd;
+    actions[idx] = action;
+  } else {
+    actions[idx] = newCmd;
+  }
   saveConfig();
   renderActionList();
 }
@@ -4348,11 +4406,26 @@ function selectPickerAction(act) {
     showDialog('Turn Off Home Assistant Entity', 'Entity ID (e.g. light.bedroom_lights):', '', 'Add', val => {
       if (val) addActionToCurrent(`ha turn_off ${val.trim()}`);
     });
+  } else if (c === '__CAMERA_PICKER__') {
+    promptCameraPicker(false);
+  } else if (c === '__CAMERA_VIDEO_PICKER__') {
+    promptCameraPicker(true);
   } else if (c === '__KM_TRIGGER__') {
     openKMDialog();
   } else {
     addActionToCurrent(c);
   }
+}
+
+function promptCameraPicker(isVideo) {
+  const toggleInfo = parseToggleCmd(isVideo ? 'camera video 2x' : 'camera photo');
+  if (!toggleInfo) return;
+  const items = toggleInfo.suffixes.map((s, i) => ({
+    label: toggleInfo.displaySuffixes[i],
+    icon: isVideo ? 'video_fill' : 'camera_fill',
+    action: () => addActionToCurrent(`${toggleInfo.prefixes[0]}${s}`)
+  }));
+  showContextMenu({ clientX: Math.max(10, window.innerWidth / 2 - 110), clientY: Math.max(10, window.innerHeight / 3), preventDefault: () => {} }, items);
 }
 
 function promptIfCondition(editIdx = null) {

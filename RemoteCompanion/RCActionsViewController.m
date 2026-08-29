@@ -1242,6 +1242,10 @@ static id g_actionClipboard = nil;
 - (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state != UIGestureRecognizerStateBegan) return;
     
+    UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [haptic prepare];
+    [haptic impactOccurred];
+    
     CGPoint touchPoint = [gesture locationInView:self.tableView];
     NSIndexPath *indexPath = [self.tableView indexPathForRowAtPoint:touchPoint];
     
@@ -1472,7 +1476,13 @@ static id g_actionClipboard = nil;
                     newCommand = @"audiomix";
                 }
                 
-                strongSelf.actions[indexPath.row] = newCommand;
+                if ([strongSelf.actions[indexPath.row] isKindOfClass:[NSDictionary class]]) {
+                    NSMutableDictionary *d = [strongSelf.actions[indexPath.row] mutableCopy];
+                    d[@"command"] = newCommand;
+                    strongSelf.actions[indexPath.row] = d;
+                } else {
+                    strongSelf.actions[indexPath.row] = newCommand;
+                }
                 [strongSelf saveActions];
                 [strongSelf.tableView reloadData];
             }]];

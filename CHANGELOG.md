@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [3.6.1] - 2026-08-29
 
 ### Added
+- **Disable/Enable Actions**: Added the ability to disable and enable individual actions within action sequences without deleting them.
+  - **iOS App**: Long-press any action to select **Disable Action** / **Enable Action**; disabled actions are automatically dimmed/greyed out.
+  - **Web UI**: Right-click (or touch-and-hold) any action in the sequence builder to toggle disable/enable state.
+  - **Execution Engine**: `rc_execute_action_sequence` automatically skips disabled actions in live and simulation modes.
 - **Location Services Toggle (GPS)**: Added native Location Services toggle and status queries across CLI (`rc location on|off|toggle|status`), Web UI (Action Picker, Quick Toggles, and Conditional Evaluator), Lua scripting (`setLocationServices(bool)` / `getLocationServices()`), and hardware/Bluetooth trigger sequences (e.g. automatically enable Location Services when connected to a vehicle Bluetooth device).
+
+### Changed
+- **Streamlined Camera Action Picker**: Simplified camera options in the iOS and Web UI action pickers to clean, minimal **Open Camera** and **Open Video Camera** items while preserving specialized parameter variations when manually configured or imported.
 
 ## [3.6.0] - 2026-08-25
 

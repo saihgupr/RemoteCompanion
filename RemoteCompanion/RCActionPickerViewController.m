@@ -97,8 +97,14 @@
                 @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
                 @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
                 @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
+                @{ @"name": @"Open Camera (Photo 0.5x)", @"command": @"camera photo 0.5x", @"icon": @"camera.fill" },
+                @{ @"name": @"Open Camera (Photo 2x)", @"command": @"camera photo 2x", @"icon": @"camera.fill" },
+                @{ @"name": @"Open Camera (Portrait 2x)", @"command": @"camera portrait 2x", @"icon": @"person.crop.square" },
                 @{ @"name": @"Open Video Camera (2x)", @"command": @"camera video 2x", @"icon": @"video.fill" },
-                @{ @"name": @"Open Video Camera (2x, Flash)", @"command": @"camera video 2x flash", @"icon": @"bolt.fill" }
+                @{ @"name": @"Open Video Camera (2x, Flash)", @"command": @"camera video 2x flash", @"icon": @"bolt.fill" },
+                @{ @"name": @"Open Camera (Front Selfie)", @"command": @"camera front", @"icon": @"person.fill" },
+                @{ @"name": @"Open Camera (Slo-Mo)", @"command": @"camera slomo", @"icon": @"video.fill" },
+                @{ @"name": @"Open Camera (Time-Lapse)", @"command": @"camera timelapse", @"icon": @"video.fill" }
             ]];
             NSArray *audioStreamPaths = @[
                 @"/Applications/AudioReceiver.app",

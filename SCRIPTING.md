@@ -63,10 +63,14 @@ A sequence is a **JSON array** of actions. Each action is either:
 | `previous app` | Switch to previous app |
 | `open control center` | Open Control Center |
 | `screenshot` | Take a screenshot |
-| `camera video 2x flash` | Open Camera app in Video mode with 2x zoom and Flash/Torch enabled |
-| `camera video 2x` | Open Camera app in Video mode with 2x zoom |
-| `camera video flash` | Open Camera app in Video mode with Flash/Torch enabled |
-| `camera video` | Open Camera app in Video mode |
+| `camera photo 0.5x` | Open Camera in Photo mode (0.5x ultra-wide lens) |
+| `camera photo 2x` | Open Camera in Photo mode (2x telephoto zoom) |
+| `camera portrait 2x` | Open Camera in Portrait mode (2x zoom) |
+| `camera video 2x` | Open Camera in Video mode (2x zoom) |
+| `camera video 2x flash` | Open Camera in Video mode (2x zoom, Flash/Torch ON) |
+| `camera front` | Open Camera in Front Selfie mode |
+| `camera slomo` | Open Camera in Slo-Mo mode |
+| `camera timelapse` | Open Camera in Time-Lapse mode |
 | `haptic` | Trigger haptic feedback |
 | `siri` | Activate Siri |
 | `respring` | Respring (restart SpringBoard) |

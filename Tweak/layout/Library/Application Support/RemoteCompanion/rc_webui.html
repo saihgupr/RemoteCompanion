@@ -2390,8 +2390,13 @@ const CMD_NAMES = {
   'bluetooth on':'Bluetooth On','bluetooth off':'Bluetooth Off','bluetooth toggle':'Bluetooth Toggle',
   'airplane on':'Airplane On','airplane off':'Airplane Off','airplane toggle':'Airplane Toggle',
   'haptic':'Haptic Feedback','screenshot':'Screenshot',
+  'camera photo 0.5x':'Open Camera (Photo 0.5x)','camera photo 2x':'Open Camera (Photo 2x)','camera photo':'Open Camera (Photo)',
+  'camera portrait 2x':'Open Camera (Portrait 2x)','camera portrait':'Open Camera (Portrait)',
   'camera video 2x flash':'Open Video Camera (2x, Flash)',
   'camera video 2x':'Open Video Camera (2x)','camera video':'Open Video Camera','open camera video 2x':'Open Video Camera (2x)','open camera video':'Open Video Camera',
+  'camera front':'Open Camera (Front Selfie)','camera selfie':'Open Camera (Front Selfie)',
+  'camera slomo':'Open Camera (Slo-Mo)','camera timelapse':'Open Camera (Time-Lapse)',
+  'camera cinematic':'Open Camera (Cinematic)','camera pano':'Open Camera (Pano)',
   'sneakycam photo':'SneakyCam Photo','sneakycam takephoto':'SneakyCam Photo','sneakycam video':'SneakyCam Video','sneakycam startstopvideo':'SneakyCam Video','sneakycam record':'SneakyCam Video',
   'lock':'Lock Device','unlock':'Unlock Device',
   'dnd on':'Do Not Disturb On','dnd off':'Do Not Disturb Off','dnd toggle':'Do Not Disturb Toggle',
@@ -2427,14 +2432,28 @@ function nameForCmd(cmd) {
   }
   const lowCmd = cmd.toLowerCase().trim();
   if (CMD_NAMES[lowCmd]) return CMD_NAMES[lowCmd];
-  if (lowCmd === 'camera video 2x flash' || lowCmd === 'open camera video 2x flash' || lowCmd === 'camera 2x flash' || lowCmd === 'open camera 2x flash') return 'Open Video Camera (2x, Flash)';
-  if (lowCmd === 'camera video 2x' || lowCmd === 'open camera video 2x' || lowCmd === 'camera 2x' || lowCmd === 'open camera 2x') return 'Open Video Camera (2x)';
-  if (lowCmd === 'camera video' || lowCmd === 'open camera video') return 'Open Video Camera (2x)';
-  if (lowCmd.startsWith('camera video ') || lowCmd.startsWith('open camera video ') || lowCmd.startsWith('camera 2x ') || lowCmd.startsWith('open camera 2x ')) {
-    const raw = lowCmd.replace(/^open /, '').replace(/^camera video /, '').replace(/^camera 2x /, '').trim();
-    const hasFlash = raw.includes('flash') || raw.includes('torch');
-    const cleanZoom = raw.replace(/flash on/g, '').replace(/flash/g, '').replace(/torch on/g, '').replace(/torch/g, '').trim() || '2x';
-    return hasFlash ? `Open Video Camera (${cleanZoom}, Flash)` : `Open Video Camera (${cleanZoom})`;
+  if (lowCmd.startsWith('camera') || lowCmd.startsWith('open camera')) {
+    let modeName = 'Photo';
+    if (lowCmd.includes('video') || lowCmd.includes('2x')) modeName = 'Video';
+    if (lowCmd.includes('photo')) modeName = 'Photo';
+    if (lowCmd.includes('portrait')) modeName = 'Portrait';
+    if (lowCmd.includes('slomo') || lowCmd.includes('slo-mo')) modeName = 'Slo-Mo';
+    if (lowCmd.includes('timelapse') || lowCmd.includes('time-lapse')) modeName = 'Time-Lapse';
+    if (lowCmd.includes('pano') || lowCmd.includes('panorama')) modeName = 'Pano';
+    if (lowCmd.includes('cinematic')) modeName = 'Cinematic';
+
+    const details = [];
+    if (lowCmd.includes('front') || lowCmd.includes('selfie')) details.push('Front');
+    const rx = /(\d+(\.\d+)?)\s*x/i;
+    const m = lowCmd.match(rx);
+    if (m) details.push(m[0]);
+    else if (modeName === 'Video' && !lowCmd.includes('front')) details.push('2x');
+    if (lowCmd.includes('flash') || lowCmd.includes('torch')) details.push('Flash');
+    if (lowCmd.includes('record')) details.push('Record');
+    if (lowCmd.includes('snap')) details.push('Snap');
+
+    const detStr = details.length ? ` (${details.join(', ')})` : '';
+    return `Open Camera (${modeName}${detStr})`;
   }
   if (lowCmd.startsWith('sneakycam photo') || lowCmd === 'sneakycam takephoto') return 'SneakyCam Photo';
   if (lowCmd.startsWith('sneakycam video') || lowCmd === 'sneakycam record' || lowCmd === 'sneakycam startstopvideo') return 'SneakyCam Video';
@@ -2559,9 +2578,12 @@ function iconForCmd(cmd) {
     'mute':'speaker_slash_fill','mute on':'speaker_slash_fill','mute off':'speaker_3_fill','mute toggle':'speaker_slash_fill',
   };
   const lowCmd = cmd.toLowerCase().trim();
-  if (lowCmd.startsWith('camera video') || lowCmd.startsWith('open camera video') || lowCmd.startsWith('camera 2x') || lowCmd.startsWith('open camera 2x')) {
+  if (lowCmd.startsWith('camera') || lowCmd.startsWith('open camera')) {
     if (lowCmd.includes('flash') || lowCmd.includes('torch')) return { icon:'bolt_fill', cls:'icon-orange' };
-    return { icon:'video_fill', cls:'icon-indigo' };
+    if (lowCmd.includes('front') || lowCmd.includes('selfie')) return { icon:'person_fill', cls:'icon-blue' };
+    if (lowCmd.includes('portrait')) return { icon:'person_crop_square', cls:'icon-purple' };
+    if (lowCmd.includes('video') || lowCmd.includes('slomo') || lowCmd.includes('timelapse') || lowCmd.includes('cinematic') || lowCmd.includes('2x')) return { icon:'video_fill', cls:'icon-indigo' };
+    return { icon:'camera_fill', cls:'icon-indigo' };
   }
   if (lowCmd.startsWith('sneakycam photo') || lowCmd === 'sneakycam takephoto') return { icon:'camera_fill', cls:'icon-purple' };
   if (lowCmd.startsWith('sneakycam video') || lowCmd === 'sneakycam record' || lowCmd === 'sneakycam startstopvideo') return { icon:'video_fill', cls:'icon-indigo' };
@@ -2603,8 +2625,14 @@ const ACTION_SECTIONS = [
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
     { name:'Mute',              cmd:'mute toggle',  icon:'speaker_slash_fill', is_toggle:true },
+    { name:'Open Camera (Photo 0.5x)', cmd:'camera photo 0.5x', icon:'camera_fill' },
+    { name:'Open Camera (Photo 2x)', cmd:'camera photo 2x', icon:'camera_fill' },
+    { name:'Open Camera (Portrait 2x)', cmd:'camera portrait 2x', icon:'person_crop_square' },
     { name:'Open Video Camera (2x)', cmd:'camera video 2x', icon:'video_fill' },
     { name:'Open Video Camera (2x, Flash)', cmd:'camera video 2x flash', icon:'bolt_fill' },
+    { name:'Open Camera (Front Selfie)', cmd:'camera front', icon:'person_fill' },
+    { name:'Open Camera (Slo-Mo)', cmd:'camera slomo', icon:'video_fill' },
+    { name:'Open Camera (Time-Lapse)', cmd:'camera timelapse', icon:'video_fill' },
     { name:'Queue Current Album', cmd:'queuealbum', icon:'music_note_list' },
     { name:'Queue Artist (Shuffle)', cmd:'queueartist', icon:'music_mic' },
     { name:'Shuffle All Songs', cmd:'shuffleall',   icon:'shuffle' },

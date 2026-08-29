@@ -875,28 +875,51 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"camera 2x flash": @"Open Video Camera (2x, Flash)",
         @"camera 2x": @"Open Video Camera (2x)",
         @"open camera 2x flash": @"Open Video Camera (2x, Flash)",
-        @"open camera 2x": @"Open Video Camera (2x)"
+        @"open camera 2x": @"Open Video Camera (2x)",
+        @"camera photo 0.5x": @"Open Camera (Photo 0.5x)",
+        @"camera photo 2x": @"Open Camera (Photo 2x)",
+        @"camera photo": @"Open Camera (Photo)",
+        @"camera portrait 2x": @"Open Camera (Portrait 2x)",
+        @"camera portrait": @"Open Camera (Portrait)",
+        @"camera front": @"Open Camera (Front Selfie)",
+        @"camera selfie": @"Open Camera (Front Selfie)",
+        @"camera slomo": @"Open Camera (Slo-Mo)",
+        @"camera timelapse": @"Open Camera (Time-Lapse)",
+        @"camera cinematic": @"Open Camera (Cinematic)",
+        @"camera pano": @"Open Camera (Pano)"
     };
     
     NSString *result = names[cmd];
     
     if (!result) {
-        if ([cmd hasPrefix:@"camera video "] || [cmd hasPrefix:@"open camera video "] || [cmd hasPrefix:@"camera 2x "] || [cmd hasPrefix:@"open camera 2x "]) {
-            NSString *raw = [cmd hasPrefix:@"open camera video "] ? [cmd substringFromIndex:18] : ([cmd hasPrefix:@"camera video "] ? [cmd substringFromIndex:13] : ([cmd hasPrefix:@"open camera 2x "] ? [cmd substringFromIndex:15] : [cmd substringFromIndex:10]));
-            raw = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            BOOL hasFlash = ([raw rangeOfString:@"flash" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-                             [raw rangeOfString:@"torch" options:NSCaseInsensitiveSearch].location != NSNotFound);
-            NSString *cleanZoom = [[raw stringByReplacingOccurrencesOfString:@"flash on" withString:@""]
-                                   stringByReplacingOccurrencesOfString:@"flash" withString:@""];
-            cleanZoom = [[cleanZoom stringByReplacingOccurrencesOfString:@"torch on" withString:@""]
-                         stringByReplacingOccurrencesOfString:@"torch" withString:@""];
-            cleanZoom = [cleanZoom stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            if (cleanZoom.length == 0) cleanZoom = @"2x";
-            if (hasFlash) {
-                result = [NSString stringWithFormat:@"Open Video Camera (%@, Flash)", cleanZoom];
-            } else {
-                result = [NSString stringWithFormat:@"Open Video Camera (%@)", cleanZoom];
+        if ([cmd hasPrefix:@"camera"] || [cmd hasPrefix:@"open camera"]) {
+            NSString *low = [cmd lowercaseString];
+            NSString *modeName = @"Photo";
+            if ([low containsString:@"video"] || [low containsString:@"2x"]) modeName = @"Video";
+            if ([low containsString:@"photo"]) modeName = @"Photo";
+            if ([low containsString:@"portrait"]) modeName = @"Portrait";
+            if ([low containsString:@"slomo"] || [low containsString:@"slo-mo"]) modeName = @"Slo-Mo";
+            if ([low containsString:@"timelapse"] || [low containsString:@"time-lapse"]) modeName = @"Time-Lapse";
+            if ([low containsString:@"pano"] || [low containsString:@"panorama"]) modeName = @"Pano";
+            if ([low containsString:@"cinematic"]) modeName = @"Cinematic";
+            
+            NSMutableArray *details = [NSMutableArray array];
+            if ([low containsString:@"front"] || [low containsString:@"selfie"]) [details addObject:@"Front"];
+            
+            NSRegularExpression *rx = [NSRegularExpression regularExpressionWithPattern:@"(\\d+(\\.\\d+)?)\\s*x" options:NSRegularExpressionCaseInsensitive error:nil];
+            NSTextCheckingResult *m = [rx firstMatchInString:low options:0 range:NSMakeRange(0, low.length)];
+            if (m) {
+                [details addObject:[low substringWithRange:[m rangeAtIndex:0]]];
+            } else if ([modeName isEqualToString:@"Video"] && ![low containsString:@"front"]) {
+                [details addObject:@"2x"];
             }
+            
+            if ([low containsString:@"flash"] || [low containsString:@"torch"]) [details addObject:@"Flash"];
+            if ([low containsString:@"record"]) [details addObject:@"Record"];
+            if ([low containsString:@"snap"]) [details addObject:@"Snap"];
+            
+            NSString *detStr = (details.count > 0) ? [NSString stringWithFormat:@" (%@)", [details componentsJoinedByString:@", "]] : @"";
+            result = [NSString stringWithFormat:@"Open Camera (%@%@)", modeName, detStr];
         } else if ([cmd hasPrefix:@"root "]) {
             result = [NSString stringWithFormat:@"[root] %@", [cmd substringFromIndex:5]];
         } else if ([cmd hasPrefix:@"exec-root "]) {
@@ -1085,9 +1108,12 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     }
 
     NSString *cmd = [[(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
-    if ([cmd hasPrefix:@"camera video"] || [cmd hasPrefix:@"open camera video"] || [cmd hasPrefix:@"camera 2x"] || [cmd hasPrefix:@"open camera 2x"]) {
+    if ([cmd hasPrefix:@"camera"] || [cmd hasPrefix:@"open camera"]) {
         if ([cmd containsString:@"flash"] || [cmd containsString:@"torch"]) return @"bolt.fill";
-        return @"video.fill";
+        if ([cmd containsString:@"front"] || [cmd containsString:@"selfie"]) return @"person.fill";
+        if ([cmd containsString:@"portrait"]) return @"person.crop.square";
+        if ([cmd containsString:@"video"] || [cmd containsString:@"slomo"] || [cmd containsString:@"timelapse"] || [cmd containsString:@"cinematic"] || [cmd containsString:@"2x"]) return @"video.fill";
+        return @"camera.fill";
     }
     if ([cmd hasPrefix:@"sneakycam photo"] || [cmd isEqualToString:@"sneakycam takephoto"]) return @"camera.aperture";
     if ([cmd hasPrefix:@"sneakycam video"] || [cmd isEqualToString:@"sneakycam record"] || [cmd isEqualToString:@"sneakycam startstopvideo"]) return @"video.fill";

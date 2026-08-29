@@ -80,6 +80,9 @@ A sequence is a **JSON array** of actions. Each action is either:
 |---|---|
 | `wifi toggle` | Toggle Wi-Fi |
 | `bluetooth toggle` | Toggle Bluetooth |
+| `location toggle` | Toggle Location Services (GPS) |
+| `location on` | Turn on Location Services |
+| `location off` | Turn off Location Services |
 | `airplane toggle` | Toggle Airplane Mode |
 | `bt connect Device Name` | Connect a Bluetooth device by name |
 | `bt disconnect Device Name` | Disconnect a Bluetooth device |

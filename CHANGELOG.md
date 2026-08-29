@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.1] - 2026-08-29
+
+### Added
+- **Location Services Toggle (GPS)**: Added native Location Services toggle and status queries across CLI (`rc location on|off|toggle|status`), Web UI (Action Picker, Quick Toggles, and Conditional Evaluator), Lua scripting (`setLocationServices(bool)` / `getLocationServices()`), and hardware/Bluetooth trigger sequences (e.g. automatically enable Location Services when connected to a vehicle Bluetooth device).
+
 ## [3.6.0] - 2026-08-25
 
 ### Added

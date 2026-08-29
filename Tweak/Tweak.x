@@ -21,12 +21,22 @@
 #import <GraphicsServices/GraphicsServices.h>
 #import "native_curl.h"
 #import <CoreFoundation/CoreFoundation.h>
+#import <CoreLocation/CoreLocation.h>
+#import <objc/message.h>
+
+@interface CLLocationManager (RemoteCompanionPrivate)
++ (BOOL)locationServicesEnabled;
++ (void)setLocationServicesEnabled:(BOOL)enabled;
++ (void)_setLocationServicesEnabled:(BOOL)enabled;
+@end
 
 @class SBProximitySensorManager;
 
 static void trigger_haptic();
 static void toggle_system_vibration(BOOL silentMode, BOOL enable);
 static BOOL get_system_vibration(BOOL silentMode);
+static void toggle_location_services(BOOL state);
+static BOOL get_location_services_state(void);
 
 static NSString *g_currentAppBundleId = nil;
 static NSString *g_previousAppBundleId = nil;
@@ -647,6 +657,45 @@ static BOOL get_lpm_state() {
         }
     }
     return NO;
+}
+
+static BOOL get_location_services_state() {
+    Class LocationManagerClass = objc_getClass("CLLocationManager");
+    if (!LocationManagerClass) {
+        dlopen("/System/Library/Frameworks/CoreLocation.framework/CoreLocation", RTLD_NOW);
+        LocationManagerClass = objc_getClass("CLLocationManager");
+    }
+    if (LocationManagerClass && [LocationManagerClass respondsToSelector:@selector(locationServicesEnabled)]) {
+        return [LocationManagerClass locationServicesEnabled];
+    }
+    return NO;
+}
+
+static void toggle_location_services(BOOL state) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @try {
+            Class LocationManagerClass = objc_getClass("CLLocationManager");
+            if (!LocationManagerClass) {
+                dlopen("/System/Library/Frameworks/CoreLocation.framework/CoreLocation", RTLD_NOW);
+                LocationManagerClass = objc_getClass("CLLocationManager");
+            }
+            if (LocationManagerClass) {
+                if ([LocationManagerClass respondsToSelector:@selector(setLocationServicesEnabled:)]) {
+                    ((void (*)(id, SEL, BOOL))objc_msgSend)(LocationManagerClass, @selector(setLocationServicesEnabled:), state);
+                    SRLog(@"Location Services set to: %d", state);
+                } else if ([LocationManagerClass respondsToSelector:@selector(_setLocationServicesEnabled:)]) {
+                    ((void (*)(id, SEL, BOOL))objc_msgSend)(LocationManagerClass, @selector(_setLocationServicesEnabled:), state);
+                    SRLog(@"Location Services set to: %d via _setLocationServicesEnabled", state);
+                } else {
+                    SRLog(@"CLLocationManager does not respond to setLocationServicesEnabled:");
+                }
+            } else {
+                SRLog(@"CLLocationManager class not found");
+            }
+        } @catch (NSException *e) {
+            SRLog(@"EXCEPTION in toggle_location_services: %@", e);
+        }
+    });
 }
 
 static BOOL get_dnd_state() {
@@ -1563,7 +1612,10 @@ static NSString *rc_status_command_for_condition_key(NSString *conditionKey) {
         @"airplane": @"airplane status",
         @"silent_vibration": @"vibration silent-status",
         @"ring_vibration": @"vibration ring-status",
-        @"orientation": @"orientation status"
+        @"orientation": @"orientation status",
+        @"location": @"location status",
+        @"location_services": @"location status",
+        @"gps": @"location status"
     };
     return map[conditionKey];
 }
@@ -3849,6 +3901,20 @@ static int lua_log(lua_State *L) {
     return 0;
 }
 
+// Lua binding: setLocationServices(bool) / locationServices(bool)
+static int lua_set_location_services(lua_State *L) {
+    BOOL state = lua_toboolean(L, 1);
+    toggle_location_services(state);
+    return 0;
+}
+
+// Lua binding: getLocationServices() -> bool
+static int lua_get_location_services(lua_State *L) {
+    BOOL state = get_location_services_state();
+    lua_pushboolean(L, state ? 1 : 0);
+    return 1;
+}
+
 // Lua binding: dlopen(path)
 static int lua_dlopen(lua_State *L) {
     const char *path = luaL_checkstring(L, 1);
@@ -4012,6 +4078,12 @@ static lua_State *setup_lua_environment() {
     lua_setglobal(L, "dlopen");
     lua_pushcfunction(L, lua_objc_call);
     lua_setglobal(L, "objc_call");
+    lua_pushcfunction(L, lua_set_location_services);
+    lua_setglobal(L, "setLocationServices");
+    lua_pushcfunction(L, lua_set_location_services);
+    lua_setglobal(L, "locationServices");
+    lua_pushcfunction(L, lua_get_location_services);
+    lua_setglobal(L, "getLocationServices");
     
     // Touch gesture functions
     lua_pushcfunction(L, lua_tap_fn);
@@ -5904,6 +5976,37 @@ static NSString *handle_command(NSString *cmd) {
             BOOL current = get_dnd_state();
             toggle_dnd(!current);
             return [NSString stringWithFormat:@"DND %@\n", !current ? @"Enabled" : @"Disabled"];
+        }
+    } else if ([cleanCmd hasPrefix:@"location "] || [cleanCmd hasPrefix:@"location-"] ||
+               [cleanCmd hasPrefix:@"locationservices "] || [cleanCmd hasPrefix:@"locationservices-"] ||
+               [cleanCmd hasPrefix:@"location services "] ||
+               [cleanCmd hasPrefix:@"gps "] || [cleanCmd hasPrefix:@"gps-"] ||
+               [cleanCmd isEqualToString:@"location"] || [cleanCmd isEqualToString:@"locationservices"] || [cleanCmd isEqualToString:@"location services"] || [cleanCmd isEqualToString:@"gps"]) {
+        NSString *subCmd = nil;
+        if ([cleanCmd hasPrefix:@"location services "]) subCmd = [cleanCmd substringFromIndex:18];
+        else if ([cleanCmd hasPrefix:@"locationservices "]) subCmd = [cleanCmd substringFromIndex:17];
+        else if ([cleanCmd hasPrefix:@"locationservices-"]) subCmd = [cleanCmd substringFromIndex:17];
+        else if ([cleanCmd hasPrefix:@"location "]) subCmd = [cleanCmd substringFromIndex:9];
+        else if ([cleanCmd hasPrefix:@"location-"]) subCmd = [cleanCmd substringFromIndex:9];
+        else if ([cleanCmd hasPrefix:@"gps "]) subCmd = [cleanCmd substringFromIndex:4];
+        else if ([cleanCmd hasPrefix:@"gps-"]) subCmd = [cleanCmd substringFromIndex:4];
+        else subCmd = @"toggle";
+        
+        subCmd = [subCmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        if ([subCmd isEqualToString:@"on"] || [subCmd isEqualToString:@"enable"] || [subCmd isEqualToString:@"1"]) {
+            toggle_location_services(YES);
+            return @"Location Services Enabled\n";
+        } else if ([subCmd isEqualToString:@"off"] || [subCmd isEqualToString:@"disable"] || [subCmd isEqualToString:@"0"]) {
+            toggle_location_services(NO);
+            return @"Location Services Disabled\n";
+        } else if ([subCmd isEqualToString:@"status"]) {
+            BOOL current = get_location_services_state();
+            return current ? @"Location Services ON\n" : @"Location Services OFF\n";
+        } else if ([subCmd isEqualToString:@"toggle"]) {
+            BOOL current = get_location_services_state();
+            toggle_location_services(!current);
+            return [NSString stringWithFormat:@"Location Services %@\n", !current ? @"Enabled" : @"Disabled"];
         }
     } else if ([cleanCmd hasPrefix:@"lpm "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -7880,6 +7983,7 @@ static void start_web_server() {
                                     @{@"command": @"bt on/off", @"desc": @"Toggles: Bluetooth power"},
                                     @{@"command": @"wifi on/off", @"desc": @"Toggles: WiFi power"},
                                     @{@"command": @"cellular on/off", @"desc": @"Toggles: Cellular Data power"},
+                                    @{@"command": @"location on/off/toggle/status", @"desc": @"Toggles: Location Services (GPS)"},
                                     @{@"command": @"airplane on/off", @"desc": @"Toggles: Airplane Mode power"},
                                     @{@"command": @"dnd on/off", @"desc": @"Toggles: Do Not Disturb Mode"},
                                     @{@"command": @"audiomix on/off", @"desc": @"Toggles: AudioMix simultaneous playback"},

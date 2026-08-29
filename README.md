@@ -90,7 +90,7 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc spotify play` - Resume Spotify playback.
 
 ### Connectivity
-- `rc wifi [on|off|toggle]` / `rc cellular [on|off|toggle]` / `rc bluetooth [on|off|toggle]`
+- `rc wifi [on|off|toggle]` / `rc cellular [on|off|toggle]` / `rc bluetooth [on|off|toggle]` / `rc location [on|off|toggle]`
 - `rc bluetooth [connect|disconnect] <name>` - Manage paired devices.
 - `rc airplay list` - See speakers and their UIDs.
 - `rc airplay connect <UID|Name>` / `rc airplay disconnect`
@@ -166,7 +166,7 @@ Get instant feedback from your device state.
 - `rc dnd status` - Returns Do Not Disturb state.
 - `rc lpm status` - Returns Low Power Mode state.
 - `rc airplane status` - Returns Airplane Mode state.
-- `rc wifi status` / `rc cellular status` / `rc bt status` - Returns connectivity states.
+- `rc wifi status` / `rc cellular status` / `rc bt status` / `rc location status` - Returns connectivity and GPS states.
 - `rc flashlight status` - Returns torch state.
 - `rc proximity` - Returns `near` or `far`. *(Note: iOS powers off the sensor when the screen is asleep. To test manually while the screen is awake, run `rc proximity on` to force it active, then `rc proximity off` to disable it.)*
 

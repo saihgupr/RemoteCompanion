@@ -97,7 +97,8 @@
                 @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
                 @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
                 @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
-                @{ @"name": @"Open Video Camera (2x)", @"command": @"camera video 2x", @"icon": @"video.fill" }
+                @{ @"name": @"Open Video Camera (2x)", @"command": @"camera video 2x", @"icon": @"video.fill" },
+                @{ @"name": @"Open Video Camera (2x, Flash)", @"command": @"camera video 2x flash", @"icon": @"bolt.fill" }
             ]];
             NSArray *audioStreamPaths = @[
                 @"/Applications/AudioReceiver.app",

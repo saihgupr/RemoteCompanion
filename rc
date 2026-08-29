@@ -53,7 +53,7 @@ if [ -z "$1" ]; then
     echo "  dnd on/off/debug   - Toggle Do Not Disturb or inspect state"
     echo "  audiomix on/off/toggle/status - Control AudioMix tweak"
     echo "  sneakycam photo/video - Trigger SneakyCam photo or toggle video"
-    echo "  camera video [2x] - Open Camera in Video mode (2x zoom factor)"
+    echo "  camera video [2x] [flash] - Open Camera in Video mode (e.g. 2x zoom factor, flash/torch)"
     echo "  toast \"Title\" [\"Subtitle\"] [\"Icon\"] - Display HUD toast notification"
     echo "  ha <toggle|turn_on|turn_off|call> - Control Home Assistant"
     echo "  km <trigger|url>  - Trigger Keyboard Maestro Macro or URL"

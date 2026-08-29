@@ -1712,11 +1712,26 @@ static BOOL rc_evaluate_if_condition(NSDictionary *ifAction) {
     return [actualValue isEqualToString:expectedValue];
 }
 
+static BOOL rc_is_action_item_disabled(id item) {
+    if ([item isKindOfClass:[NSDictionary class]]) {
+        id dis = ((NSDictionary *)item)[@"disabled"];
+        if (dis && ([dis boolValue] || [dis isEqual:@1] || [[dis description] isEqualToString:@"1"])) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 static void rc_execute_action_sequence(NSArray *actions, NSString *triggerKey, BOOL simulationMode) {
     if (![actions isKindOfClass:[NSArray class]] || actions.count == 0) return;
     
     for (NSInteger idx = 0; idx < (NSInteger)actions.count; idx++) {
         id actionItem = actions[idx];
+
+        if (rc_is_action_item_disabled(actionItem)) {
+            SRLog(@"[%@] Skipping disabled action: %@", triggerKey, actionItem);
+            continue;
+        }
         
         if ([actionItem isKindOfClass:[NSString class]]) {
             NSString *action = (NSString *)actionItem;

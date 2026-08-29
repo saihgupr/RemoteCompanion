@@ -52,6 +52,8 @@
 - (NSString *)nameForBundleId:(NSString *)bundleId;
 - (NSString *)iconForCommand:(id)cmd;
 - (NSDictionary *)toggleInfoForCommand:(NSString *)cmd;
+- (BOOL)isActionDisabled:(id)actionItem;
+- (id)toggleActionDisabled:(id)actionItem;
 
 // Backup/Restore
 - (NSData *)exportConfigAsJSON;

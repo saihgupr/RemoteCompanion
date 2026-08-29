@@ -713,11 +713,46 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     return YES;
 }
 
-#pragma mark - Command Helpers
+- (BOOL)isActionDisabled:(id)actionItem {
+    if ([actionItem isKindOfClass:[NSDictionary class]]) {
+        id dis = ((NSDictionary *)actionItem)[@"disabled"];
+        if (dis && ([dis boolValue] || [dis isEqual:@1] || [[dis description] isEqualToString:@"1"])) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (id)toggleActionDisabled:(id)actionItem {
+    if ([actionItem isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *dict = [((NSDictionary *)actionItem) mutableCopy];
+        BOOL currentlyDisabled = [self isActionDisabled:dict];
+        if (currentlyDisabled) {
+            [dict removeObjectForKey:@"disabled"];
+            // If it only wrapped a command and has no other keys except command (or type=command), we can unwrap or keep as dict
+            if (dict[@"command"] && dict.count == 1) {
+                return dict[@"command"];
+            }
+            return dict;
+        } else {
+            dict[@"disabled"] = @YES;
+            return dict;
+        }
+    } else if ([actionItem isKindOfClass:[NSString class]]) {
+        return @{
+            @"command": (NSString *)actionItem,
+            @"disabled": @YES
+        };
+    }
+    return actionItem;
+}
 
 - (NSString *)nameForCommand:(id)cmdId truncate:(BOOL)shouldTruncate {
     if ([cmdId isKindOfClass:[NSDictionary class]]) {
         NSDictionary *dict = (NSDictionary *)cmdId;
+        if (dict[@"command"] && [dict[@"command"] isKindOfClass:[NSString class]]) {
+            return [self nameForCommand:dict[@"command"] truncate:shouldTruncate];
+        }
         NSString *type = [[dict[@"type"] description] lowercaseString];
         if ([type isEqualToString:@"if"]) {
             NSString *conditionTitle = dict[@"conditionTitle"] ?: dict[@"conditionName"];
@@ -1100,6 +1135,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 - (NSString *)iconForCommand:(id)cmdId {
     if ([cmdId isKindOfClass:[NSDictionary class]]) {
         NSDictionary *dict = (NSDictionary *)cmdId;
+        if (dict[@"command"] && [dict[@"command"] isKindOfClass:[NSString class]]) {
+            return [self iconForCommand:dict[@"command"]];
+        }
         NSString *type = [[dict[@"type"] description] lowercaseString];
         if ([type isEqualToString:@"if"] || [type isEqualToString:@"else_if"] || [type isEqualToString:@"else"]) {
             return @"arrow.triangle.branch";

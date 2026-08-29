@@ -742,6 +742,12 @@
     /* Open state handle in CSS as fallback */
     .action-seq-row.del-open .action-seq-inner { transform: translateX(-75px); }
 
+    /* Disabled action styling */
+    .action-seq-row.action-disabled .action-seq-inner {
+      opacity: 0.38;
+      filter: grayscale(0.5);
+    }
+
     /* ── Indent Guides Visual Hierarchy ── */
     .nest-style-btn {
       background: rgba(255, 255, 255, 0.06);
@@ -2420,6 +2426,9 @@ const CMD_NAMES = {
 function nameForCmd(cmd) {
   if (!cmd) return 'Unknown';
   if (typeof cmd === 'object') {
+    if (cmd.command && typeof cmd.command === 'string') {
+      return nameForCmd(cmd.command);
+    }
     const t = (cmd.type||'').toLowerCase();
     if (t === 'if') return `If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
     if (t === 'else_if') return `Else If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
@@ -2553,6 +2562,9 @@ function formatHACommandName(cmd) {
 function iconForCmd(cmd) {
   if (!cmd) return { icon:'questionmark', cls:'icon-gray' };
   if (typeof cmd === 'object') {
+    if (cmd.command && typeof cmd.command === 'string') {
+      return iconForCmd(cmd.command);
+    }
     const t = (cmd.type||'').toLowerCase();
     if (t === 'if' || t === 'else_if' || t === 'else') return { icon:'arrow_triangle_branch', cls:'icon-purple' };
     if (t === 'end_if' || t === 'end') return { icon:'arrow_turn_up_left', cls:'icon-purple' };
@@ -3099,9 +3111,15 @@ async function runTrigger(key) {
 }
 
 async function runSingleAction(action) {
-  if (typeof action !== 'string') return;
+  let cmdStr = null;
+  if (typeof action === 'string') {
+    cmdStr = action;
+  } else if (typeof action === 'object' && action !== null && action.command && typeof action.command === 'string') {
+    cmdStr = action.command;
+  }
+  if (!cmdStr) return;
   try {
-    const res = await fetch(`/api/command?cmd=${encodeURIComponent(action)}`, { method: 'POST' });
+    const res = await fetch(`/api/command?cmd=${encodeURIComponent(cmdStr)}`, { method: 'POST' });
     if (res.status === 403) {
       showToast('⚠ Enable Web UI in Settings first');
     } else {
@@ -3285,8 +3303,9 @@ function renderActionList() {
     }
 
     // Outer wrapper
+    const isDisabled = (typeof action === 'object' && action !== null && (action.disabled === true || action.disabled === '1' || action.disabled === 1));
     const row = document.createElement('div');
-    row.className = 'action-seq-row';
+    row.className = 'action-seq-row' + (isDisabled ? ' action-disabled' : '');
 
     // Delete button (behind the row)
     const delBtn = document.createElement('div');
@@ -3375,6 +3394,7 @@ function renderActionList() {
       
       const items = [
         { label: 'Run Action Now', icon: 'play_fill', action: () => runSingleAction(action) },
+        { label: isDisabled ? 'Enable Action' : 'Disable Action', icon: isDisabled ? 'checkmark_circle' : 'slash_circle', action: () => toggleDisableAction(idx) },
         { label: 'Edit Action', icon: 'pencil', action: () => editAction(idx) },
         { label: 'Copy Action', icon: 'doc_on_doc', action: () => copyAction(idx) }
       ];
@@ -3431,6 +3451,9 @@ function renderActionList() {
 
 function renderActionNameHtml(action, idx) {
   if (typeof action === 'object') {
+    if (action.command && typeof action.command === 'string') {
+      return renderActionNameHtml(action.command, idx);
+    }
     return escHtml(nameForCmd(action));
   }
   const toggleInfo = parseToggleCmd(action);
@@ -3524,6 +3547,31 @@ function updateToggleAction(idx, newSuffix) {
   }
   
   actions[idx] = newCmd;
+  saveConfig();
+  renderActionList();
+}
+
+function toggleDisableAction(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  if (idx < 0 || idx >= actions.length) return;
+  const action = actions[idx];
+  
+  if (typeof action === 'object' && action !== null) {
+    if (action.disabled) {
+      delete action.disabled;
+      // If it was just wrapping a single command string
+      if (action.command && Object.keys(action).length === 1) {
+        actions[idx] = action.command;
+      }
+    } else {
+      action.disabled = true;
+    }
+  } else if (typeof action === 'string') {
+    actions[idx] = {
+      command: action,
+      disabled: true
+    };
+  }
   saveConfig();
   renderActionList();
 }

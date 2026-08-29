@@ -1251,6 +1251,15 @@ static id g_actionClipboard = nil;
     
     if (indexPath) {
         id item = self.actions[indexPath.row];
+        BOOL isDisabled = [[RCConfigManager sharedManager] isActionDisabled:item];
+        
+        // Disable / Enable option
+        NSString *toggleTitle = isDisabled ? @"Enable Action" : @"Disable Action";
+        [alert addAction:[UIAlertAction actionWithTitle:toggleTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            self.actions[indexPath.row] = [[RCConfigManager sharedManager] toggleActionDisabled:item];
+            [self saveActions];
+            [self.tableView reloadData];
+        }]];
         
         // Copy option
         [alert addAction:[UIAlertAction actionWithTitle:@"Copy" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
@@ -1422,10 +1431,15 @@ static id g_actionClipboard = nil;
     id actionData = self.actions[indexPath.row];
     
     if ([actionData isKindOfClass:[NSDictionary class]]) {
-        if ([self isIfActionItem:actionData] || [self isElseIfActionItem:actionData]) {
-            [self presentIfConditionPickerForIndex:indexPath.row];
+        NSDictionary *dict = (NSDictionary *)actionData;
+        if (dict[@"command"] && [dict[@"command"] isKindOfClass:[NSString class]]) {
+            actionData = dict[@"command"];
+        } else {
+            if ([self isIfActionItem:actionData] || [self isElseIfActionItem:actionData]) {
+                [self presentIfConditionPickerForIndex:indexPath.row];
+            }
+            return;
         }
-        return;
     }
     
     NSString *currentAction = (NSString *)actionData;
@@ -1918,7 +1932,7 @@ static id g_actionClipboard = nil;
     cell.detailTextLabel.adjustsFontSizeToFitWidth = YES;
     cell.detailTextLabel.minimumScaleFactor = 0.80f;
 
-    if ([actionItem isKindOfClass:[NSDictionary class]]) {
+    if ([actionItem isKindOfClass:[NSDictionary class]] && !((NSDictionary *)actionItem)[@"command"]) {
         cell.textLabel.text = cleanName;
         cell.textLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
         BOOL isControl = [self isEndIfActionItem:actionItem] || [self isElseActionItem:actionItem];
@@ -1932,10 +1946,14 @@ static id g_actionClipboard = nil;
         handleView.tintColor = [UIColor systemGray3Color];
         cell.accessoryView = handleView;
         [self applySectionCardStyleToCell:cell atIndexPath:indexPath];
+        
+        BOOL isDisabled = [[RCConfigManager sharedManager] isActionDisabled:actionItem];
+        cell.contentView.alpha = isDisabled ? 0.38f : 1.0f;
+        cell.accessoryView.alpha = isDisabled ? 0.38f : 1.0f;
         return cell;
     }
 
-    NSString *action = (NSString *)actionItem;
+    NSString *action = [actionItem isKindOfClass:[NSDictionary class]] ? ((NSDictionary *)actionItem)[@"command"] : (NSString *)actionItem;
     NSDictionary *toggleInfo = [[RCConfigManager sharedManager] toggleInfoForCommand:action];
 
     // Logic to separate "Type" from "Value"
@@ -2048,6 +2066,10 @@ static id g_actionClipboard = nil;
     handleView.tintColor = [UIColor systemGray3Color];
     cell.accessoryView = handleView;
     [self applySectionCardStyleToCell:cell atIndexPath:indexPath];
+    
+    BOOL isDisabled = [[RCConfigManager sharedManager] isActionDisabled:actionItem];
+    cell.contentView.alpha = isDisabled ? 0.38f : 1.0f;
+    cell.accessoryView.alpha = isDisabled ? 0.38f : 1.0f;
     return cell;
 }
 

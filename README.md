@@ -1,4 +1,4 @@
-# RemoteCompanion
+# RemoteCompanion <img src="images/Icon.png" width="80" align="right" alt="RemoteCompanion" />
 
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
@@ -386,8 +386,8 @@ Execution URLs for your specific triggers:
 - **Example**: `http://[device_ip]:8080/api/trigger/trigger_1`
 
 #### Performance & Implementation
-*   **⚡ Speed**: The HTTP API is significantly faster than SSH (~0.1s faster) by skipping the heavy SSH handshake.
-*   **🔋 Efficiency**: The Web UI server sits in a dormant `accept()` loop, consuming **zero CPU cycles** when idle.
+*   **Speed**: The HTTP API is significantly faster than SSH (~0.1s faster) by skipping the heavy SSH handshake.
+*   **Efficiency**: The Web UI server sits in a dormant `accept()` loop, consuming **zero CPU cycles** when idle.
 </details>
 
 ## Integrations
@@ -510,4 +510,4 @@ Due to Pointer Authentication Code (PAC) changes in modern toolchains, iOS 14 on
 
 If you encounter any issues or have feature requests, please [open an issue](https://github.com/saihgupr/remotecompanion/issues) on GitHub.
 
-RemoteCompanion is open-source and free. If you find it useful, consider giving it a star ⭐ or making a [donation](https://ko-fi.com/saihgupr) to support development.
+RemoteCompanion is open-source and free. If you find it useful, consider giving it a star on GitHub or making a [donation](https://ko-fi.com/saihgupr) to support development.

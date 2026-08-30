@@ -3597,12 +3597,26 @@ function renderActionList() {
       e.preventDefault();
       closeOpenActionRow();
       
+      const cmdStr = (typeof action === 'object') ? (action.command || '') : action;
+      const lowCmd = (cmdStr || '').toLowerCase();
+      
       const items = [
-        { label: 'Run Action Now', icon: 'play_fill', action: () => runSingleAction(action) },
-        { label: isDisabled ? 'Enable Action' : 'Disable Action', icon: isDisabled ? 'checkmark_circle' : 'slash_circle', action: () => toggleDisableAction(idx) },
-        { label: 'Edit Action', icon: 'pencil', action: () => editAction(idx) },
-        { label: 'Copy Action', icon: 'doc_on_doc', action: () => copyAction(idx) }
+        { label: 'Run Action Now', icon: 'play_fill', action: () => runSingleAction(action) }
       ];
+
+      if (lowCmd.startsWith('km ') || lowCmd === 'km') {
+        const { macro, param } = parseKMCmd(cmdStr);
+        items.push({ label: 'Edit Parameter / Value…', icon: 'pencil', action: () => promptEditKMParameter(idx) });
+        if (param) {
+          items.push({ label: 'Remove Parameter', icon: 'xmark_circle', action: () => removeKMParameter(idx) });
+        }
+        items.push({ label: 'Change Macro…', icon: 'arrow_2_squarepath', action: () => openKMDialog(idx) });
+      } else {
+        items.push({ label: 'Edit Action', icon: 'pencil', action: () => editAction(idx) });
+      }
+
+      items.push({ label: isDisabled ? 'Enable Action' : 'Disable Action', icon: isDisabled ? 'checkmark_circle' : 'slash_circle', action: () => toggleDisableAction(idx) });
+      items.push({ label: 'Copy Action', icon: 'doc_on_doc', action: () => copyAction(idx) });
       if (g_copiedAction !== null) {
         items.push({ label: 'Paste Action Below', icon: 'doc_on_clipboard_fill', action: () => pasteAction(idx + 1) });
       }
@@ -4512,9 +4526,115 @@ function editAction(idx) {
         saveConfig(); renderActionList();
       }, true);
     } else if (low.startsWith('km ') || low === 'km') {
-      openKMDialog(idx);
+      editKMAction(idx);
     }
   }
+}
+
+function parseKMCmd(cmd) {
+  if (!cmd || typeof cmd !== 'string') return { macro: '', param: '' };
+  let raw = cmd.startsWith('km ') ? cmd.slice(3).trim() : cmd.trim();
+  let macro = '';
+  let param = '';
+  if (raw.toLowerCase().startsWith('trigger ')) {
+    let after = raw.slice(8).trim();
+    if (after.startsWith('"')) {
+      let endQ = after.indexOf('"', 1);
+      if (endQ !== -1) {
+        macro = after.substring(1, endQ);
+        let rem = after.substring(endQ + 1).trim();
+        if (rem.startsWith('"') && rem.endsWith('"') && rem.length >= 2) {
+          param = rem.substring(1, rem.length - 1);
+        } else {
+          param = rem;
+        }
+      }
+    }
+    if (!macro) {
+      let parts = after.split(/\s+/);
+      macro = parts[0] || '';
+      param = parts.slice(1).join(' ').trim();
+      if (param.startsWith('"') && param.endsWith('"') && param.length >= 2) {
+        param = param.substring(1, param.length - 1);
+      }
+    }
+  } else {
+    macro = raw;
+  }
+  return { macro, param };
+}
+
+function editKMAction(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  const act = actions[idx];
+  const cmdStr = (typeof act === 'object') ? (act.command || '') : act;
+  const { macro, param } = parseKMCmd(cmdStr);
+  const displayName = (config.kmNamesByUuid && config.kmNamesByUuid[macro]) ? config.kmNamesByUuid[macro] : (macro || 'Keyboard Maestro');
+  
+  const buttons = [
+    {
+      label: 'Edit Parameter / Value…',
+      action: () => promptEditKMParameter(idx)
+    }
+  ];
+
+  if (param) {
+    buttons.push({
+      label: 'Remove Parameter',
+      action: () => removeKMParameter(idx)
+    });
+  }
+
+  buttons.push({
+    label: 'Change Macro…',
+    action: () => openKMDialog(idx)
+  });
+
+  buttons.push({
+    label: 'Test Macro',
+    action: () => runSingleAction(cmdStr)
+  });
+
+  showSheet(displayName, buttons);
+}
+
+function promptEditKMParameter(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  if (idx < 0 || idx >= actions.length) return;
+  const act = actions[idx];
+  const cmdStr = (typeof act === 'object') ? (act.command || '') : act;
+  const { macro, param } = parseKMCmd(cmdStr);
+  const displayName = (config.kmNamesByUuid && config.kmNamesByUuid[macro]) ? config.kmNamesByUuid[macro] : (macro || 'Keyboard Maestro');
+
+  showDialog(`Parameter: ${displayName}`, 'Enter value passed to KM %TriggerValue% (leave empty for none):', param, 'Save', val => {
+    const cleanVal = (val || '').trim();
+    const target = (macro.includes('-') || !macro.includes(' ')) ? macro : `"${macro}"`;
+    const newCmd = cleanVal ? `km trigger ${target} "${cleanVal}"` : `km trigger ${target}`;
+    if (typeof actions[idx] === 'object') {
+      actions[idx].command = newCmd;
+    } else {
+      actions[idx] = newCmd;
+    }
+    saveConfig();
+    renderActionList();
+  });
+}
+
+function removeKMParameter(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  if (idx < 0 || idx >= actions.length) return;
+  const act = actions[idx];
+  const cmdStr = (typeof act === 'object') ? (act.command || '') : act;
+  const { macro } = parseKMCmd(cmdStr);
+  const target = (macro.includes('-') || !macro.includes(' ')) ? macro : `"${macro}"`;
+  const newCmd = `km trigger ${target}`;
+  if (typeof actions[idx] === 'object') {
+    actions[idx].command = newCmd;
+  } else {
+    actions[idx] = newCmd;
+  }
+  saveConfig();
+  renderActionList();
 }
 
 // ── Action picker dialog ───────────────────────────────────────────────────────

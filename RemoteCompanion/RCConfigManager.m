@@ -781,7 +781,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return @"Unknown Action";
     }
 
-    NSString *cmd = [[(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    NSString *originalCmd = [(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *cmd = [originalCmd lowercaseString];
     NSDictionary *names = @{
         @"play": @"Play",
         @"pause": @"Pause",
@@ -1030,12 +1031,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                 result = [NSString stringWithFormat:@"HA: %@", raw.length ? raw : @"Control"];
             }
         } else if ([cmd hasPrefix:@"km "] || [cmd isEqualToString:@"km"]) {
-            NSString *raw = [cmd hasPrefix:@"km "] ? [cmd substringFromIndex:3] : @"";
-            NSArray *parts = [raw componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            NSMutableArray *cleanParts = [NSMutableArray array];
-            for (NSString *p in parts) {
-                if (p.length > 0) [cleanParts addObject:p];
-            }
+            NSString *raw = [originalCmd length] >= 3 ? [[originalCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : @"";
             if ([[raw lowercaseString] hasPrefix:@"trigger "]) {
                 NSString *afterTrigger = [[raw substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
                 NSString *macro = nil;

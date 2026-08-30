@@ -4769,7 +4769,7 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
             } else {
                 NSHTTPURLResponse *http = (NSHTTPURLResponse *)resp;
                 if (http.statusCode >= 200 && http.statusCode < 400) {
-                    rc_show_hud_toast(@"Keyboard Maestro", @"Triggered URL Macro", nil);
+                    rc_show_hud_toast(@"Keyboard Maestro", @"Triggered URL Macro", @"command");
                     respMsg = [NSString stringWithFormat:@"Keyboard Maestro trigger succeeded (HTTP %ld)\n", (long)http.statusCode];
                 } else if (http.statusCode == 401) {
                     respMsg = @"Keyboard Maestro error (HTTP 401: Unauthorized - Check Username/Password)\n";
@@ -4887,7 +4887,7 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
     
     if ([res[@"ok"] boolValue]) {
         NSString *toastMsg = [NSString stringWithFormat:@"Triggered %@", macroName];
-        rc_show_hud_toast(@"Keyboard Maestro", toastMsg, nil);
+        rc_show_hud_toast(@"Keyboard Maestro", toastMsg, @"command");
         return [NSString stringWithFormat:@"Keyboard Maestro macro triggered: %@\n", macroName];
     } else {
         return [NSString stringWithFormat:@"Keyboard Maestro trigger failed: %@\n", res[@"error"] ?: @"Unknown error"];

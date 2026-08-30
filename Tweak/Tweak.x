@@ -5205,10 +5205,18 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
         }
     }
     
+    NSString *displayName = macroName;
+    if (isUUID && g_triggerConfig[@"kmNamesByUuid"] && [g_triggerConfig[@"kmNamesByUuid"] isKindOfClass:[NSDictionary class]]) {
+        NSString *resolved = g_triggerConfig[@"kmNamesByUuid"][macroName];
+        if (resolved.length > 0) {
+            displayName = resolved;
+        }
+    }
+    
     if ([res[@"ok"] boolValue]) {
-        NSString *toastMsg = [NSString stringWithFormat:@"Triggered %@", macroName];
+        NSString *toastMsg = [NSString stringWithFormat:@"Triggered %@", displayName];
         rc_show_hud_toast(@"Keyboard Maestro", toastMsg, @"command");
-        return [NSString stringWithFormat:@"Keyboard Maestro macro triggered: %@\n", macroName];
+        return [NSString stringWithFormat:@"Keyboard Maestro macro triggered: %@\n", displayName];
     } else {
         return [NSString stringWithFormat:@"Keyboard Maestro trigger failed: %@\n", res[@"error"] ?: @"Unknown error"];
     }

@@ -954,11 +954,11 @@
     /* ── Bottom sheet ── */
     .sheet-backdrop {
       position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-      z-index: 800; display: none;
+      z-index: 950; display: none;
     }
     .sheet-backdrop.visible { display: block; }
     .sheet {
-      position: fixed; bottom: 0; left: 50%; z-index: 801;
+      position: fixed; bottom: 0; left: 50%; z-index: 951;
       width: calc(100% - 48px); max-width: 560px;
       padding-bottom: env(safe-area-inset-bottom, 20px);
       transform: translateX(-50%) translateY(100%);
@@ -5373,18 +5373,17 @@ function filterKMList() {
 }
 
 function selectKMMacro(macro) {
+  closeKMDialog();
   showSheet(`Keyboard Maestro: ${macro.name}`, [
     {
       label: 'Trigger (No Parameter)',
       action: () => {
-        closeKMDialog();
         saveKMActionCmd(`km trigger "${macro.name}"`, macro.name);
       }
     },
     {
       label: 'Trigger with Parameter…',
       action: () => {
-        closeKMDialog();
         showDialog(`Trigger: ${macro.name}`, 'Optional trigger parameter / value (%TriggerValue%):', '', 'Save', val => {
           if (val && val.trim()) {
             saveKMActionCmd(`km trigger "${macro.name}" "${val.trim()}"`, `${macro.name} (${val.trim()})`);
@@ -5397,7 +5396,6 @@ function selectKMMacro(macro) {
     {
       label: 'Trigger by UUID (Permanent ID)',
       action: () => {
-        closeKMDialog();
         saveKMActionCmd(`km trigger ${macro.uid}`, macro.name);
       }
     }

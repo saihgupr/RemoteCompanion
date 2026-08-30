@@ -390,6 +390,8 @@ Execution URLs for your specific triggers:
 *   **🔋 Efficiency**: The Web UI server sits in a dormant `accept()` loop, consuming **zero CPU cycles** when idle.
 </details>
 
+## Integrations
+
 <details>
 <summary><b>Home Assistant Integration</b></summary>
 
@@ -446,7 +448,12 @@ Once configured:
 - **Parameter Support**: Tapping or long-pressing any KM action in an action sequence allows you to edit or remove its `%TriggerValue%` parameter, test execution immediately, or switch to a different macro.
 - **CLI & Scripts**: Execute KM commands directly via CLI: `rc km trigger "Sleep Display"` or `rc km "My Macro Name" "Optional Value"`.
 
-### MQTT Integration
+</details>
+
+<details>
+<summary><b>MQTT Integration (Pub / Sub)</b></summary>
+
+### 1. Publishing to MQTT from RemoteCompanion
 
 Connect directly to local or cloud MQTT brokers (e.g. Mosquitto, EMQX, Home Assistant Mosquitto add-on) with zero external dependencies and near-zero battery impact:
 
@@ -458,7 +465,18 @@ Connect directly to local or cloud MQTT brokers (e.g. Mosquitto, EMQX, Home Assi
 
 Once configured:
 - **Action Picker**: Select **MQTT: Publish Topic…** to assign publish actions with customizable topics and payloads (strings, numbers, or JSON) to any gesture, hardware button, or scheduled trigger.
-- **CLI**: Publish directly from scripts using `rc mqtt pub <topic> [payload]`.
+- **CLI**: Publish directly from scripts or terminal using `rc mqtt pub <topic> [payload]`.
+
+### 2. Inbound MQTT Subscription Triggers
+
+Subscribe to topics on your broker and execute local iOS action sequences whenever an MQTT message arrives:
+
+1. In the iOS App or Web UI, tap **`+`** (New Trigger) &rarr; **MQTT Topic**.
+2. Enter the **MQTT Topic** to monitor (e.g. `home/alerts/phone`, `remotecompanion/wake`, or wildcards like `sensors/+/state`).
+3. (Optional) Enter an exact **Payload Match** (e.g. `ON`, `RING`), or leave empty to trigger on any message.
+4. Add your desired action sequence (Haptic alert, audio alarm, flashlight toggle, TTS speech, app launch, etc.).
+
+The background listener daemon runs inside SpringBoard with automatic 60s keep-alives, auto-reconnect, and shuts down whenever no MQTT triggers are active to ensure zero idle battery drain.
 
 </details>
 

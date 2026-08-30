@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.6.1] - 2026-08-29
+## [3.6.0] - 2026-08-30
 
 ### Added
+- **Visual Keyboard Maestro Macro Selector & Discovery**: Added visual macro selector across Web UI and native iOS companion app (`RCKMMacroPickerViewController`).
+  - Automatically fetches and parses all macros grouped by category from `/authenticated.html`.
+  - Supports live search across macro names, groups, and UUIDs.
+  - Background automatic macro name-to-UUID resolution with dual-tier fallback (`/authenticatedaction.html` & `/action.html`) ensuring seamless execution even for private/protected macros.
+  - Tap / long-press parameter management: directly configure, update, or remove `%TriggerValue%` parameter values on any KM action within action sequences.
+  - Restored dedicated `command` SF symbol toast HUD notifications and exact case-sensitive macro title preservation.
 - **Time of Day Condition Target (`time_between`)**: Added native conditional time evaluation (`If Time is Between ...` / `Else If Time is Between ...`) allowing automation sequences to branch based on the current time of day.
   - **Web UI & iOS App**: Configurable time range selector supporting 12-hour AM/PM and 24-hour time ranges, live preview hints, and overnight ranges crossing midnight (e.g. `22:00` to `06:00`).
   - **Backend**: Optimized `rc_is_current_time_in_range` evaluator handling all standard time formats in live action sequence executions.
@@ -14,17 +20,12 @@ All notable changes to this project will be documented in this file.
   - **Web UI**: Right-click (or touch-and-hold) any action in the sequence builder to toggle disable/enable state.
   - **Execution Engine**: `rc_execute_action_sequence` automatically skips disabled actions in live and simulation modes.
 - **Location Services Toggle (GPS)**: Added native Location Services toggle and status queries across CLI (`rc location on|off|toggle|status`), Web UI (Action Picker, Quick Toggles, and Conditional Evaluator), Lua scripting (`setLocationServices(bool)` / `getLocationServices()`), and hardware/Bluetooth trigger sequences (e.g. automatically enable Location Services when connected to a vehicle Bluetooth device).
+- **Safe Mode**: Added native Safe Mode support across the CLI (`rc safemode`), Web UI (Action Picker & Quick Maintenance panel in System Info), and native iOS Companion App (Action Picker & Config Manager). Safely restarts SpringBoard into Safe Mode with tweaks disabled using Substrate/ElleKit exception triggering and marker flags.
+- **Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
 
 ### Changed
 - **Streamlined Camera Action Picker**: Simplified camera options in the iOS and Web UI action pickers to clean, minimal **Open Camera** and **Open Video Camera** items while preserving specialized parameter variations when manually configured or imported.
 - **Wider Web UI Modals**: Increased the modal dialog widths for App Launch and Time Range trigger selectors for better readability on desktop and mobile browsers.
-
-## [3.6.0] - 2026-08-25
-
-### Added
-- **Safe Mode**: Added native Safe Mode support across the CLI (`rc safemode`), Web UI (Action Picker & Quick Maintenance panel in System Info), and native iOS Companion App (Action Picker & Config Manager). Safely restarts SpringBoard into Safe Mode with tweaks disabled using Substrate/ElleKit exception triggering and marker flags.
-- **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`), HTTP Basic Authentication, and self-signed SSL certificates.
-- **Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
 
 ## [3.5.2] - 2026-08-29
 

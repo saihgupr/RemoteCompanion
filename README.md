@@ -3,7 +3,7 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.6.1**
+> **What’s New in v3.6.0**
 > - **Visual Keyboard Maestro Macro Selector**: Browse and search all macros organized by Macro Group directly in both the Web UI and native iOS App (`RCKMMacroPickerViewController`). Includes live search, item counts, pull-to-refresh, and manual entry fallback.
 > - **Automatic Macro Name & UUID Resolution**: Seamless execution backend with automatic name-to-UUID resolution and dual-tier fallback (`/authenticatedaction.html` & `/action.html`), ensuring any macro triggers reliably even without public web triggers.
 > - **In-App KM Parameter Management**: Tap or long-press any Keyboard Maestro action in an action sequence to edit/remove `%TriggerValue%` parameters, change macros, or test execution instantly.

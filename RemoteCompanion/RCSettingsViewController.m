@@ -1,30 +1,8 @@
 #import "RCSettingsViewController.h"
 #import "RCConfigManager.h"
 #import "RCUITweaker.h"
+#import "RCIntegrationsViewController.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
-
-@interface RCInsecureSessionDelegate : NSObject <NSURLSessionDelegate>
-+ (instancetype)sharedDelegate;
-@end
-
-@implementation RCInsecureSessionDelegate
-+ (instancetype)sharedDelegate {
-    static RCInsecureSessionDelegate *del = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        del = [[RCInsecureSessionDelegate alloc] init];
-    });
-    return del;
-}
-
-- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler {
-    if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
-        completionHandler(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]);
-    } else {
-        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
-    }
-}
-@end
 
 @interface RCSettingsViewController () <UIDocumentPickerDelegate>
 @property (nonatomic, strong) UITableView *tableView;
@@ -33,21 +11,7 @@
 @property (nonatomic, strong) UISwitch *masterSwitch;
 @property (nonatomic, strong) UISwitch *nfcSwitch;
 @property (nonatomic, strong) UISwitch *webUISwitch;
-@property (nonatomic, strong) UISwitch *haSwitch;
-@property (nonatomic, strong) UISwitch *kmSwitch;
 @end
-
-typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
-    RCIntegrationRowHAHeader,
-    RCIntegrationRowHAUrl,
-    RCIntegrationRowHAToken,
-    RCIntegrationRowHATest,
-    RCIntegrationRowKMHeader,
-    RCIntegrationRowKMUrl,
-    RCIntegrationRowKMUser,
-    RCIntegrationRowKMPassword,
-    RCIntegrationRowKMTest
-};
 
 @implementation RCSettingsViewController
 
@@ -137,6 +101,10 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
     [self applyTweaks];
 }
 
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)handleTweaksChanged:(NSNotification *)note {
     [self applyTweaks];
 }
@@ -163,24 +131,6 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
 
 - (void)dismissSettings {
     [self dismissViewControllerAnimated:YES completion:nil];
-}
-
-- (NSArray<NSNumber *> *)rowsForIntegrationsSection {
-    NSMutableArray *rows = [NSMutableArray array];
-    [rows addObject:@(RCIntegrationRowHAHeader)];
-    if ([RCConfigManager sharedManager].haEnabled) {
-        [rows addObject:@(RCIntegrationRowHAUrl)];
-        [rows addObject:@(RCIntegrationRowHAToken)];
-        [rows addObject:@(RCIntegrationRowHATest)];
-    }
-    [rows addObject:@(RCIntegrationRowKMHeader)];
-    if ([RCConfigManager sharedManager].kmEnabled) {
-        [rows addObject:@(RCIntegrationRowKMUrl)];
-        [rows addObject:@(RCIntegrationRowKMUser)];
-        [rows addObject:@(RCIntegrationRowKMPassword)];
-        [rows addObject:@(RCIntegrationRowKMTest)];
-    }
-    return rows;
 }
 
 #pragma mark - Table View Data Source
@@ -212,7 +162,7 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
     if (section == 0) {
         return nil;
     } else if (section == 1) {
-        return @"Configure connections to Home Assistant and Keyboard Maestro Web Server.";
+        return @"Configure connections to Home Assistant and Keyboard Maestro.";
     } else if (section == 2) {
         return @"Export your configuration to share or backup. Import to restore.";
     }
@@ -221,24 +171,14 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return 3; // Master + NFC + WebUI
-    if (section == 1) return [self rowsForIntegrationsSection].count;
+    if (section == 1) return 1; // Integrations Submenu Row
     return 2; // Export, Import
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     RCConfigManager *cm = [RCConfigManager sharedManager];
     
-    UITableViewCellStyle style = UITableViewCellStyleDefault;
-    if (indexPath.section == 1) {
-        NSInteger rowType = [[self rowsForIntegrationsSection][indexPath.row] integerValue];
-        if (rowType == RCIntegrationRowHAUrl || rowType == RCIntegrationRowHAToken ||
-            rowType == RCIntegrationRowKMUrl || rowType == RCIntegrationRowKMUser ||
-            rowType == RCIntegrationRowKMPassword) {
-            style = UITableViewCellStyleValue1;
-        }
-    }
-    
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:style reuseIdentifier:nil];
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     cell.backgroundColor = [cm tweakColorForKey:@"blockBackground" defaultVal:0.12];
     
     UIView *selBg = [[UIView alloc] init];
@@ -278,62 +218,14 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         }
     } else if (indexPath.section == 1) {
-        NSInteger rowType = [[self rowsForIntegrationsSection][indexPath.row] integerValue];
-        switch (rowType) {
-            case RCIntegrationRowHAHeader:
-                cell.textLabel.text = @"Home Assistant";
-                _haSwitch = [[UISwitch alloc] init];
-                _haSwitch.on = cm.haEnabled;
-                [_haSwitch addTarget:self action:@selector(haToggleChanged:) forControlEvents:UIControlEventValueChanged];
-                cell.accessoryView = _haSwitch;
-                cell.selectionStyle = UITableViewCellSelectionStyleNone;
-                break;
-            case RCIntegrationRowHAUrl:
-                cell.textLabel.text = @"Server URL";
-                cell.detailTextLabel.text = cm.haUrl.length ? cm.haUrl : @"Not Configured";
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-                break;
-            case RCIntegrationRowHAToken:
-                cell.textLabel.text = @"Access Token";
-                cell.detailTextLabel.text = cm.haToken.length ? @"••••••••" : @"Not Configured";
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-                break;
-            case RCIntegrationRowHATest:
-                cell.textLabel.text = @"Test Connection";
-                cell.textLabel.textColor = [UIColor systemGreenColor];
-                cell.imageView.image = [UIImage systemImageNamed:@"bolt.fill"];
-                cell.imageView.tintColor = [UIColor systemGreenColor];
-                break;
-            case RCIntegrationRowKMHeader:
-                cell.textLabel.text = @"Keyboard Maestro";
-                _kmSwitch = [[UISwitch alloc] init];
-                _kmSwitch.on = cm.kmEnabled;
-                [_kmSwitch addTarget:self action:@selector(kmToggleChanged:) forControlEvents:UIControlEventValueChanged];
-                cell.accessoryView = _kmSwitch;
-                cell.selectionStyle = UITableViewCellSelectionStyleNone;
-                break;
-            case RCIntegrationRowKMUrl:
-                cell.textLabel.text = @"Web Server URL";
-                cell.detailTextLabel.text = cm.kmUrl.length ? cm.kmUrl : @"http://192.168.1.50:4490";
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-                break;
-            case RCIntegrationRowKMUser:
-                cell.textLabel.text = @"Username";
-                cell.detailTextLabel.text = cm.kmUser.length ? cm.kmUser : @"Optional";
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-                break;
-            case RCIntegrationRowKMPassword:
-                cell.textLabel.text = @"Password";
-                cell.detailTextLabel.text = cm.kmPassword.length ? @"••••••••" : @"Optional";
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-                break;
-            case RCIntegrationRowKMTest:
-                cell.textLabel.text = @"Test Connection";
-                cell.textLabel.textColor = [UIColor systemGreenColor];
-                cell.imageView.image = [UIImage systemImageNamed:@"bolt.fill"];
-                cell.imageView.tintColor = [UIColor systemGreenColor];
-                break;
+        cell.textLabel.text = @"Integrations";
+        UIImage *puzzleImg = [UIImage systemImageNamed:@"puzzlepiece.extension.fill"];
+        if (!puzzleImg) {
+            puzzleImg = [UIImage systemImageNamed:@"network"];
         }
+        cell.imageView.image = puzzleImg;
+        cell.imageView.tintColor = [UIColor systemIndigoColor];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"Export Configuration";
@@ -355,32 +247,8 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
     if (indexPath.section == 1) {
-        NSInteger rowType = [[self rowsForIntegrationsSection][indexPath.row] integerValue];
-        switch (rowType) {
-            case RCIntegrationRowHAUrl:
-                [self editHAUrl];
-                break;
-            case RCIntegrationRowHAToken:
-                [self editHAToken];
-                break;
-            case RCIntegrationRowHATest:
-                [self testHAConnection];
-                break;
-            case RCIntegrationRowKMUrl:
-                [self editKMUrl];
-                break;
-            case RCIntegrationRowKMUser:
-                [self editKMUser];
-                break;
-            case RCIntegrationRowKMPassword:
-                [self editKMPassword];
-                break;
-            case RCIntegrationRowKMTest:
-                [self testKMConnection];
-                break;
-            default:
-                break;
-        }
+        RCIntegrationsViewController *integrationsVC = [[RCIntegrationsViewController alloc] init];
+        [self.navigationController pushViewController:integrationsVC animated:YES];
     } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
             [self exportConfig];
@@ -389,205 +257,6 @@ typedef NS_ENUM(NSInteger, RCIntegrationRowType) {
         }
     }
 }
-
-#pragma mark - Integration Editors
-
-- (void)haToggleChanged:(UISwitch *)sender {
-    [RCConfigManager sharedManager].haEnabled = sender.on;
-    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationAutomatic];
-}
-
-- (void)kmToggleChanged:(UISwitch *)sender {
-    [RCConfigManager sharedManager].kmEnabled = sender.on;
-    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationAutomatic];
-}
-
-- (void)editHAUrl {
-    RCConfigManager *cm = [RCConfigManager sharedManager];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Home Assistant URL" message:@"Enter the full base URL of your Home Assistant instance:" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"http://192.168.1.100:8123";
-        tf.text = cm.haUrl;
-        tf.keyboardType = UIKeyboardTypeURL;
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        cm.haUrl = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)editHAToken {
-    RCConfigManager *cm = [RCConfigManager sharedManager];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Long-Lived Access Token" message:@"Paste the access token generated from your Home Assistant profile:" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"eyJhbGciOiJIUzI1Ni...";
-        tf.text = cm.haToken;
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        cm.haToken = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)testHAConnection {
-    RCConfigManager *cm = [RCConfigManager sharedManager];
-    if (!cm.haUrl.length || !cm.haToken.length) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Missing Configuration" message:@"Please configure Server URL and Access Token first." preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-        return;
-    }
-    
-    UIAlertController *loading = [UIAlertController alertControllerWithTitle:@"Testing Connection..." message:@"Connecting to Home Assistant..." preferredStyle:UIAlertControllerStyleAlert];
-    [self presentViewController:loading animated:YES completion:nil];
-    
-    NSString *base = cm.haUrl;
-    if ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
-    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/api/", base]];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
-    req.timeoutInterval = 6.0;
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", cm.haToken] forHTTPHeaderField:@"Authorization"];
-    
-    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration defaultSessionConfiguration];
-    sessionConfig.timeoutIntervalForRequest = 6.0;
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
-    
-    [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *res, NSError *err) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [loading dismissViewControllerAnimated:YES completion:^{
-                NSHTTPURLResponse *httpRes = (NSHTTPURLResponse *)res;
-                if (!err && httpRes.statusCode == 200) {
-                    UIAlertController *ok = [UIAlertController alertControllerWithTitle:@"Connection Successful" message:@"Connected to Home Assistant successfully!" preferredStyle:UIAlertControllerStyleAlert];
-                    [ok addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                    [self presentViewController:ok animated:YES completion:nil];
-                } else {
-                    NSString *msg = err ? err.localizedDescription : [NSString stringWithFormat:@"Server returned HTTP status %ld", (long)httpRes.statusCode];
-                    UIAlertController *fail = [UIAlertController alertControllerWithTitle:@"Connection Failed" message:msg preferredStyle:UIAlertControllerStyleAlert];
-                    [fail addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                    [self presentViewController:fail animated:YES completion:nil];
-                }
-            }];
-        });
-    }] resume];
-}
-
-- (void)editKMUrl {
-    RCConfigManager *cm = [RCConfigManager sharedManager];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Server URL" message:@"Enter the Web Server URL from Keyboard Maestro Preferences (e.g. http://192.168.1.50:4490 or https://192.168.1.30:4491):" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"http://192.168.1.50:4490";
-        tf.text = cm.kmUrl;
-        tf.keyboardType = UIKeyboardTypeURL;
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        cm.kmUrl = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)editKMUser {
-    RCConfigManager *cm = [RCConfigManager sharedManager];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Username" message:@"Enter the optional username configured in Keyboard Maestro Web Server preferences:" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"Optional";
-        tf.text = cm.kmUser;
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        cm.kmUser = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)editKMPassword {
-    RCConfigManager *cm = [RCConfigManager sharedManager];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Password" message:@"Enter the optional password configured in Keyboard Maestro Web Server preferences:" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"Optional";
-        tf.text = cm.kmPassword;
-        tf.secureTextEntry = YES;
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        cm.kmPassword = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
-- (void)testKMConnection {
-    RCConfigManager *cm = [RCConfigManager sharedManager];
-    if (!cm.kmUrl.length) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Missing Configuration" message:@"Please configure Keyboard Maestro Web Server URL first." preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-        return;
-    }
-    
-    UIAlertController *loading = [UIAlertController alertControllerWithTitle:@"Testing Connection..." message:@"Connecting to Keyboard Maestro Web Server..." preferredStyle:UIAlertControllerStyleAlert];
-    [self presentViewController:loading animated:YES completion:nil];
-    
-    NSString *base = cm.kmUrl;
-    if ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
-    
-    NSString *endpointStr;
-    if ([base containsString:@"/action.html"] || [base containsString:@"/authenticatedaction.html"]) {
-        endpointStr = base;
-    } else {
-        NSString *path = (cm.kmUser.length || cm.kmPassword.length) ? @"/authenticatedaction.html" : @"/action.html";
-        endpointStr = [NSString stringWithFormat:@"%@%@", base, path];
-    }
-    
-    NSURL *url = [NSURL URLWithString:endpointStr];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
-    req.timeoutInterval = 6.0;
-    if (cm.kmUser.length || cm.kmPassword.length) {
-        NSString *auth = [NSString stringWithFormat:@"%@:%@", cm.kmUser ?: @"", cm.kmPassword ?: @""];
-        NSString *b64 = [[auth dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
-        [req setValue:[NSString stringWithFormat:@"Basic %@", b64] forHTTPHeaderField:@"Authorization"];
-    }
-    
-    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration defaultSessionConfiguration];
-    sessionConfig.timeoutIntervalForRequest = 6.0;
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig delegate:[RCInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
-    
-    [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *res, NSError *err) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [loading dismissViewControllerAnimated:YES completion:^{
-                NSHTTPURLResponse *httpRes = (NSHTTPURLResponse *)res;
-                if (!err && ((httpRes.statusCode >= 200 && httpRes.statusCode < 400) || httpRes.statusCode == 404)) {
-                    UIAlertController *ok = [UIAlertController alertControllerWithTitle:@"Connection Successful" message:@"Connected to Keyboard Maestro Web Server successfully!" preferredStyle:UIAlertControllerStyleAlert];
-                    [ok addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                    [self presentViewController:ok animated:YES completion:nil];
-                } else {
-                    NSString *msg = err ? err.localizedDescription : (httpRes.statusCode == 401 ? @"HTTP 401: Unauthorized (Check Username / Password)" : [NSString stringWithFormat:@"Server returned HTTP status %ld", (long)httpRes.statusCode]);
-                    UIAlertController *fail = [UIAlertController alertControllerWithTitle:@"Connection Failed" message:msg preferredStyle:UIAlertControllerStyleAlert];
-                    [fail addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                    [self presentViewController:fail animated:YES completion:nil];
-                }
-            }];
-        });
-    }] resume];
-}
-
-
 
 #pragma mark - Actions
 

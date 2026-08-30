@@ -16,6 +16,15 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Location Services Toggle (GPS)**: Direct toggle and status queries across CLI (`rc location on|off|toggle`), Web UI, and hardware triggers.
 > - **Safe Mode Action & CLI**: Enter Safe Mode directly from the CLI (`rc safemode`), Web UI, or iOS companion app.
 
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#web-ui--automations-hub">Web UI Hub</a> •
+  <a href="#cli-commands--system-control">CLI Commands</a> •
+  <a href="#integrations">Integrations</a> •
+  <a href="#installation--setup">Installation</a> •
+  <a href="#developer-tools--apis">Developer Tools</a> •
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
 
 <p align="center">
   <img src="images/IMG_1514.PNG" width="160" alt="Main Interface" />
@@ -35,6 +44,8 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 - **Live Discovery**: Discovery-based live lists for nearby AirPlay and Bluetooth hardware.
 - **Trigger Favorites**: Mark any trigger as a favorite for instant access at the top of the picker.
 - **True Multitasking**: Concurrent server handling powered by GCD—zero battery drain, zero blocking.
+
+---
 
 ## Web UI & Automations Hub
 
@@ -62,22 +73,24 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - **Negligible Battery Impact**: The Web UI server is extremely efficient, consuming zero CPU cycles when idle. It uses a background thread with a blocking `accept()` loop that sits dormant until a connection is made.
 - **Configuration Management**: Import and export your entire trigger database for easy backups and migration between devices.
 
-## What you can do
+---
+
+## CLI Commands & System Control
 
 ### Media & Volume
-- `rc play` / `rc pause` / `rc playpause` / `rc next` / `rc prev`
+- `rc play` / `rc pause` / `rc playpause` / `rc next` / `rc prev` - Control media playback.
 - `rc volume 0-100` - Set volume level.
 - `rc mute [on|off|toggle|status]` - Control media mute state.
 - `rc anc [on|off|transparency]` - Control headphone ANC (requires Sonitus).
 
 ### Device Control
-- `rc lock` / `rc lock toggle`
+- `rc lock` / `rc lock toggle` - Lock the screen.
 - `rc unlock <pin>` - Wakes and unlocks the device.
-- `rc button [power|lock|home|volup|voldown|mute]` - Simulate physical buttons.
+- `rc button [power|lock|home|volup|voldown|mute]` - Simulate physical button presses.
 - `rc brightness 0-100` - Set screen brightness.
 - `rc flashlight [on|off|toggle]` - Control the torch.
 - `rc rotate [lock|unlock|toggle]` - Orientation lock control.
-- `rc appearance [dark|light|toggle]` - Set device appearance.
+- `rc appearance [dark|light|toggle]` - Set light/dark appearance.
 - `rc dnd [on|off|toggle]` - Toggle Do Not Disturb.
 - `rc low power mode [on|off|toggle]` - Toggle battery saver.
 - `rc airplane [on|off|toggle]` - Control Airplane Mode.
@@ -87,7 +100,7 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc previous app` / `rc last app` - Returns to the previously active application.
 - `rc vibration [silent-toggle|ring-toggle]` - System "Vibrate on Silent/Ring" settings.
 
-### Apps & Shortcuts
+### Apps, URLs & Shortcuts
 - `rc open <alias|bundleID>` (e.g., `youtube`, `spotify`, `settings`, `messages`, `home`, `photos`, `camera`, `clock`, `maps`, `calendar`, `weather`, `notes`, `reminders`, `appstore`, `mail`, `music`, `phone`, `stocks`, `calculator`, `tv`, `wallet`, `facetime`, `files`).
 - `rc kill <alias|bundleID>` - Force close an app.
 - `rc shortcut -r "Name" [-p "Input"]` - Run any Shortcut (requires SpringCuts).
@@ -99,28 +112,42 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc wifi [on|off|toggle]` / `rc cellular [on|off|toggle]` / `rc bluetooth [on|off|toggle]` / `rc location [on|off|toggle]`
 - `rc bluetooth [connect|disconnect] <name>` - Manage paired devices.
 - `rc airplay list` - See speakers and their UIDs.
-- `rc airplay connect <UID|Name>` / `rc airplay disconnect`
+- `rc airplay connect <UID|Name>` / `rc airplay disconnect` - Route audio output.
+
+### Text & Notifications
+- `rc type "Text"` - Type text (supports symbols).
+- `rc paste "Text"` - Paste into clipboard.
+- `rc toast "Title" ["Subtitle"] ["SF Symbol"]` - Display a HUD toast notification. *(Use single quotes if passing special characters like `!` to prevent shell history expansion).*
+- `rc key <hex>` - Specific keyboard keys (e.g., `0x04` for 'A', `0x28` for Enter).
+- `rc log` - View the RemoteCompanion server logs.
+
+### Status & Queries
+- `rc volume` - Returns current volume %.
+- `rc app` - Returns foreground app bundle ID.
+- `rc is-locked` / `rc lock status` - Returns `locked` or `unlocked`.
+- `rc player status` - Returns detailed playback state (`Playing`, `Paused`, `Stopped`, etc.).
+- `rc mute status` - Returns current media mute state and level.
+- `rc logs` - Stream live debug logs from the device (tail `/tmp/remotecommand.log`).
+- `rc vibration [silent-status|ring-status]` - Check current system vibration state.
+- `rc orientation status` - Returns `PORTRAIT` or `LANDSCAPE`.
+- `rc rotate status` - Returns orientation lock state.
+- `rc dnd status` - Returns Do Not Disturb state.
+- `rc lpm status` - Returns Low Power Mode state.
+- `rc airplane status` - Returns Airplane Mode state.
+- `rc wifi status` / `rc cellular status` / `rc bt status` / `rc location status` - Returns connectivity and GPS states.
+- `rc flashlight status` - Returns torch state.
+- `rc proximity` - Returns `near` or `far`. *(Note: iOS powers off the sensor when the screen is asleep. To test manually while the screen is awake, run `rc proximity on` to force it active, then `rc proximity off` to disable it.)*
+
+### System & Diagnostics
+- `rc uicache` - Refresh the icon cache.
+- `rc respring` - Restart SpringBoard.
+- `rc safemode` - Enter Safe Mode (tweaks disabled).
+- `rc ldrestart` - Soft-reboot the device.
+- `rc userspace-reboot` - Restart userspace.
+- `rc webui [on|off|status]` - Enable, disable, or check the status of the Web UI server.
 
 <details>
-<summary><b>Integrations (Home Assistant, Keyboard Maestro, MQTT)</b></summary>
-
-### Home Assistant
-- `rc ha toggle <entity_id>` - Toggle a Home Assistant light, switch, or entity (e.g. `rc ha toggle light.bedroom_lights`).
-- `rc ha turn_on <entity_id>` / `rc ha turn_off <entity_id>` - Turn on or off a Home Assistant entity.
-- `rc ha call <domain.service> <entity_id>` - Call any Home Assistant service (e.g. `rc ha call light.turn_on light.bedroom_lights` or `rc ha call scene.turn_on scene.movie_night`).
-- `rc ha raw <domain.service> <json_payload>` - Send custom JSON payloads to any Home Assistant service endpoint (e.g. `rc ha raw light.turn_on '{"entity_id":"light.bedroom","brightness":200}'`).
-
-### Keyboard Maestro
-- `rc km trigger <macro_name_or_uuid> [value]` - Trigger a Keyboard Maestro macro on your Mac by Name or UUID (e.g. `rc km trigger "Sleep Display"` or `rc km trigger 12345678-ABCD-EF01-2345-6789ABCDEF01 "MyParam"`).
-- `rc km url <web_trigger_url>` - Trigger a full Keyboard Maestro Web Server action URL (e.g. `rc km url "http://192.168.1.50:4490/action.html?macro=Sleep%20Display"`).
-
-### MQTT
-- `rc mqtt pub <topic> [payload]` / `rc mqtt publish <topic> [payload]` - Publish messages to an MQTT broker (e.g. `rc mqtt pub "home/livingroom/light/set" "TOGGLE"` or `rc mqtt pub "remotecompanion/device/ping"`).
-
-</details>
-
-<details>
-<summary><b>Hardware Triggers (Tweak App)</b></summary>
+<summary><b>Hardware Triggers Reference (Tweak App)</b></summary>
 
 Configure these in the `RemoteCompanion` app for custom action sequences. Tip: **Long-press** any trigger in the app to instantly test and run its assigned actions.
 
@@ -148,255 +175,47 @@ Configure these in the `RemoteCompanion` app for custom action sequences. Tip: *
 
 RemoteCompanion includes a blacklist system to prevent hardware triggers and gestures from firing while specific apps are in the foreground. This is useful for avoiding conflicts with apps that use the same buttons or gestures (e.g. games, camera apps).
 
-### CLI Commands
 Use the `rc blacklist` command to manage the list:
-
-*   `rc blacklist list`: View currently blacklisted bundle IDs.
-*   `rc blacklist add <bundleID>`: Add an app to the blacklist (e.g. `rc blacklist add com.apple.camera`).
-*   `rc blacklist remove <bundleID>`: Remove an app from the blacklist.
-*   `rc blacklist reset`: Reset the blacklist to the factory defaults.
+- `rc blacklist list`: View currently blacklisted bundle IDs.
+- `rc blacklist add <bundleID>`: Add an app to the blacklist (e.g. `rc blacklist add com.apple.camera`).
+- `rc blacklist remove <bundleID>`: Remove an app from the blacklist.
+- `rc blacklist reset`: Reset the blacklist to the factory defaults.
 
 </details>
 
-### Text & Notifications
-- `rc type "Text"` - Type text (supports symbols).
-- `rc paste "Text"` - Paste into clipboard.
-- `rc toast "Title" ["Subtitle"] ["SF Symbol"]` - Display a HUD toast notification. Note: use single quotes if passing special characters like `!` to prevent shell history expansion (e.g., `rc toast "Hello" 'World!'`).
-- `rc key <hex>` - Specific keyboard keys (e.g., `0x04` for 'A', `0x28` for Enter).
-- `rc log` - View the RemoteCompanion server logs.
-
-### Status & Queries
-Get instant feedback from your device state.
-
-- `rc volume` - Returns current volume %.
-- `rc app` - Returns foreground app bundle ID.
-- `rc is-locked` / `rc lock status` - Returns `locked` or `unlocked`.
-- `rc player status` - Returns detailed playback state (`Playing`, `Paused`, `Stopped`, etc.).
-- `rc mute status` - Returns current media mute state and level.
-- `rc logs` - Stream live debug logs from the device (tail `/tmp/remotecommand.log`).
-- `rc vibration [silent-status|ring-status]` - Check current system vibration state (CLI only).
-- `rc orientation status` - Returns `PORTRAIT` or `LANDSCAPE`.
-- `rc rotate status` - Returns orientation lock state.
-- `rc dnd status` - Returns Do Not Disturb state.
-- `rc lpm status` - Returns Low Power Mode state.
-- `rc airplane status` - Returns Airplane Mode state.
-- `rc wifi status` / `rc cellular status` / `rc bt status` / `rc location status` - Returns connectivity and GPS states.
-- `rc flashlight status` - Returns torch state.
-- `rc proximity` - Returns `near` or `far`. *(Note: iOS powers off the sensor when the screen is asleep. To test manually while the screen is awake, run `rc proximity on` to force it active, then `rc proximity off` to disable it.)*
-
 <details>
-<summary><b>Conditional Actions</b></summary>
+<summary><b>Conditional Actions & Proximity Rules</b></summary>
 
 Combine status queries with actions for smart automation:
-
 - **Pocket/Proximity-Awareness**: `If Proximity Sensor is Near (Covered / Pocket)` -> `Skip Action` (perfect for preventing accidental pocket flashlight activation).
 - **Orientation-Awareness**: `If Orientation is Landscape` -> `Flashlight Toggle`.
 - **Bluetooth/Wi-Fi State**: `If Wi-Fi is OFF` -> `Wi-Fi ON`.
+- **Time of Day**: `If Time is Between 22:00 and 07:00` -> `Do Not Disturb ON`.
 
 > [!NOTE]
 > **Proximity Sensor Cooldown**: To conserve battery, the proximity sensor is only powered on dynamically during button holds and is shut off immediately on release. Due to iOS kernel-level hardware power-gating, rapid consecutive clicks (within ~5 seconds) may temporarily bypass proximity evaluation until the sensor's hardware cooldown window resets.
 
 </details>
 
-### System & Diagnostics
-- `rc uicache` - Refresh the icon cache.
-- `rc respring` - Restart SpringBoard.
-- `rc safemode` - Enter Safe Mode (tweaks disabled).
-- `rc ldrestart` - Soft-reboot the device.
-- `rc userspace-reboot` - Restart userspace.
-- `rc webui [on|off|status]` - Enable, disable, or check the status of the Web UI server.
-
-
-
-
-## Getting Started
-
 <details>
-<summary><h3>1. Requirements</h3></summary>
+<summary><b>Integrations CLI Commands (HA, Keyboard Maestro, MQTT)</b></summary>
 
-- A **Jailbroken Device** (iOS 14+). Supports Rootless (iOS 15+), Rootful (iOS 14), and RootHide environments.
-- The `RemoteCompanion` tweak installed.
+### Home Assistant
+- `rc ha toggle <entity_id>` - Toggle a Home Assistant light, switch, or entity (e.g. `rc ha toggle light.bedroom_lights`).
+- `rc ha turn_on <entity_id>` / `rc ha turn_off <entity_id>` - Turn on or off a Home Assistant entity.
+- `rc ha call <domain.service> <entity_id>` - Call any Home Assistant service (e.g. `rc ha call light.turn_on light.bedroom_lights` or `rc ha call scene.turn_on scene.movie_night`).
+- `rc ha raw <domain.service> <json_payload>` - Send custom JSON payloads to any Home Assistant service endpoint (e.g. `rc ha raw light.turn_on '{"entity_id":"light.bedroom","brightness":200}'`).
+
+### Keyboard Maestro
+- `rc km trigger <macro_name_or_uuid> [value]` - Trigger a Keyboard Maestro macro on your Mac by Name or UUID (e.g. `rc km trigger "Sleep Display"` or `rc km trigger 12345678-ABCD-EF01-2345-6789ABCDEF01 "MyParam"`).
+- `rc km url <web_trigger_url>` - Trigger a full Keyboard Maestro Web Server action URL (e.g. `rc km url "http://192.168.1.50:4490/action.html?macro=Sleep%20Display"`).
+
+### MQTT
+- `rc mqtt pub <topic> [payload]` / `rc mqtt publish <topic> [payload]` - Publish messages to an MQTT broker (e.g. `rc mqtt pub "home/livingroom/light/set" "TOGGLE"` or `rc mqtt pub "remotecompanion/device/ping"`).
 
 </details>
 
-### 2. Installation Options
-
-#### Option 1: Repository (Recommended)
-Add `https://saihgupr.github.io/remotecompanion` to Sileo or Zebra
-
-Add to Zebra -> zbra://sources/add/https://saihgupr.github.io/remotecompanion
-
-Add to Sileo -> sileo://source/https://saihgupr.github.io/remotecompanion
-
-#### Option 2: Manual Install
-Download the `.deb` from [Releases](https://github.com/saihgupr/remotecompanion/releases).
-
-#### Option 3: Build from Source
-`cd Tweak && make package install`.
-
-<details>
-<summary><b>3. Usage Options</b></summary>
-
-Choose the control method that best fits your needs:
-
-#### Option 1: CLI (Easiest)
-Control your iPhone from your computer terminal using the `rc` script. It uses SSH to securely tunnel commands into a local UNIX socket on the device.
-
-1. Copy the script to your path:
-   ```bash
-   chmod +x rc
-   sudo cp rc /usr/local/bin/rc
-   ```
-2. Set your iPhone's IP (add this to your `~/.zshrc`):
-   ```bash
-   export RC_IPHONE_IP=iphone.local
-   ```
-3. Run the command:
-   ```bash
-   rc play
-   ```
-
-#### Option 2: SSH Direct (Secure)
-Control the device directly via SSH using the `rc` command installed on the iPhone.
-This method works even if the external "TCP Server" is disabled in settings.
-
-```bash
-ssh mobile@iphone.local "rc lock"
-ssh mobile@iphone.local "rc volume 50"
-ssh mobile@iphone.local "rc respring"
-```
-
-<details>
-<summary><h4>Option 3: Shortcuts (External Triggers)</h4></summary>
-
-Control your device using iOS Shortcuts. There are two primary ways:
-
-**A. Using Native SSH (Localhost)**
-The most reliable method without extra tweaks. Requires **OpenSSH**.
-1. Add the **Run script over SSH** action.
-2. Configure host settings:
-   - **Host**: `localhost`
-   - **Port**: `22`
-   - **User**: `mobile` (or `root`)
-   - **Password**: Your SSH password (default is `alpine`)
-3. Enter your command:
-   ```bash
-   rc flashlight toggle
-   rc dnd on
-   ```
-
-**B. Using Powercuts (Shell)**
-If you have **Powercuts** installed, you can run `rc` commands directly via shell.
-1. Add the **Run shell command** action.
-2. Enter your command:
-   ```bash
-   rc open Music
-   rc volume 50
-   ```
-
-
-</details>
-
-</details>
-
-
-## Advanced Developer Tools
-
-<details>
-<summary><b>Lua Scripting & Objective-C Bridge</b></summary>
-
-
-RemoteCompanion introduces a powerful Lua bridge that allows you to execute arbitrary Lua scripts within the tweak's process. The exact same context is available whether you run a script file from the CLI or paste code into the "Lua Script" action in the app.
-
-### How to Run
-- **From CLI**: `rc lua /path/to/script.lua`
-- **From UI**: Add Action → System → **Custom Lua Script**. Paste your code directly into the prompt.
-
-### API Bindings
-
-| Function | Description |
-| :--- | :--- |
-| `log(msg)` | Writes to the system log (syslog). |
-| `delay(seconds)` | Pauses execution for `seconds`. |
-| `haptic()` | Triggers a standard haptic feedback. |
-| `openURL(url)` | Opens a URL scheme (e.g. `prefs:root=General`). |
-| `dlopen(path)` | Loads a dynamic library. Returns `true` on success. |
-| `objc_call(target, selector, args...)` | Calls an Objective-C method. `target` can be a class name string or an instance. |
-
-### Examples
-
-**Trigger Haptic and Log**
-```lua
-log("Starting haptic engine...")
-haptic()
-delay(0.2)
-haptic()
-log("Finished haptic feedback.")
-```
-
-**Call a Class Method (get a shared instance)**
-```lua
--- objc_call(className, selector) returns an instance
-local device = objc_call("UIDevice", "currentDevice")
-if device then
-    objc_call(device, "setBatteryMonitoringEnabled:", true)
-    local level = objc_call(device, "batteryLevel")
-    log("Battery: " .. tostring(level * 100) .. "%")
-end
-```
-
-> [!NOTE]
-> `objc_call` works like standard Objective-C messaging — it does not scan memory for existing instances. To call an instance method, you first need to obtain the instance via a class-level accessor (e.g. `sharedInstance`, `currentDevice`) or by allocating a new one with `alloc`/`init`.
-
-</details>
-
-<details>
-<summary><b>AI-Assisted Sequence Builder</b></summary>
-
-Use any AI assistant (ChatGPT, Claude, Gemini, etc.) to build action sequences from plain English, then paste the result directly into the app using **Import**.
-
-**[→ Full guide + copy-paste AI prompt: SCRIPTING.md](SCRIPTING.md)**
-
-Example prompt:
-```
-Read this guide: https://github.com/saihgupr/remotecompanion/blob/main/SCRIPTING.md
-
-Using the action format defined there, create a RemoteCompanion sequence that:
-pause music, wait 2 seconds, take a screenshot, then play music again
-
-Return ONLY the raw JSON array. No explanation, no markdown, no code fences.
-```
-
-Copy the JSON output → open your trigger → tap **⋯** → **Import** → paste → **Import**.
-
-</details>
-
-<details>
-<summary><b>Automations API & HTTP Server</b></summary>
-
-Control your device from any network-connected hardware via simple HTTP calls.
-
-> [!IMPORTANT]
-> The **Web UI** toggle must be enabled in the RemoteCompanion settings (or via `rc webui on`) for the HTTP server to be active.
-
-**1. Discover Commands & Triggers:**
-Get a list of all supported system commands or your custom automation triggers:
-- Commands: `http://[device_ip]:8080/api/commands`
-- Triggers: `http://[device_ip]:8080/api/triggers`
-
-**2. Execute a System Command:**
-Send command strings via `GET` or `POST`. 
-- **Example (GET)**: `http://[device_ip]:8080/api/command?cmd=play`
-- **Example (POST)**: `curl -X POST "http://[device_ip]:8080/api/command" -d "haptic"`
-
-**3. Fire an Automation Trigger:**
-Execution URLs for your specific triggers:
-- **Example**: `http://[device_ip]:8080/api/trigger/trigger_1`
-
-#### Performance & Implementation
-*   **Speed**: The HTTP API is significantly faster than SSH (~0.1s faster) by skipping the heavy SSH handshake.
-*   **Efficiency**: The Web UI server sits in a dormant `accept()` loop, consuming **zero CPU cycles** when idle.
-</details>
+---
 
 ## Integrations
 
@@ -488,6 +307,167 @@ The background listener daemon runs inside SpringBoard with automatic 60s keep-a
 
 </details>
 
+---
+
+## Installation & Setup
+
+### 1. Requirements
+- A **Jailbroken Device** running iOS 14 through iOS 16+.
+- Compatible with **Rootless**, **Rootful**, and **RootHide** jailbreak environments (Dopamine, Palera1n, unc0ver, Taurine, XinaA15, NathanLR).
+
+### 2. Installation
+
+#### Option 1: Package Manager Repository (Recommended)
+Add `https://saihgupr.github.io/remotecompanion` to your package manager:
+- [Add to Sileo](sileo://source/https://saihgupr.github.io/remotecompanion)
+- [Add to Zebra](zbra://sources/add/https://saihgupr.github.io/remotecompanion)
+
+#### Option 2: Manual .deb Installation
+Download the latest `.deb` package from [Releases](https://github.com/saihgupr/remotecompanion/releases) and install via Sileo, Filza, or `dpkg -i`.
+
+#### Option 3: Build from Source
+```bash
+git clone https://github.com/saihgupr/remotecompanion.git
+cd remotecompanion
+./deploy.sh
+```
+
+### 3. Usage Methods
+
+#### Method A: Computer Terminal via `rc` Script (Easiest)
+Control your iPhone from your computer terminal using the included `rc` client script. It communicates over SSH into a local UNIX socket on the device:
+
+1. Copy the script to your computer's PATH:
+   ```bash
+   chmod +x rc
+   sudo cp rc /usr/local/bin/rc
+   ```
+2. Set your iPhone's IP or hostname in your shell profile (e.g., `~/.zshrc`):
+   ```bash
+   export RC_IPHONE_IP=iphone.local
+   ```
+3. Run any command:
+   ```bash
+   rc play
+   rc volume 50
+   rc flashlight toggle
+   ```
+
+#### Method B: Direct SSH
+Run commands directly on the iPhone over SSH:
+```bash
+ssh mobile@iphone.local "rc lock"
+ssh mobile@iphone.local "rc volume 50"
+ssh mobile@iphone.local "rc respring"
+```
+
+#### Method C: iOS Shortcuts
+Trigger RemoteCompanion commands inside iOS Shortcuts automations:
+- **Native SSH Action**: Add the **Run script over SSH** action in Shortcuts (`Host: localhost`, `Port: 22`, `User: mobile`, `Script: rc flashlight toggle`).
+- **Powercuts Action**: If you have **Powercuts** installed, add **Run shell command** with `rc open Music`.
+
+---
+
+## Developer Tools & APIs
+
+<details>
+<summary><b>Lua Scripting & Objective-C Bridge</b></summary>
+
+RemoteCompanion introduces a powerful Lua bridge that allows you to execute arbitrary Lua scripts within the tweak's process. The exact same context is available whether you run a script file from the CLI or paste code into the "Lua Script" action in the app.
+
+### How to Run
+- **From CLI**: `rc lua /path/to/script.lua`
+- **From UI**: Add Action → System → **Custom Lua Script**. Paste your code directly into the prompt.
+
+### API Bindings
+
+| Function | Description |
+| :--- | :--- |
+| `log(msg)` | Writes to the system log (syslog). |
+| `delay(seconds)` | Pauses execution for `seconds`. |
+| `haptic()` | Triggers a standard haptic feedback. |
+| `openURL(url)` | Opens a URL scheme (e.g. `prefs:root=General`). |
+| `dlopen(path)` | Loads a dynamic library. Returns `true` on success. |
+| `objc_call(target, selector, args...)` | Calls an Objective-C method. `target` can be a class name string or an instance. |
+
+### Examples
+
+**Trigger Haptic and Log**
+```lua
+log("Starting haptic engine...")
+haptic()
+delay(0.2)
+haptic()
+log("Finished haptic feedback.")
+```
+
+**Call a Class Method (get a shared instance)**
+```lua
+-- objc_call(className, selector) returns an instance
+local device = objc_call("UIDevice", "currentDevice")
+if device then
+    objc_call(device, "setBatteryMonitoringEnabled:", true)
+    local level = objc_call(device, "batteryLevel")
+    log("Battery: " .. tostring(level * 100) .. "%")
+end
+```
+
+> [!NOTE]
+> `objc_call` works like standard Objective-C messaging — it does not scan memory for existing instances. To call an instance method, you first need to obtain the instance via a class-level accessor (e.g. `sharedInstance`, `currentDevice`) or by allocating a new one with `alloc`/`init`.
+
+</details>
+
+<details>
+<summary><b>AI-Assisted Sequence Builder</b></summary>
+
+Use any AI assistant (ChatGPT, Claude, Gemini, etc.) to build action sequences from plain English, then paste the result directly into the app using **Import**.
+
+**[→ Full guide + copy-paste AI prompt: SCRIPTING.md](SCRIPTING.md)**
+
+Example prompt:
+```
+Read this guide: https://github.com/saihgupr/remotecompanion/blob/main/SCRIPTING.md
+
+Using the action format defined there, create a RemoteCompanion sequence that:
+pause music, wait 2 seconds, take a screenshot, then play music again
+
+Return ONLY the raw JSON array. No explanation, no markdown, no code fences.
+```
+
+Copy the JSON output → open your trigger → tap **⋯** → **Import** → paste → **Import**.
+
+</details>
+
+<details>
+<summary><b>Automations API & HTTP REST Server</b></summary>
+
+Control your device from any network-connected hardware via simple HTTP calls.
+
+> [!IMPORTANT]
+> The **Web UI** toggle must be enabled in the RemoteCompanion settings (or via `rc webui on`) for the HTTP server to be active.
+
+**1. Discover Commands & Triggers:**
+Get a list of all supported system commands or your custom automation triggers:
+- Commands: `http://[device_ip]:8080/api/commands`
+- Triggers: `http://[device_ip]:8080/api/triggers`
+
+**2. Execute a System Command:**
+Send command strings via `GET` or `POST`:
+- **Example (GET)**: `http://[device_ip]:8080/api/command?cmd=play`
+- **Example (POST)**: `curl -X POST "http://[device_ip]:8080/api/command" -d "haptic"`
+
+**3. Fire an Automation Trigger:**
+Execution URLs for your specific triggers:
+- **Example**: `http://[device_ip]:8080/api/trigger/trigger_1`
+
+#### Performance & Implementation
+* **Speed**: The HTTP API is significantly faster than SSH (~0.1s faster) by skipping the heavy SSH handshake.
+* **Efficiency**: The Web UI server sits in a dormant `accept()` loop, consuming **zero CPU cycles** when idle.
+
+</details>
+
+---
+
 ## Security
 
 RemoteCompanion implements several measures to ensure your device remains secure:
@@ -495,7 +475,9 @@ RemoteCompanion implements several measures to ensure your device remains secure
 - **Local Execution**: Local apps and the `rc` CLI communicate securely via a local UNIX socket file, ensuring zero network exposure.
 - **Web UI & Automations API**: When enabled, the Automations Hub server transmits data in **plain-text** over your local network. No authentication is required for API access. It is **highly recommended** to only enable the Web UI on trusted, private networks.
 
-<details>
+---
+
+<details id="troubleshooting">
 <summary><h2>Troubleshooting</h2></summary>
 
 ### Apple Pay Issues
@@ -513,9 +495,10 @@ Due to Pointer Authentication Code (PAC) changes in modern toolchains, iOS 14 on
 
 </details>
 
+---
 
 ## Support & Feedback
 
 If you encounter any issues or have feature requests, please [open an issue](https://github.com/saihgupr/remotecompanion/issues) on GitHub.
 
-RemoteCompanion is open-source and free. If you find it useful, consider giving it a star on GitHub or making a [donation](https://ko-fi.com/saihgupr) to support development.
+RemoteCompanion is open-source and free. If you find it useful, consider giving it a star on GitHub or making a small [donation](https://ko-fi.com/saihgupr) to support development.

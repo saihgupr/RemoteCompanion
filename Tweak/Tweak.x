@@ -7948,11 +7948,14 @@ static void start_web_server() {
                                 if (![g_triggerConfig[@"webUIEnabled"] boolValue]) {
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 403 Forbidden\r\n%@Content-Length: 17\r\n\r\nWeb UI is disabled", cors];
                                 } else {
-                                    NSString *htmlPath = @"/Library/Application Support/RemoteCompanion/rc_webui.html";
+                                    NSString *htmlPath = [NSString stringWithFormat:@"%@/Library/Application Support/RemoteCompanion/rc_webui.html", root_prefix()];
                                     NSString *html = [NSString stringWithContentsOfFile:htmlPath encoding:NSUTF8StringEncoding error:nil];
                                     if (!html) {
                                         NSString *rootlessPath = @"/var/jb/Library/Application Support/RemoteCompanion/rc_webui.html";
                                         html = [NSString stringWithContentsOfFile:rootlessPath encoding:NSUTF8StringEncoding error:nil];
+                                    }
+                                    if (!html) {
+                                        html = [NSString stringWithContentsOfFile:@"/Library/Application Support/RemoteCompanion/rc_webui.html" encoding:NSUTF8StringEncoding error:nil];
                                     }
                                     if (!html) {
                                         html = @"<html><body><h1>RemoteCompanion WebUI</h1><p>rc_webui.html not found. Please reinstall the tweak.</p></body></html>";
@@ -7962,10 +7965,14 @@ static void start_web_server() {
                                 }
                             } else if ([path isEqualToString:@"/favicon.ico"] || [path isEqualToString:@"/apple-touch-icon.png"] || [path hasPrefix:@"/favicon-"] || [path hasPrefix:@"/android-chrome-"] || [path isEqualToString:@"/site.webmanifest"]) {
                                 NSString *filename = [path lastPathComponent];
-                                NSString *assetPath = [NSString stringWithFormat:@"/Library/Application Support/RemoteCompanion/%@", filename];
+                                NSString *assetPath = [NSString stringWithFormat:@"%@/Library/Application Support/RemoteCompanion/%@", root_prefix(), filename];
                                 NSData *assetData = [NSData dataWithContentsOfFile:assetPath];
                                 if (!assetData) {
                                     assetPath = [NSString stringWithFormat:@"/var/jb/Library/Application Support/RemoteCompanion/%@", filename];
+                                    assetData = [NSData dataWithContentsOfFile:assetPath];
+                                }
+                                if (!assetData) {
+                                    assetPath = [NSString stringWithFormat:@"/Library/Application Support/RemoteCompanion/%@", filename];
                                     assetData = [NSData dataWithContentsOfFile:assetPath];
                                 }
                                 

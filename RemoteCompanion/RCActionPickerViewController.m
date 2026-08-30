@@ -2,6 +2,7 @@
 #import "RCServerClient.h"
 #import "RCConfigManager.h"
 #import "RCHAEntityPickerViewController.h"
+#import "RCKMMacroPickerViewController.h"
 
 @interface RCActionPickerViewController () <UISearchResultsUpdating>
 @property (nonatomic, strong) NSArray<NSString *> *sectionTitles;
@@ -880,32 +881,11 @@
 }
 
 - (void)handleKMTrigger {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Keyboard Maestro Macro"
-                                                                   message:@"Enter Macro Name or UUID (and optional trigger value):"
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"Macro Name or UUID (e.g. Sleep Display)";
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"Trigger Value / Parameter (optional)";
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *macro = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        NSString *val = [alert.textFields[1].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (!macro.length) return;
-        
-        NSString *cmd;
-        if (val.length) {
-            cmd = [NSString stringWithFormat:@"km trigger %@ %@", macro, val];
-        } else {
-            cmd = [NSString stringWithFormat:@"km trigger %@", macro];
+    RCKMMacroPickerViewController *picker = [[RCKMMacroPickerViewController alloc] init];
+    picker.onMacroSelected = ^(NSString *cmd) {
+        if (self.onActionSelected) {
+            self.onActionSelected(cmd);
         }
-        if (self.onActionSelected) self.onActionSelected(cmd);
         if (self.searchController.isActive) {
             [self.searchController dismissViewControllerAnimated:NO completion:^{
                 [self dismissViewControllerAnimated:YES completion:nil];
@@ -913,8 +893,8 @@
         } else {
             [self dismissViewControllerAnimated:YES completion:nil];
         }
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
+    };
+    [self.navigationController pushViewController:picker animated:YES];
 }
 
 @end

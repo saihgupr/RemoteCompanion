@@ -4425,6 +4425,8 @@ function editAction(idx) {
         actions[idx] = `brightness ${val}`;
         saveConfig(); renderActionList();
       }, true);
+    } else if (low.startsWith('km ') || low === 'km') {
+      openKMDialog(idx);
     }
   }
 }
@@ -4939,8 +4941,10 @@ async function testKMConnection() {
 
 let cachedKMMacros = null;
 let kmGroupCollapsedState = {};
+let g_kmEditIdx = null;
 
-async function openKMDialog() {
+async function openKMDialog(editIdx = null) {
+  g_kmEditIdx = (editIdx !== null && typeof editIdx === 'number') ? editIdx : null;
   document.getElementById('km-picker-search').value = '';
   document.getElementById('km-dialog-backdrop').classList.add('visible');
   
@@ -4967,6 +4971,20 @@ async function openKMDialog() {
 
 function closeKMDialog() {
   document.getElementById('km-dialog-backdrop').classList.remove('visible');
+  g_kmEditIdx = null;
+}
+
+function saveKMActionCmd(cmd, toastName) {
+  if (g_kmEditIdx !== null) {
+    const actions = triggerData(currentKey).actions || [];
+    actions[g_kmEditIdx] = cmd;
+    saveConfig();
+    renderActionList();
+    showToast(`✓ Updated KM: ${toastName}`);
+  } else {
+    addActionToCurrent(cmd);
+    showToast(`✓ Added KM: ${toastName}`);
+  }
 }
 
 async function fetchKMMacros(isRefresh = false) {
@@ -5157,34 +5175,30 @@ function filterKMList() {
 function selectKMMacro(macro) {
   showSheet(`Keyboard Maestro: ${macro.name}`, [
     {
-      label: 'Add Trigger (No Parameter)',
+      label: 'Trigger (No Parameter)',
       action: () => {
         closeKMDialog();
-        addActionToCurrent(`km trigger "${macro.name}"`);
-        showToast(`✓ Added KM: ${macro.name}`);
+        saveKMActionCmd(`km trigger "${macro.name}"`, macro.name);
       }
     },
     {
-      label: 'Add Trigger with Parameter…',
+      label: 'Trigger with Parameter…',
       action: () => {
         closeKMDialog();
-        showDialog(`Trigger: ${macro.name}`, 'Optional trigger parameter / value (%TriggerValue%):', '', 'Add', val => {
+        showDialog(`Trigger: ${macro.name}`, 'Optional trigger parameter / value (%TriggerValue%):', '', 'Save', val => {
           if (val && val.trim()) {
-            addActionToCurrent(`km trigger "${macro.name}" "${val.trim()}"`);
-            showToast(`✓ Added KM: ${macro.name} (${val.trim()})`);
+            saveKMActionCmd(`km trigger "${macro.name}" "${val.trim()}"`, `${macro.name} (${val.trim()})`);
           } else {
-            addActionToCurrent(`km trigger "${macro.name}"`);
-            showToast(`✓ Added KM: ${macro.name}`);
+            saveKMActionCmd(`km trigger "${macro.name}"`, macro.name);
           }
         });
       }
     },
     {
-      label: 'Add by UUID (Permanent ID)',
+      label: 'Trigger by UUID (Permanent ID)',
       action: () => {
         closeKMDialog();
-        addActionToCurrent(`km trigger ${macro.uid}`);
-        showToast(`✓ Added KM: ${macro.name}`);
+        saveKMActionCmd(`km trigger ${macro.uid}`, macro.name);
       }
     }
   ]);
@@ -5192,14 +5206,13 @@ function selectKMMacro(macro) {
 
 function promptManualKMAction() {
   closeKMDialog();
-  showDialog('Keyboard Maestro Action', 'Enter Macro Name or UUID (and optional value):', '', 'Add', val => {
+  showDialog('Keyboard Maestro Action', 'Enter Macro Name or UUID (and optional value):', '', 'Save', val => {
     if (val && val.trim()) {
       let clean = val.trim();
       if (!clean.startsWith('km ') && !clean.startsWith('km\n') && clean !== 'km') {
         clean = `km trigger ${clean}`;
       }
-      addActionToCurrent(clean);
-      showToast(`✓ Added KM: ${clean}`);
+      saveKMActionCmd(clean, clean);
     }
   });
 }

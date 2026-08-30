@@ -3,12 +3,13 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.6.0**
-> - **Safe Mode Action & CLI**: Enter Safe Mode directly from the CLI (`rc safemode`), Web UI (Action Picker & Quick Maintenance panel in System Info), or iOS companion app. Safely restarts SpringBoard with tweaks disabled using Substrate/ElleKit exception triggering and marker flags.
-> - **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`), HTTP Basic Authentication, and self-signed SSL certificates.
-> - **Native iOS Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
-> - **Nested Integrations Hub & Accordion Settings**: Dedicated multi-level Integrations sub-menu in Settings (`Settings` &rarr; `Integrations`) with fluid accordion expand/collapse animations for Home Assistant and Keyboard Maestro configuration details.
-> - **CLI & Automations API**: Full support via CLI (`rc km trigger <macro>`) and REST endpoints (`/api/km/test` and `/api/km/trigger`).
+> **What’s New in v3.6.1**
+> - **Visual Keyboard Maestro Macro Selector**: Browse and search all macros organized by Macro Group directly in both the Web UI and native iOS App (`RCKMMacroPickerViewController`). Includes live search, item counts, pull-to-refresh, and manual entry fallback.
+> - **Automatic Macro Name & UUID Resolution**: Seamless execution backend with automatic name-to-UUID resolution and dual-tier fallback (`/authenticatedaction.html` & `/action.html`), ensuring any macro triggers reliably even without public web triggers.
+> - **In-App KM Parameter Management**: Tap or long-press any Keyboard Maestro action in an action sequence to edit/remove `%TriggerValue%` parameters, change macros, or test execution instantly.
+> - **Restored Toast Icons & Exact Case Preservation**: Keyboard Maestro executions display dedicated `command` SF symbol HUD toasts, and macro titles preserve their original uppercase/lowercase naming across all lists.
+> - **Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, and quick action sheets (Toggle, Turn On, Turn Off).
+> - **Safe Mode Action & CLI**: Enter Safe Mode directly from the CLI (`rc safemode`), Web UI, or iOS companion app.
 
 
 <p align="center">
@@ -436,8 +437,9 @@ Trigger macros on your Mac directly from iPhone hardware gestures, buttons, NFC 
 6. Click **Test Connection** to verify connectivity.
 
 Once configured:
-- Use **Trigger Macro…** in any action sequence to trigger macros by Name or UUID (with optional trigger parameter value).
-- Execute KM commands directly via CLI: `rc km trigger "Sleep Display"` or `rc km "My Macro Name"`.
+- **Visual Macro Picker**: Open **Keyboard Maestro: Trigger Macro…** in the action picker to browse and search all macros categorized by group, with instant live filtering and parameter selection.
+- **Parameter Support**: Tapping or long-pressing any KM action in an action sequence allows you to edit or remove its `%TriggerValue%` parameter, test execution immediately, or switch to a different macro.
+- **CLI & Scripts**: Execute KM commands directly via CLI: `rc km trigger "Sleep Display"` or `rc km "My Macro Name" "Optional Value"`.
 
 </details>
 

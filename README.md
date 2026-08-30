@@ -4,13 +4,16 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 
 > [!IMPORTANT]
 > **What’s New in v3.6.0**
-> - **Native MQTT 3.1.1 Integration**: Complete publish & subscribe MQTT support across the full stack. Publish messages from gestures or hardware triggers, and subscribe to broker topics via the new **MQTT Topic** trigger (`RCMQTTTriggerViewController`) to fire local action sequences on incoming messages with near-zero battery impact.
-> - **Nested Integrations Hub**: Structured multi-level Settings menu (`RCIntegrationsViewController`) organizing **Home Assistant**, **Keyboard Maestro**, and **MQTT** into dedicated sub-screens.
-> - **Visual Keyboard Maestro Macro Selector**: Browse and search all macros organized by Macro Group directly in both the Web UI and native iOS App (`RCKMMacroPickerViewController`). Includes live search, item counts, pull-to-refresh, and manual entry fallback.
-> - **Automatic Macro Name & UUID Resolution**: Seamless execution backend with automatic name-to-UUID resolution and dual-tier fallback (`/authenticatedaction.html` & `/action.html`), ensuring any macro triggers reliably even without public web triggers.
-> - **In-App KM Parameter Management**: Tap or long-press any Keyboard Maestro action in an action sequence to edit/remove `%TriggerValue%` parameters, change macros, or test execution instantly.
-> - **Restored Toast Icons & Exact Case Preservation**: Keyboard Maestro executions display dedicated `command` SF symbol HUD toasts, and macro titles preserve their original uppercase/lowercase naming across all lists.
-> - **Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, and quick action sheets (Toggle, Turn On, Turn Off).
+> - **Integrations Hub**: Dedicated Settings sub-menu organizing external services into modular configuration screens:
+>   - **Home Assistant**: Full-screen entity browser with live states, quick action sheets (Toggle, Turn On, Turn Off), and remote API control.
+>   - **Keyboard Maestro**: Visual macro picker with group browsing, search, `%TriggerValue%` parameter editing, and automatic UUID resolution.
+>   - **MQTT (Pub / Sub)**: Lightweight local broker client to publish from hardware triggers and subscribe to topics for inbound iOS action sequences.
+> - **Camera & Video Recording Automation**:
+>   - Automated video recording modes (start/stop recording, auto-switch to video capture mode with custom zoom, flash, and camera selection).
+>   - **Lock Screen Camera Launch Trigger**: Inter-process notification bridging between `com.apple.camera` and `SpringBoard` so camera launch triggers fire reliably even when opened from the Lock Screen / CoverSheet.
+> - **Time of Day Condition Target (`time_between`)**: Native conditional time evaluation (`If Time is Between ...`) allowing automation sequences to branch based on 12-hour AM/PM or 24-hour time ranges.
+> - **Action Disable / Enable**: Easily disable and enable individual actions within an action sequence without deleting them.
+> - **Location Services Toggle (GPS)**: Direct toggle and status queries across CLI (`rc location on|off|toggle`), Web UI, and hardware triggers.
 > - **Safe Mode Action & CLI**: Enter Safe Mode directly from the CLI (`rc safemode`), Web UI, or iOS companion app.
 
 
@@ -98,18 +101,23 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc airplay list` - See speakers and their UIDs.
 - `rc airplay connect <UID|Name>` / `rc airplay disconnect`
 
-### Home Assistant Integration
+<details>
+<summary><b>Integrations (Home Assistant, Keyboard Maestro, MQTT)</b></summary>
+
+### Home Assistant
 - `rc ha toggle <entity_id>` - Toggle a Home Assistant light, switch, or entity (e.g. `rc ha toggle light.bedroom_lights`).
 - `rc ha turn_on <entity_id>` / `rc ha turn_off <entity_id>` - Turn on or off a Home Assistant entity.
 - `rc ha call <domain.service> <entity_id>` - Call any Home Assistant service (e.g. `rc ha call light.turn_on light.bedroom_lights` or `rc ha call scene.turn_on scene.movie_night`).
 - `rc ha raw <domain.service> <json_payload>` - Send custom JSON payloads to any Home Assistant service endpoint (e.g. `rc ha raw light.turn_on '{"entity_id":"light.bedroom","brightness":200}'`).
 
-### Keyboard Maestro Integration
+### Keyboard Maestro
 - `rc km trigger <macro_name_or_uuid> [value]` - Trigger a Keyboard Maestro macro on your Mac by Name or UUID (e.g. `rc km trigger "Sleep Display"` or `rc km trigger 12345678-ABCD-EF01-2345-6789ABCDEF01 "MyParam"`).
 - `rc km url <web_trigger_url>` - Trigger a full Keyboard Maestro Web Server action URL (e.g. `rc km url "http://192.168.1.50:4490/action.html?macro=Sleep%20Display"`).
 
-### MQTT Integration
+### MQTT
 - `rc mqtt pub <topic> [payload]` / `rc mqtt publish <topic> [payload]` - Publish messages to an MQTT broker (e.g. `rc mqtt pub "home/livingroom/light/set" "TOGGLE"` or `rc mqtt pub "remotecompanion/device/ping"`).
+
+</details>
 
 <details>
 <summary><b>Hardware Triggers (Tweak App)</b></summary>

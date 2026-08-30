@@ -7,7 +7,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Safe Mode Action & CLI**: Enter Safe Mode directly from the CLI (`rc safemode`), Web UI (Action Picker & Quick Maintenance panel in System Info), or iOS companion app. Safely restarts SpringBoard with tweaks disabled using Substrate/ElleKit exception triggering and marker flags.
 > - **Keyboard Maestro Integration**: Trigger macros directly on your Mac from physical hardware gestures, NFC tags, or action sequences. Supports triggering macros by Name or UUID (`km trigger <macro> [val]`), HTTP Basic Authentication, and self-signed SSL certificates.
 > - **Native iOS Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
-> - **Integrations Settings & Dynamic Action Filtering**: Unified Integrations section in Settings for Home Assistant and Keyboard Maestro with live connection testing. The action picker dynamically only displays actions for enabled integrations.
+> - **Nested Integrations Hub & Accordion Settings**: Dedicated multi-level Integrations sub-menu in Settings (`Settings` &rarr; `Integrations`) with fluid accordion expand/collapse animations for Home Assistant and Keyboard Maestro configuration details.
 > - **CLI & Automations API**: Full support via CLI (`rc km trigger <macro>`) and REST endpoints (`/api/km/test` and `/api/km/trigger`).
 
 
@@ -391,8 +391,8 @@ Execution URLs for your specific triggers:
 
 Enable two-way automation between your iOS device and Home Assistant:
 
-1. In the Web UI or iOS App, go to **Settings** &rarr; **Integrations**.
-2. Toggle on **Home Assistant**.
+1. In the Web UI or iOS App, go to **Settings** &rarr; **Integrations** &rarr; **Home Assistant**.
+2. Toggle on **Enable Home Assistant**.
 3. Enter your **Server URL** (e.g., `http://192.168.1.100:8123`) and a **Long-Lived Access Token** (generated under your Home Assistant Profile &rarr; Long-Lived Access Tokens).
 4. Click **Test Connection** to verify setup.
 
@@ -430,8 +430,8 @@ Trigger macros on your Mac directly from iPhone hardware gestures, buttons, NFC 
 
 1. In Keyboard Maestro on your Mac, open **Preferences** &rarr; **Web Server** and check **Enable Web Server**.
 2. Note your Mac's IP address and Port (default: `4490`), and set a Username/Password if desired.
-3. In the RemoteCompanion Web UI or iOS App, go to **Settings** &rarr; **Integrations**.
-4. Toggle on **Keyboard Maestro**.
+3. In the RemoteCompanion Web UI or iOS App, go to **Settings** &rarr; **Integrations** &rarr; **Keyboard Maestro**.
+4. Toggle on **Enable Keyboard Maestro**.
 5. Enter your **Web Server URL** (e.g., `http://192.168.1.50:4490`) and optional **Username** and **Password** (supports HTTP Basic Authentication).
 6. Click **Test Connection** to verify connectivity.
 

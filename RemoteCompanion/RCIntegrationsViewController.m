@@ -88,7 +88,7 @@
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    return @"Configure external service integrations to trigger actions and control smart home or Mac automation.";
+    return @"Configure external service integrations to trigger actions and control third-party automations.";
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {

@@ -162,7 +162,7 @@
     if (section == 0) {
         return nil;
     } else if (section == 1) {
-        return @"Configure connections to Home Assistant and Keyboard Maestro.";
+        return @"Configure connections to external services and automations.";
     } else if (section == 2) {
         return @"Export your configuration to share or backup. Import to restore.";
     }

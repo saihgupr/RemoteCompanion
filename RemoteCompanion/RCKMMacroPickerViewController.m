@@ -387,7 +387,8 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
                                                             preferredStyle:UIAlertControllerStyleActionSheet];
     
     [sheet addAction:[UIAlertAction actionWithTitle:@"Trigger (No Parameter)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *cmd = [NSString stringWithFormat:@"km trigger \"%@\"", macroName];
+        NSString *target = macroUid.length > 0 ? macroUid : [NSString stringWithFormat:@"\"%@\"", macroName];
+        NSString *cmd = [NSString stringWithFormat:@"km trigger %@", target];
         if (self.onMacroSelected) self.onMacroSelected(cmd);
         [self.navigationController popViewControllerAnimated:YES];
     }]];
@@ -404,22 +405,17 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
         [paramAlert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
         [paramAlert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *pAction) {
             NSString *val = [paramAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            NSString *target = macroUid.length > 0 ? macroUid : [NSString stringWithFormat:@"\"%@\"", macroName];
             NSString *cmd;
             if (val.length > 0) {
-                cmd = [NSString stringWithFormat:@"km trigger \"%@\" \"%@\"", macroName, val];
+                cmd = [NSString stringWithFormat:@"km trigger %@ \"%@\"", target, val];
             } else {
-                cmd = [NSString stringWithFormat:@"km trigger \"%@\"", macroName];
+                cmd = [NSString stringWithFormat:@"km trigger %@", target];
             }
             if (self.onMacroSelected) self.onMacroSelected(cmd);
             [self.navigationController popViewControllerAnimated:YES];
         }]];
         [self presentViewController:paramAlert animated:YES completion:nil];
-    }]];
-    
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Trigger by UUID (Permanent ID)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *cmd = [NSString stringWithFormat:@"km trigger %@", macroUid];
-        if (self.onMacroSelected) self.onMacroSelected(cmd);
-        [self.navigationController popViewControllerAnimated:YES];
     }]];
     
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];

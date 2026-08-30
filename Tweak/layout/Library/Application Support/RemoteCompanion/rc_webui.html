@@ -5374,11 +5374,12 @@ function filterKMList() {
 
 function selectKMMacro(macro) {
   closeKMDialog();
+  const target = macro.uid || `"${macro.name}"`;
   showSheet(`Keyboard Maestro: ${macro.name}`, [
     {
       label: 'Trigger (No Parameter)',
       action: () => {
-        saveKMActionCmd(`km trigger "${macro.name}"`, macro.name);
+        saveKMActionCmd(`km trigger ${target}`, macro.name);
       }
     },
     {
@@ -5386,17 +5387,11 @@ function selectKMMacro(macro) {
       action: () => {
         showDialog(`Trigger: ${macro.name}`, 'Optional trigger parameter / value (%TriggerValue%):', '', 'Save', val => {
           if (val && val.trim()) {
-            saveKMActionCmd(`km trigger "${macro.name}" "${val.trim()}"`, `${macro.name} (${val.trim()})`);
+            saveKMActionCmd(`km trigger ${target} "${val.trim()}"`, `${macro.name} (${val.trim()})`);
           } else {
-            saveKMActionCmd(`km trigger "${macro.name}"`, macro.name);
+            saveKMActionCmd(`km trigger ${target}`, macro.name);
           }
         });
-      }
-    },
-    {
-      label: 'Trigger by UUID (Permanent ID)',
-      action: () => {
-        saveKMActionCmd(`km trigger ${macro.uid}`, macro.name);
       }
     }
   ]);

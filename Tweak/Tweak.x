@@ -4532,16 +4532,27 @@ static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *htt
     }
     
     NSString *fullUrlStr = nil;
-    if ([baseUrl containsString:@"/action.html"] || [baseUrl containsString:@"/authenticatedaction.html"]) {
-        fullUrlStr = baseUrl;
-    } else {
-        NSString *ep = endpointPath;
-        if (!ep || ep.length == 0) {
-            ep = (user.length > 0 || pass.length > 0) ? @"/authenticatedaction.html" : @"/action.html";
+    if (endpointPath.length > 0) {
+        NSString *cleanedBase = baseUrl;
+        if ([cleanedBase hasSuffix:@"/action.html"]) {
+            cleanedBase = [cleanedBase substringToIndex:cleanedBase.length - 12];
+        } else if ([cleanedBase hasSuffix:@"/authenticatedaction.html"]) {
+            cleanedBase = [cleanedBase substringToIndex:cleanedBase.length - 25];
+        } else if ([cleanedBase hasSuffix:@"/authenticated.html"]) {
+            cleanedBase = [cleanedBase substringToIndex:cleanedBase.length - 19];
         }
+        if ([cleanedBase hasSuffix:@"/"]) {
+            cleanedBase = [cleanedBase substringToIndex:cleanedBase.length - 1];
+        }
+        NSString *ep = endpointPath;
         if (![ep hasPrefix:@"/"] && ![ep hasPrefix:@"?"]) {
             ep = [NSString stringWithFormat:@"/%@", ep];
         }
+        fullUrlStr = [NSString stringWithFormat:@"%@%@", cleanedBase, ep];
+    } else if ([baseUrl containsString:@"/action.html"] || [baseUrl containsString:@"/authenticatedaction.html"]) {
+        fullUrlStr = baseUrl;
+    } else {
+        NSString *ep = (user.length > 0 || pass.length > 0) ? @"/authenticatedaction.html" : @"/action.html";
         fullUrlStr = [NSString stringWithFormat:@"%@%@", baseUrl, ep];
     }
     
@@ -4622,6 +4633,95 @@ static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *htt
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC));
     
     return resultDict ?: @{@"ok": @NO, @"error": @"Request timed out"};
+}
+
+static NSString *rc_decode_html_entities(NSString *str) {
+    if (!str) return @"";
+    NSString *decoded = [str stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&quot;" withString:@"\""];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&#39;" withString:@"'"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&apos;" withString:@"'"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&lt;" withString:@"<"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&gt;" withString:@">"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&nbsp;" withString:@" "];
+    return decoded;
+}
+
+static NSArray<NSDictionary *> *rc_parse_km_html(NSString *html) {
+    if (!html || html.length == 0) return @[];
+    
+    NSMutableDictionary<NSString *, NSMutableDictionary *> *groupsMap = [NSMutableDictionary dictionary];
+    NSMutableArray<NSString *> *groupOrder = [NSMutableArray array];
+    
+    NSRegularExpression *optgroupRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)<optgroup\\s+[^>]*label=\"([^\"]+)\"[^>]*>([\\s\\S]*?)(?:</optgroup>|(?=<optgroup)|$)" options:0 error:nil];
+    NSRegularExpression *optionRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)<option\\b([^>]+)>" options:0 error:nil];
+    NSRegularExpression *labelAttrRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)\\blabel=\"([^\"]+)\"" options:0 error:nil];
+    NSRegularExpression *valueAttrRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)\\bvalue=\"([^\"]+)\"" options:0 error:nil];
+    
+    NSArray<NSTextCheckingResult *> *groupMatches = [optgroupRegex matchesInString:html options:0 range:NSMakeRange(0, html.length)];
+    for (NSTextCheckingResult *gMatch in groupMatches) {
+        if (gMatch.numberOfRanges < 3) continue;
+        NSString *rawGroupName = [html substringWithRange:[gMatch rangeAtIndex:1]];
+        NSString *groupName = rc_decode_html_entities([rawGroupName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]);
+        if (groupName.length == 0) continue;
+        
+        NSRange contentRange = [gMatch rangeAtIndex:2];
+        if (contentRange.location == NSNotFound || contentRange.length == 0) continue;
+        NSString *groupContent = [html substringWithRange:contentRange];
+        
+        NSMutableArray *macros = [NSMutableArray array];
+        NSArray<NSTextCheckingResult *> *optMatches = [optionRegex matchesInString:groupContent options:0 range:NSMakeRange(0, groupContent.length)];
+        for (NSTextCheckingResult *oMatch in optMatches) {
+            NSString *tagAttrs = [groupContent substringWithRange:[oMatch rangeAtIndex:1]];
+            
+            NSTextCheckingResult *lMatch = [labelAttrRegex firstMatchInString:tagAttrs options:0 range:NSMakeRange(0, tagAttrs.length)];
+            NSTextCheckingResult *vMatch = [valueAttrRegex firstMatchInString:tagAttrs options:0 range:NSMakeRange(0, tagAttrs.length)];
+            
+            if (lMatch && lMatch.numberOfRanges >= 2 && vMatch && vMatch.numberOfRanges >= 2) {
+                NSString *macroName = rc_decode_html_entities([[tagAttrs substringWithRange:[lMatch rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]);
+                NSString *macroUid = [[tagAttrs substringWithRange:[vMatch rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (macroName.length > 0 && macroUid.length > 0) {
+                    [macros addObject:@{
+                        @"name": macroName,
+                        @"uid": macroUid
+                    }];
+                }
+            }
+        }
+        
+        if (macros.count == 0) continue;
+        
+        NSString *groupKey = [groupName lowercaseString];
+        NSMutableDictionary *existingGroup = groupsMap[groupKey];
+        if (existingGroup) {
+            NSMutableArray *existingMacros = existingGroup[@"macros"];
+            NSMutableSet *existingUids = [NSMutableSet set];
+            for (NSDictionary *m in existingMacros) {
+                if (m[@"uid"]) [existingUids addObject:m[@"uid"]];
+            }
+            for (NSDictionary *m in macros) {
+                if (![existingUids containsObject:m[@"uid"]]) {
+                    [existingMacros addObject:m];
+                    [existingUids addObject:m[@"uid"]];
+                }
+            }
+        } else {
+            NSMutableDictionary *newGroup = [NSMutableDictionary dictionaryWithDictionary:@{
+                @"name": groupName,
+                @"macros": macros
+            }];
+            groupsMap[groupKey] = newGroup;
+            [groupOrder addObject:groupKey];
+        }
+    }
+    
+    NSMutableArray *result = [NSMutableArray array];
+    for (NSString *key in groupOrder) {
+        if (groupsMap[key]) {
+            [result addObject:groupsMap[key]];
+        }
+    }
+    return result;
 }
 
 static NSString *rc_execute_km_command(NSString *cmdArgs) {
@@ -8139,6 +8239,62 @@ static void start_web_server() {
                                      NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
                                      NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
                                      responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                  } else if ([path isEqualToString:@"/api/km/macros"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                      load_trigger_config();
+                                      NSString *overrideUrl = nil;
+                                      NSString *overrideUser = nil;
+                                      NSString *overridePass = nil;
+                                      if ([method isEqualToString:@"POST"]) {
+                                          NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                          int contentLength = 0;
+                                          if (clRange.location != NSNotFound) {
+                                              NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                              contentLength = [afterCl intValue];
+                                          }
+                                          const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                          if (headersEnd != NULL) {
+                                              size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                              size_t availableBodyLength = valread - headerBytesOffset;
+                                              NSMutableData *bodyData = [NSMutableData data];
+                                              if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                              while (bodyData.length < contentLength) {
+                                                  char chunk[4096];
+                                                  ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                                  if (chunkRead <= 0) break;
+                                                  [bodyData appendBytes:chunk length:chunkRead];
+                                              }
+                                              NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                              if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                                  overrideUrl = jsonObj[@"kmUrl"];
+                                                  overrideUser = jsonObj[@"kmUser"];
+                                                  overridePass = jsonObj[@"kmPassword"];
+                                              }
+                                          }
+                                      }
+                                      
+                                      NSDictionary *res = rc_execute_km_request(@"authenticated.html", @"GET", nil, overrideUrl, overrideUser, overridePass);
+                                      if (![res[@"ok"] boolValue]) {
+                                          // Fallback to / if authenticated.html was not accessible
+                                          NSDictionary *fallbackRes = rc_execute_km_request(@"/", @"GET", nil, overrideUrl, overrideUser, overridePass);
+                                          if ([fallbackRes[@"ok"] boolValue] && [fallbackRes[@"data"] length] > 0) {
+                                              res = fallbackRes;
+                                          }
+                                      }
+                                      
+                                      NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                      if ([res[@"ok"] boolValue] && [res[@"data"] isKindOfClass:[NSString class]]) {
+                                          NSArray *groups = rc_parse_km_html(res[@"data"]);
+                                          resp[@"ok"] = @YES;
+                                          resp[@"groups"] = groups ?: @[];
+                                      } else {
+                                          resp[@"ok"] = @NO;
+                                          resp[@"error"] = res[@"error"] ?: @"Could not connect to Keyboard Maestro Web Server";
+                                          resp[@"groups"] = @[];
+                                      }
+                                      
+                                      NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                      NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                      responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
                                 NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];

@@ -1154,6 +1154,70 @@
     .app-picker-name { font-size: 16px; color: #fff; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .app-picker-bid { font-size: 12px; color: #636366; font-family: "SF Mono", Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 
+    /* ── KM Macro Picker ── */
+    .km-group-container {
+      margin-bottom: 8px;
+    }
+    .km-group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 8px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .km-group-header:active, .km-group-header:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    .km-group-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #98989d;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .km-group-badge {
+      background: rgba(255,255,255,0.14);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+    .km-group-chevron {
+      font-size: 12px;
+      color: #8e8e93;
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+    }
+    .km-group-container.collapsed .km-group-body {
+      display: none;
+    }
+    .km-group-container.collapsed .km-group-chevron {
+      transform: rotate(-90deg);
+    }
+    .km-group-body {
+      margin-top: 4px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.18);
+      overflow: hidden;
+    }
+    .spin {
+      animation: km-spin 0.8s linear infinite;
+    }
+    @keyframes km-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
     /* ── Toast ── */
     .toast {
       position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
@@ -1826,16 +1890,26 @@
 
 <!-- ══ KEYBOARD MAESTRO ACTION DIALOG ═══════════════════════════════════ -->
 <div class="dialog-backdrop" id="km-dialog-backdrop">
-  <div class="dialog-box" style="max-width: 480px; width: 90%;">
-    <div class="dialog-title">Keyboard Maestro Macro</div>
-    <div class="dialog-msg" style="padding-bottom: 8px;">Configure macro trigger on your Mac:</div>
-    <div style="padding:0 14px 12px; display:flex; flex-direction:column; gap:10px;">
-      <input class="dialog-input" id="km-macro-input" type="text" placeholder="Macro Name or UUID (e.g. Sleep Display)" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0; width:100%">
-      <input class="dialog-input" id="km-value-input" type="text" placeholder="Trigger Parameter / Value (optional)" autocorrect="off" autocapitalize="none" spellcheck="false" style="margin:0; width:100%">
+  <div class="dialog-box app-launch-dialog" style="max-width: 560px; width: 90%;">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 18px 6px;">
+      <div class="dialog-title" style="margin:0; text-align:left; font-size:17px; font-weight:700;">Keyboard Maestro Macros</div>
+      <button class="km-refresh-btn" onclick="refreshKMMacros()" title="Refresh Macros" style="background:rgba(255,255,255,0.08); border:none; color:#007aff; border-radius:8px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.15s;">
+        <i class="f7-icons" id="km-refresh-icon" style="font-size:16px;">arrow_clockwise</i>
+      </button>
     </div>
-    <div class="dialog-btns">
-      <button onclick="closeKMDialog()" style="color:#ff3b30;">Cancel</button>
-      <button onclick="kmDialogSave()" style="font-weight:600;">Save</button>
+    <div class="dialog-msg" style="text-align:left; padding:0 18px 8px; font-size:13px;">Select a macro from your Mac to execute:</div>
+    <div style="padding:0 14px 10px;">
+      <div class="app-picker-search-wrap">
+        <i class="f7-icons" style="font-size:16px; color:#8e8e93; flex-shrink:0;">search</i>
+        <input class="app-picker-search" id="km-picker-search" type="text" placeholder="Search macros and groups…" autocorrect="off" autocapitalize="none" spellcheck="false" oninput="filterKMList()">
+      </div>
+      <div class="app-picker-list km-macro-list" id="km-picker-list" style="max-height:320px; overflow-y:auto;">
+        <div class="app-picker-loading" id="km-picker-loading">Loading macros from Mac…</div>
+      </div>
+    </div>
+    <div class="dialog-btns" style="border-top:1px solid rgba(255,255,255,0.08); display:flex;">
+      <button onclick="promptManualKMAction()" style="flex:1; border-right:1px solid rgba(255,255,255,0.08); font-size:14px; color:#8e8e93;">Manual Entry…</button>
+      <button onclick="closeKMDialog()" style="flex:1; font-size:14px; color:#ff3b30;">Cancel</button>
     </div>
   </div>
 </div>
@@ -4863,31 +4937,271 @@ async function testKMConnection() {
   }
 }
 
-function openKMDialog() {
-  document.getElementById('km-macro-input').value = '';
-  document.getElementById('km-value-input').value = '';
+let cachedKMMacros = null;
+let kmGroupCollapsedState = {};
+
+async function openKMDialog() {
+  document.getElementById('km-picker-search').value = '';
   document.getElementById('km-dialog-backdrop').classList.add('visible');
-  setTimeout(() => document.getElementById('km-macro-input').focus(), 150);
+  
+  if (cachedKMMacros && cachedKMMacros.length > 0) {
+    renderKMMacroList(cachedKMMacros);
+  } else {
+    const loadingEl = document.getElementById('km-picker-loading');
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = 'Loading macros from Mac…';
+    }
+    const listEl = document.getElementById('km-picker-list');
+    if (listEl) {
+      listEl.querySelectorAll('.km-group-container, .km-empty-msg').forEach(el => el.remove());
+    }
+  }
+
+  fetchKMMacros(false);
+  setTimeout(() => {
+    const s = document.getElementById('km-picker-search');
+    if (s) s.focus();
+  }, 150);
 }
 
 function closeKMDialog() {
   document.getElementById('km-dialog-backdrop').classList.remove('visible');
 }
 
-function kmDialogSave() {
-  const macro = document.getElementById('km-macro-input').value.trim();
-  const value = document.getElementById('km-value-input').value.trim();
-  if (!macro) {
-    showToast('⚠ Please enter a Macro Name or UUID');
+async function fetchKMMacros(isRefresh = false) {
+  const listEl = document.getElementById('km-picker-list');
+  const loadingEl = document.getElementById('km-picker-loading');
+  const refreshIcon = document.getElementById('km-refresh-icon');
+
+  if (!config.kmEnabled || !config.kmUrl) {
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = `
+        <div style="color:#ff9f0a;margin-bottom:8px;">⚠ Keyboard Maestro Web Server is not configured.</div>
+        <div style="font-size:12px;color:#8e8e93;margin-bottom:12px;">Enable and configure your Mac's Web Server in Settings.</div>
+        <button onclick="closeKMDialog();openSettings();" style="background:#007aff;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;">Open Settings</button>
+      `;
+    }
+    if (listEl) listEl.querySelectorAll('.km-group-container, .km-empty-msg').forEach(el => el.remove());
     return;
   }
-  closeKMDialog();
-  if (value) {
-    addActionToCurrent(`km trigger ${macro} ${value}`);
-  } else {
-    addActionToCurrent(`km trigger ${macro}`);
+
+  if (isRefresh && refreshIcon) {
+    refreshIcon.classList.add('spin');
   }
-  showToast(`✓ Added KM: ${macro}`);
+
+  try {
+    const res = await fetch('/api/km/macros');
+    const data = await res.json();
+    if (data.ok && Array.isArray(data.groups)) {
+      cachedKMMacros = data.groups;
+      renderKMMacroList(cachedKMMacros);
+      if (isRefresh) showToast('✓ Refreshed macros from Mac');
+    } else {
+      if (!cachedKMMacros || cachedKMMacros.length === 0) {
+        if (loadingEl) {
+          loadingEl.style.display = 'block';
+          loadingEl.innerHTML = `
+            <div style="color:#ff453a;margin-bottom:8px;">⚠ ${escHtml(data.error || 'Could not fetch macros')}</div>
+            <div style="font-size:12px;color:#8e8e93;margin-bottom:12px;">Check KM Web Server status and credentials.</div>
+            <div style="display:flex;gap:8px;justify-content:center;">
+              <button onclick="fetchKMMacros(true)" style="background:rgba(255,255,255,0.12);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;">Retry</button>
+              <button onclick="closeKMDialog();openSettings();" style="background:#007aff;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;">Settings</button>
+            </div>
+          `;
+        }
+      } else if (isRefresh) {
+        showToast(`⚠ ${data.error || 'Failed to refresh macros'}`);
+      }
+    }
+  } catch(e) {
+    if (!cachedKMMacros || cachedKMMacros.length === 0) {
+      if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = `
+          <div style="color:#ff453a;margin-bottom:8px;">⚠ Connection error</div>
+          <div style="font-size:12px;color:#8e8e93;margin-bottom:12px;">Unable to reach device server.</div>
+          <button onclick="fetchKMMacros(true)" style="background:rgba(255,255,255,0.12);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;">Retry</button>
+        `;
+      }
+    } else if (isRefresh) {
+      showToast('⚠ Failed to refresh macros');
+    }
+  } finally {
+    if (refreshIcon) refreshIcon.classList.remove('spin');
+  }
+}
+
+function refreshKMMacros() {
+  fetchKMMacros(true);
+}
+
+function renderKMMacroList(groups) {
+  const listEl = document.getElementById('km-picker-list');
+  const loadingEl = document.getElementById('km-picker-loading');
+  if (loadingEl) loadingEl.style.display = 'none';
+
+  listEl.querySelectorAll('.km-group-container, .km-empty-msg').forEach(el => el.remove());
+
+  if (!groups || groups.length === 0) {
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = 'No macros found on Keyboard Maestro server.';
+    }
+    return;
+  }
+
+  groups.forEach(group => {
+    if (!group.macros || group.macros.length === 0) return;
+
+    const groupCont = document.createElement('div');
+    groupCont.className = 'km-group-container' + (kmGroupCollapsedState[group.name] ? ' collapsed' : '');
+    groupCont.dataset.group = (group.name || '').toLowerCase();
+
+    const header = document.createElement('div');
+    header.className = 'km-group-header';
+    header.innerHTML = `
+      <div class="km-group-title">
+        <i class="f7-icons" style="font-size:14px;color:#007aff;">folder_fill</i>
+        <span>${escHtml(group.name)}</span>
+        <span class="km-group-badge">${group.macros.length}</span>
+      </div>
+      <i class="f7-icons km-group-chevron">chevron_down</i>
+    `;
+
+    header.onclick = (e) => {
+      e.stopPropagation();
+      groupCont.classList.toggle('collapsed');
+      kmGroupCollapsedState[group.name] = groupCont.classList.contains('collapsed');
+    };
+
+    const body = document.createElement('div');
+    body.className = 'km-group-body';
+
+    group.macros.forEach(macro => {
+      const row = document.createElement('div');
+      row.className = 'km-macro-row app-picker-row';
+      row.dataset.name = (macro.name || '').toLowerCase();
+      row.dataset.uid = (macro.uid || '').toLowerCase();
+      row.dataset.group = (group.name || '').toLowerCase();
+      row.innerHTML = `
+        <div class="app-picker-row-inner" style="display:flex; align-items:center; gap:10px;">
+          <i class="f7-icons" style="font-size:17px; color:#ff9f0a; flex-shrink:0;">command</i>
+          <div style="min-width:0; flex:1;">
+            <div class="app-picker-name">${escHtml(macro.name)}</div>
+            <div class="app-picker-bid">${escHtml(macro.uid)}</div>
+          </div>
+        </div>
+        <i class="f7-icons" style="font-size:15px; color:#3a3a3c; flex-shrink:0;">ellipsis_circle</i>
+      `;
+      row.onclick = () => selectKMMacro(macro);
+      body.appendChild(row);
+    });
+
+    groupCont.appendChild(header);
+    groupCont.appendChild(body);
+    listEl.appendChild(groupCont);
+  });
+
+  filterKMList();
+}
+
+function filterKMList() {
+  const q = (document.getElementById('km-picker-search').value || '').toLowerCase().trim();
+  const groupContainers = document.querySelectorAll('#km-picker-list .km-group-container');
+  let totalVisible = 0;
+
+  groupContainers.forEach(gc => {
+    const groupName = gc.dataset.group || '';
+    const macroRows = gc.querySelectorAll('.km-macro-row');
+    let visibleInGroup = 0;
+
+    macroRows.forEach(row => {
+      const name = row.dataset.name || '';
+      const uid = row.dataset.uid || '';
+      const match = !q || name.includes(q) || uid.includes(q) || groupName.includes(q);
+      row.style.display = match ? 'flex' : 'none';
+      if (match) visibleInGroup++;
+    });
+
+    if (visibleInGroup > 0) {
+      gc.style.display = 'block';
+      totalVisible += visibleInGroup;
+      if (q) {
+        gc.classList.remove('collapsed');
+      } else if (kmGroupCollapsedState[gc.querySelector('.km-group-title span')?.textContent]) {
+        gc.classList.add('collapsed');
+      }
+    } else {
+      gc.style.display = 'none';
+    }
+  });
+
+  let emptyMsg = document.getElementById('km-no-results-msg');
+  if (totalVisible === 0 && groupContainers.length > 0) {
+    if (!emptyMsg) {
+      emptyMsg = document.createElement('div');
+      emptyMsg.id = 'km-no-results-msg';
+      emptyMsg.className = 'km-empty-msg';
+      emptyMsg.style.cssText = 'text-align:center;color:#8e8e93;padding:24px 16px;font-size:14px;';
+      emptyMsg.textContent = 'No matching macros found.';
+      document.getElementById('km-picker-list').appendChild(emptyMsg);
+    }
+    emptyMsg.style.display = 'block';
+  } else if (emptyMsg) {
+    emptyMsg.style.display = 'none';
+  }
+}
+
+function selectKMMacro(macro) {
+  showSheet(`Keyboard Maestro: ${macro.name}`, [
+    {
+      label: 'Add Trigger (No Parameter)',
+      action: () => {
+        closeKMDialog();
+        addActionToCurrent(`km trigger "${macro.name}"`);
+        showToast(`✓ Added KM: ${macro.name}`);
+      }
+    },
+    {
+      label: 'Add Trigger with Parameter…',
+      action: () => {
+        closeKMDialog();
+        showDialog(`Trigger: ${macro.name}`, 'Optional trigger parameter / value (%TriggerValue%):', '', 'Add', val => {
+          if (val && val.trim()) {
+            addActionToCurrent(`km trigger "${macro.name}" "${val.trim()}"`);
+            showToast(`✓ Added KM: ${macro.name} (${val.trim()})`);
+          } else {
+            addActionToCurrent(`km trigger "${macro.name}"`);
+            showToast(`✓ Added KM: ${macro.name}`);
+          }
+        });
+      }
+    },
+    {
+      label: 'Add by UUID (Permanent ID)',
+      action: () => {
+        closeKMDialog();
+        addActionToCurrent(`km trigger ${macro.uid}`);
+        showToast(`✓ Added KM: ${macro.name}`);
+      }
+    }
+  ]);
+}
+
+function promptManualKMAction() {
+  closeKMDialog();
+  showDialog('Keyboard Maestro Action', 'Enter Macro Name or UUID (and optional value):', '', 'Add', val => {
+    if (val && val.trim()) {
+      let clean = val.trim();
+      if (!clean.startsWith('km ') && !clean.startsWith('km\n') && clean !== 'km') {
+        clean = `km trigger ${clean}`;
+      }
+      addActionToCurrent(clean);
+      showToast(`✓ Added KM: ${clean}`);
+    }
+  });
 }
 
 function toggleHATokenVisibility() {

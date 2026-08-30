@@ -1490,6 +1490,8 @@ static void register_edge_gestures();
 static void unregister_edge_gestures();
 static void update_edge_gestures();
 static void start_schedule_timer();
+static void start_mqtt_subscriber();
+static void stop_mqtt_subscriber();
 
 static void config_changed_callback(CFNotificationCenterRef center, void *observer,
                                     CFStringRef name, const void *object, CFDictionaryRef userInfo) {
@@ -1506,7 +1508,9 @@ static void config_changed_callback(CFNotificationCenterRef center, void *observ
             update_edge_gestures(); 
             SRLog(@"Edge gestures updated. Checking schedule timer...");
             start_schedule_timer();
-            SRLog(@"Schedule timer check complete. Config reload complete.");
+            SRLog(@"Checking MQTT subscriber...");
+            start_mqtt_subscriber();
+            SRLog(@"Config reload complete.");
         } @catch (NSException *e) {
             SRLog(@"CRITICAL ERROR in config_changed_callback: %@\nStack: %@", e, e.callStackSymbols);
         }
@@ -2157,6 +2161,321 @@ static void start_schedule_timer() {
     // Initial schedule
     scheduleNext();
     dispatch_resume(g_scheduleTimer);
+}
+
+// ============ MQTT BACKGROUND SUBSCRIBER ============
+static int g_mqttSubscriberSock = -1;
+static BOOL g_mqttSubscriberRunning = NO;
+static dispatch_queue_t g_mqttSubscriberQueue = NULL;
+static uint64_t g_mqttSubscriberGeneration = 0;
+
+static void rc_mqtt_append_rem_len(NSMutableData *data, NSUInteger length) {
+    do {
+        uint8_t d = length % 128;
+        length /= 128;
+        if (length > 0) d |= 128;
+        [data appendBytes:&d length:1];
+    } while (length > 0);
+}
+
+static void rc_mqtt_append_utf8(NSMutableData *data, NSString *str) {
+    if (!str) str = @"";
+    NSData *strData = [str dataUsingEncoding:NSUTF8StringEncoding];
+    uint16_t len = htons((uint16_t)strData.length);
+    [data appendBytes:&len length:2];
+    if (strData.length > 0) [data appendData:strData];
+}
+
+static void stop_mqtt_subscriber() {
+    g_mqttSubscriberGeneration++;
+    if (g_mqttSubscriberSock >= 0) {
+        shutdown(g_mqttSubscriberSock, SHUT_RDWR);
+        close(g_mqttSubscriberSock);
+        g_mqttSubscriberSock = -1;
+    }
+    g_mqttSubscriberRunning = NO;
+}
+
+static BOOL mqtt_topic_matches(NSString *subPattern, NSString *actualTopic) {
+    if (!subPattern || !actualTopic) return NO;
+    if ([subPattern isEqualToString:actualTopic] || [subPattern isEqualToString:@"#"]) return YES;
+    
+    NSArray *subParts = [subPattern componentsSeparatedByString:@"/"];
+    NSArray *actualParts = [actualTopic componentsSeparatedByString:@"/"];
+    
+    NSUInteger i = 0;
+    for (; i < subParts.count; i++) {
+        NSString *sp = subParts[i];
+        if ([sp isEqualToString:@"#"]) {
+            return YES;
+        }
+        if (i >= actualParts.count) return NO;
+        if (![sp isEqualToString:@"+"] && ![sp isEqualToString:actualParts[i]]) {
+            return NO;
+        }
+    }
+    return (i == actualParts.count);
+}
+
+static void start_mqtt_subscriber() {
+    if (!g_triggerConfig) load_trigger_config();
+    if (!g_triggerConfig) return;
+    
+    BOOL mqttEnabled = [g_triggerConfig[@"mqttEnabled"] boolValue];
+    if (!mqttEnabled) {
+        stop_mqtt_subscriber();
+        return;
+    }
+    
+    // Check if any active MQTT triggers exist
+    NSMutableSet *subscribedTopics = [NSMutableSet set];
+    NSDictionary *triggers = g_triggerConfig[@"triggers"];
+    for (NSString *key in triggers) {
+        if ([key hasPrefix:@"mqtt_sub_"] || [key hasPrefix:@"mqtt_"]) {
+            NSDictionary *trig = triggers[key];
+            if ([trig[@"enabled"] boolValue]) {
+                NSString *topic = trig[@"topic"];
+                if (topic.length > 0) {
+                    [subscribedTopics addObject:topic];
+                }
+            }
+        }
+    }
+    
+    if (subscribedTopics.count == 0) {
+        stop_mqtt_subscriber();
+        return;
+    }
+    
+    uint64_t currentGen = ++g_mqttSubscriberGeneration;
+    
+    if (g_mqttSubscriberSock >= 0) {
+        shutdown(g_mqttSubscriberSock, SHUT_RDWR);
+        close(g_mqttSubscriberSock);
+        g_mqttSubscriberSock = -1;
+    }
+    
+    if (!g_mqttSubscriberQueue) {
+        g_mqttSubscriberQueue = dispatch_queue_create("com.pizzaman.rc.mqtt_sub", DISPATCH_QUEUE_SERIAL);
+    }
+    
+    g_mqttSubscriberRunning = YES;
+    
+    NSString *host = g_triggerConfig[@"mqttHost"] ?: @"192.168.1.50";
+    NSInteger port = [g_triggerConfig[@"mqttPort"] integerValue] > 0 ? [g_triggerConfig[@"mqttPort"] integerValue] : 1883;
+    NSString *user = g_triggerConfig[@"mqttUser"];
+    NSString *pass = g_triggerConfig[@"mqttPassword"];
+    NSString *rawClientId = g_triggerConfig[@"mqttClientId"];
+    NSString *clientId = rawClientId.length > 0 ? [NSString stringWithFormat:@"%@_sub", rawClientId] : @"RemoteCompanion_Sub";
+    NSArray *topicsToSub = [subscribedTopics allObjects];
+    
+    dispatch_async(g_mqttSubscriberQueue, ^{
+        while (g_mqttSubscriberRunning && currentGen == g_mqttSubscriberGeneration) {
+            SRLog(@"[MQTT Sub] Connecting to %@:%ld...", host, (long)port);
+            
+            char portStr[16];
+            snprintf(portStr, sizeof(portStr), "%ld", (long)port);
+            
+            struct addrinfo hints;
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_STREAM;
+            hints.ai_protocol = IPPROTO_TCP;
+            
+            struct addrinfo *res = NULL;
+            int gai_err = getaddrinfo([host UTF8String], portStr, &hints, &res);
+            if (gai_err != 0 || !res) {
+                SRLog(@"[MQTT Sub] Host resolve failed: %s. Retrying in 10s...", gai_strerror(gai_err));
+                sleep(10);
+                continue;
+            }
+            
+            int sock = -1;
+            for (struct addrinfo *rp = res; rp != NULL; rp = rp->ai_next) {
+                sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+                if (sock == -1) continue;
+                
+                struct timeval tv = { 10, 0 };
+                setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv));
+                setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof(tv));
+                
+                if (connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
+                    break;
+                }
+                close(sock);
+                sock = -1;
+            }
+            freeaddrinfo(res);
+            
+            if (sock < 0 || currentGen != g_mqttSubscriberGeneration) {
+                if (sock >= 0) close(sock);
+                SRLog(@"[MQTT Sub] Connection failed. Retrying in 10s...");
+                sleep(10);
+                continue;
+            }
+            
+            g_mqttSubscriberSock = sock;
+            
+            // Build CONNECT packet
+            NSMutableData *varHeader = [NSMutableData data];
+            uint16_t protoNameLen = htons(4);
+            [varHeader appendBytes:&protoNameLen length:2];
+            [varHeader appendBytes:"MQTT" length:4];
+            uint8_t protoLevel = 4;
+            [varHeader appendBytes:&protoLevel length:1];
+            uint8_t connFlags = 0x02; // Clean session
+            if (user.length > 0) connFlags |= 0x80;
+            if (pass.length > 0) connFlags |= 0x40;
+            [varHeader appendBytes:&connFlags length:1];
+            uint16_t keepAlive = htons(60);
+            [varHeader appendBytes:&keepAlive length:2];
+            rc_mqtt_append_utf8(varHeader, clientId);
+            if (user.length > 0) rc_mqtt_append_utf8(varHeader, user);
+            if (pass.length > 0) rc_mqtt_append_utf8(varHeader, pass);
+            
+            NSMutableData *connPkt = [NSMutableData data];
+            uint8_t connType = 0x10;
+            [connPkt appendBytes:&connType length:1];
+            rc_mqtt_append_rem_len(connPkt, varHeader.length);
+            [connPkt appendData:varHeader];
+            
+            send(sock, connPkt.bytes, connPkt.length, 0);
+            
+            uint8_t connack[4];
+            ssize_t n = recv(sock, connack, 4, 0);
+            if (n < 4 || connack[0] != 0x20 || connack[3] != 0x00) {
+                close(sock);
+                g_mqttSubscriberSock = -1;
+                SRLog(@"[MQTT Sub] Broker rejected connection. Retrying in 10s...");
+                sleep(10);
+                continue;
+            }
+            
+            SRLog(@"[MQTT Sub] Connected! Subscribing to %lu topics...", (unsigned long)topicsToSub.count);
+            
+            // Send SUBSCRIBE packet for all configured topics
+            NSMutableData *subPayload = [NSMutableData data];
+            uint16_t packetId = htons(1);
+            [subPayload appendBytes:&packetId length:2];
+            for (NSString *t in topicsToSub) {
+                rc_mqtt_append_utf8(subPayload, t);
+                uint8_t qos = 0;
+                [subPayload appendBytes:&qos length:1];
+            }
+            
+            NSMutableData *subPkt = [NSMutableData data];
+            uint8_t subType = 0x82; // SUBSCRIBE QoS 1
+            [subPkt appendBytes:&subType length:1];
+            rc_mqtt_append_rem_len(subPkt, subPayload.length);
+            [subPkt appendData:subPayload];
+            send(sock, subPkt.bytes, subPkt.length, 0);
+            
+            // Read SUBACK
+            uint8_t suback[5];
+            recv(sock, suback, sizeof(suback), 0);
+            
+            time_t lastPing = time(NULL);
+            
+            // Event loop: receive packets and send periodic keep-alive PINGREQ
+            while (g_mqttSubscriberRunning && currentGen == g_mqttSubscriberGeneration) {
+                uint8_t header[1];
+                ssize_t r = recv(sock, header, 1, 0);
+                if (r <= 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                        if (time(NULL) - lastPing >= 45) {
+                            uint8_t pingreq[] = { 0xC0, 0x00 };
+                            if (send(sock, pingreq, 2, 0) <= 0) {
+                                break;
+                            }
+                            lastPing = time(NULL);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                
+                uint8_t pktType = (header[0] >> 4) & 0x0F;
+                
+                NSUInteger remLen = 0;
+                NSUInteger multiplier = 1;
+                uint8_t digit = 0;
+                do {
+                    if (recv(sock, &digit, 1, 0) <= 0) break;
+                    remLen += (digit & 127) * multiplier;
+                    multiplier *= 128;
+                } while ((digit & 128) != 0);
+                
+                if (pktType == 3) { // PUBLISH packet
+                    NSMutableData *pktData = [NSMutableData data];
+                    size_t bytesRead = 0;
+                    while (bytesRead < remLen) {
+                        char buf[1024];
+                        size_t toRead = MIN(sizeof(buf), remLen - bytesRead);
+                        ssize_t chunk = recv(sock, buf, toRead, 0);
+                        if (chunk <= 0) break;
+                        [pktData appendBytes:buf length:chunk];
+                        bytesRead += chunk;
+                    }
+                    
+                    if (pktData.length >= 2) {
+                        const uint8_t *bytes = (const uint8_t *)pktData.bytes;
+                        uint16_t tlen = (bytes[0] << 8) | bytes[1];
+                        if (pktData.length >= 2 + tlen) {
+                            NSString *inTopic = [[NSString alloc] initWithBytes:(bytes + 2) length:tlen encoding:NSUTF8StringEncoding];
+                            size_t payloadOffset = 2 + tlen;
+                            uint8_t qos = (header[0] >> 1) & 0x03;
+                            if (qos > 0) payloadOffset += 2; // Skip Packet ID
+                            
+                            NSString *inPayload = @"";
+                            if (pktData.length > payloadOffset) {
+                                inPayload = [[NSString alloc] initWithBytes:(bytes + payloadOffset) length:(pktData.length - payloadOffset) encoding:NSUTF8StringEncoding] ?: @"";
+                            }
+                            
+                            SRLog(@"[MQTT Sub] Received PUBLISH on '%@' (payload: '%@')", inTopic, inPayload);
+                            
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                if (!g_triggerConfig) load_trigger_config();
+                                NSDictionary *currentTriggers = g_triggerConfig[@"triggers"];
+                                for (NSString *trigKey in currentTriggers) {
+                                    if ([trigKey hasPrefix:@"mqtt_sub_"] || [trigKey hasPrefix:@"mqtt_"]) {
+                                        NSDictionary *tDef = currentTriggers[trigKey];
+                                        if ([tDef[@"enabled"] boolValue]) {
+                                            NSString *pat = tDef[@"topic"];
+                                            if (mqtt_topic_matches(pat, inTopic)) {
+                                                NSString *matchPayload = tDef[@"matchPayload"];
+                                                if (!matchPayload.length || [matchPayload isEqualToString:inPayload]) {
+                                                    SRLog(@"[MQTT Sub] Triggering '%@' for topic '%@'", trigKey, inTopic);
+                                                    RCExecuteTrigger(trigKey);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                } else if (pktType == 13) { // PINGRESP
+                    lastPing = time(NULL);
+                }
+                
+                if (time(NULL) - lastPing >= 45) {
+                    uint8_t pingreq[] = { 0xC0, 0x00 };
+                    if (send(sock, pingreq, 2, 0) <= 0) {
+                        break;
+                    }
+                    lastPing = time(NULL);
+                }
+            }
+            
+            close(sock);
+            g_mqttSubscriberSock = -1;
+            
+            if (g_mqttSubscriberRunning && currentGen == g_mqttSubscriberGeneration) {
+                SRLog(@"[MQTT Sub] Connection lost. Reconnecting in 5s...");
+                sleep(5);
+            }
+        }
+    });
 }
 
 BOOL RCIsNFCEnabled() {
@@ -4893,23 +5212,6 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
     } else {
         return [NSString stringWithFormat:@"Keyboard Maestro trigger failed: %@\n", res[@"error"] ?: @"Unknown error"];
     }
-}
-
-static void rc_mqtt_append_rem_len(NSMutableData *data, NSUInteger length) {
-    do {
-        uint8_t d = length % 128;
-        length /= 128;
-        if (length > 0) d |= 128;
-        [data appendBytes:&d length:1];
-    } while (length > 0);
-}
-
-static void rc_mqtt_append_utf8(NSMutableData *data, NSString *str) {
-    if (!str) str = @"";
-    NSData *strData = [str dataUsingEncoding:NSUTF8StringEncoding];
-    uint16_t len = htons((uint16_t)strData.length);
-    [data appendBytes:&len length:2];
-    if (strData.length > 0) [data appendData:strData];
 }
 
 static BOOL rc_mqtt_publish(NSString *host, NSInteger port, NSString *user, NSString *pass, NSString *clientId, NSString *topic, NSString *payload, NSInteger qos, BOOL retain, NSError **error) {
@@ -11124,6 +11426,7 @@ static NSTimeInterval s_last_camera_launch_notify = 0;
             start_server();
             start_web_server();
             start_schedule_timer();
+            start_mqtt_subscriber();
             
             // Conditionally register edge gestures based on config
             update_edge_gestures();

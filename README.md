@@ -4,6 +4,8 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 
 > [!IMPORTANT]
 > **What’s New in v3.6.0**
+> - **Native MQTT 3.1.1 Integration**: Complete publish & subscribe MQTT support across the full stack. Publish messages from gestures or hardware triggers, and subscribe to broker topics via the new **MQTT Topic** trigger (`RCMQTTTriggerViewController`) to fire local action sequences on incoming messages with near-zero battery impact.
+> - **Nested Integrations Hub**: Structured multi-level Settings menu (`RCIntegrationsViewController`) organizing **Home Assistant**, **Keyboard Maestro**, and **MQTT** into dedicated sub-screens.
 > - **Visual Keyboard Maestro Macro Selector**: Browse and search all macros organized by Macro Group directly in both the Web UI and native iOS App (`RCKMMacroPickerViewController`). Includes live search, item counts, pull-to-refresh, and manual entry fallback.
 > - **Automatic Macro Name & UUID Resolution**: Seamless execution backend with automatic name-to-UUID resolution and dual-tier fallback (`/authenticatedaction.html` & `/action.html`), ensuring any macro triggers reliably even without public web triggers.
 > - **In-App KM Parameter Management**: Tap or long-press any Keyboard Maestro action in an action sequence to edit/remove `%TriggerValue%` parameters, change macros, or test execution instantly.

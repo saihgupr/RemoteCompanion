@@ -2457,6 +2457,7 @@ const TRIGGER_SECTIONS = [
   { title: 'Notification Triggers',  id: 'notif',     keys: [], dynamic: true, prefix: 'notif_',      deletable: true },
   { title: 'App Launch Triggers',    id: 'app',       keys: [], dynamic: true, prefix: 'app_launch_', deletable: true },
   { title: 'Scheduled Triggers',     id: 'sched',     keys: [], dynamic: true, prefix: 'sched_',      deletable: true },
+  { title: 'MQTT Subscription Triggers', id: 'mqtt', keys: [], dynamic: true, prefix: 'mqtt_sub_', prefix2: 'mqtt_', deletable: true },
 ];
 
 const TRIGGER_NAMES = {
@@ -2532,6 +2533,7 @@ function iconForKey(key) {
   if (key.startsWith('app_launch_')) return { icon:'app_badge_fill',                cls:'icon-pink' };
   if (key.startsWith('notif_') || key.startsWith('notify_'))      return { icon:'bell_circle_fill',              cls:'icon-red' };
   if (key.startsWith('sched_'))      return { icon:'clock_fill',                    cls:'icon-orange' };
+  if (key.startsWith('mqtt_sub_') || key.startsWith('mqtt_')) return { icon:'antenna_radiowaves_left_right', cls:'icon-blue' };
   return { icon:'hand_tap', cls:'icon-gray' };
 }
 
@@ -2552,6 +2554,8 @@ function nameForKey(key) {
     return `Notif: ${key.slice(6)}`;
   }
   if (key.startsWith('sched_'))      return `Sched: ${key.slice(6)}`;
+  if (key.startsWith('mqtt_sub_'))   return `MQTT: ${key.slice(9)}`;
+  if (key.startsWith('mqtt_'))       return `MQTT: ${key.slice(5)}`;
   return key;
 }
 
@@ -5753,8 +5757,35 @@ function showAddTriggerSheet() {
     { label: 'Notification Trigger', action: () => promptNotifTrigger() },
     { label: 'App Launch Trigger', action: () => promptAppLaunchPicker() },
     { label: 'Scheduled Trigger', action: () => promptSchedTrigger() },
+    { label: 'MQTT Topic Trigger', action: () => promptMqttTrigger() },
     { label: 'NFC Tag Trigger', action: () => promptNfcTrigger() },
   ]);
+}
+
+function promptMqttTrigger(editKey = null) {
+  const defaultTopic = config.mqttTopicPrefix ? `${config.mqttTopicPrefix}/alerts/phone` : 'remotecompanion/alerts/phone';
+  showDialog('MQTT Topic Trigger', 'Topic to subscribe to (e.g. home/alerts/phone):', defaultTopic, 'Next', topic => {
+    if (!topic || !topic.trim()) return;
+    const cleanTopic = topic.trim();
+    showDialog('Payload Match (Optional)', 'Exact payload to match, or leave empty for Any:', '', 'Create Trigger', payload => {
+      const cleanPayload = (payload || '').trim();
+      const key = editKey || `mqtt_sub_${Date.now()}`;
+      const friendlyName = cleanPayload.length > 0 ? `MQTT: ${cleanTopic} (${cleanPayload})` : `MQTT: ${cleanTopic}`;
+      const triggerData = {
+        name: friendlyName,
+        topic: cleanTopic,
+        enabled: true,
+        actions: config.triggers[key] ? (config.triggers[key].actions || []) : []
+      };
+      if (cleanPayload.length > 0) {
+        triggerData.matchPayload = cleanPayload;
+      }
+      config.triggers[key] = triggerData;
+      saveConfig();
+      renderAll();
+      openActionsPanel(key);
+    });
+  });
 }
 
 function promptNfcTrigger() {

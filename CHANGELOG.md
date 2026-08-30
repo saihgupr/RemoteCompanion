@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [3.6.0] - 2026-08-30
 
 ### Added
+- **Native MQTT 3.1.1 Integration (Actions & Inbound Triggers)**: Complete native MQTT 3.1.1 implementation across the entire RemoteCompanion stack with zero third-party dependencies and near-zero battery consumption.
+  - **Publish Actions**: Trigger MQTT publish events from any hardware button, physical gesture, or automation sequence with customizable topics and text/JSON payloads.
+  - **Inbound Subscription Triggers (`RCMQTTTriggerViewController`)**: Added **MQTT Topic** to the `+` (New Trigger) menu to subscribe to broker topics (with optional payload matching) and trigger local iOS actions (alarms, haptics, flashlight, TTS, app launching, etc.) when MQTT messages arrive.
+  - **Background SpringBoard Listener**: Embedded lightweight TCP client with auto-reconnect and 60s keep-alive pings that only runs when active MQTT triggers exist.
+  - **CLI & Web UI**: Added `rc mqtt pub <topic> [payload]`, `/api/mqtt/test`, and `/api/mqtt/publish` endpoints with full Web UI sequence builder and trigger support.
+- **Nested Integrations Hub Architecture**:
+  - Refactored Settings with a dedicated **Integrations** disclosure menu (`RCIntegrationsViewController`) cleanly organizing external services into modular sub-menus.
+  - Dedicated sub-screens for **Home Assistant** (`RCHASettingsViewController`), **Keyboard Maestro** (`RCKMSettingsViewController`), and **MQTT** (`RCMQTTSettingsViewController`).
 - **Visual Keyboard Maestro Macro Selector & Discovery**: Added visual macro selector across Web UI and native iOS companion app (`RCKMMacroPickerViewController`).
   - Automatically fetches and parses all macros grouped by category from `/authenticated.html`.
   - Supports live search across macro names, groups, and UUIDs.

@@ -62,6 +62,7 @@
 - (BOOL)isActionDisabled:(id)actionItem;
 - (id)toggleActionDisabled:(id)actionItem;
 - (void)registerKMMacroName:(NSString *)name forUid:(NSString *)uid;
+- (void)registerKMMacroNamesBatch:(NSDictionary<NSString *, NSString *> *)map;
 - (NSString *)nameForKMMacroUid:(NSString *)uid;
 
 // Backup/Restore

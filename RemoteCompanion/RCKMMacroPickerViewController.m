@@ -95,6 +95,7 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
     NSRegularExpression *labelAttrRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)\\blabel=\"([^\"]+)\"" options:0 error:nil];
     NSRegularExpression *valueAttrRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)\\bvalue=\"([^\"]+)\"" options:0 error:nil];
     
+    NSMutableDictionary *nameBatch = [NSMutableDictionary dictionary];
     NSArray<NSTextCheckingResult *> *groupMatches = [optgroupRegex matchesInString:html options:0 range:NSMakeRange(0, html.length)];
     for (NSTextCheckingResult *gMatch in groupMatches) {
         if (gMatch.numberOfRanges < 3) continue;
@@ -118,7 +119,7 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
                 NSString *macroName = rc_km_decode_entities([[tagAttrs substringWithRange:[lMatch rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]);
                 NSString *macroUid = [[tagAttrs substringWithRange:[vMatch rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
                 if (macroName.length > 0 && macroUid.length > 0) {
-                    [[RCConfigManager sharedManager] registerKMMacroName:macroName forUid:macroUid];
+                    nameBatch[macroUid] = macroName;
                     [macros addObject:@{
                         @"name": macroName,
                         @"uid": macroUid
@@ -151,6 +152,10 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
             groupsMap[groupKey] = newGroup;
             [groupOrder addObject:groupKey];
         }
+    }
+    
+    if (nameBatch.count > 0) {
+        [[RCConfigManager sharedManager] registerKMMacroNamesBatch:nameBatch];
     }
     
     NSMutableArray *result = [NSMutableArray array];
@@ -342,7 +347,7 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"KMCell"];
     if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"KMCell"];
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"KMCell"];
     }
     
     RCConfigManager *cm = [RCConfigManager sharedManager];
@@ -362,10 +367,6 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
     cell.textLabel.text = macro[@"name"] ?: @"Macro";
     cell.textLabel.textColor = [UIColor labelColor];
     cell.textLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
-    
-    cell.detailTextLabel.text = macro[@"uid"] ?: @"";
-    cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
-    cell.detailTextLabel.font = [UIFont fontWithName:@"Menlo" size:12] ?: [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
     
     cell.imageView.image = [UIImage systemImageNamed:@"command"];
     cell.imageView.tintColor = [UIColor systemOrangeColor];

@@ -1639,8 +1639,32 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         dict = [dict mutableCopy];
         _config[@"kmNamesByUuid"] = dict;
     }
+    if ([dict[uid] isEqualToString:name]) return;
     dict[uid] = name;
     [self saveConfig];
+}
+
+- (void)registerKMMacroNamesBatch:(NSDictionary<NSString *, NSString *> *)map {
+    if (!map || map.count == 0) return;
+    NSMutableDictionary *dict = _config[@"kmNamesByUuid"];
+    if (!dict) {
+        dict = [NSMutableDictionary dictionary];
+        _config[@"kmNamesByUuid"] = dict;
+    } else if (![dict isKindOfClass:[NSMutableDictionary class]]) {
+        dict = [dict mutableCopy];
+        _config[@"kmNamesByUuid"] = dict;
+    }
+    BOOL changed = NO;
+    for (NSString *uid in map) {
+        NSString *name = map[uid];
+        if (uid.length > 0 && name.length > 0 && ![dict[uid] isEqualToString:name]) {
+            dict[uid] = name;
+            changed = YES;
+        }
+    }
+    if (changed) {
+        [self saveConfig];
+    }
 }
 
 - (NSString *)nameForKMMacroUid:(NSString *)uid {

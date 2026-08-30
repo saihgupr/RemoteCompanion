@@ -4833,8 +4833,33 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
         return @"Error: Missing macro name or UUID\n";
     }
     
+    NSString *macroToExecute = macroName;
+    NSRegularExpression *uuidRegex = [NSRegularExpression regularExpressionWithPattern:@"^[0-9a-fA-F-]{30,}$" options:0 error:nil];
+    BOOL isUUID = [uuidRegex numberOfMatchesInString:macroName options:0 range:NSMakeRange(0, macroName.length)] > 0;
+    
+    if (!isUUID) {
+        // Fetch macro list from KM Web Server to resolve friendly macroName to its UID
+        NSDictionary *macrosRes = rc_execute_km_request(@"authenticated.html", @"GET", nil, nil, nil, nil);
+        if (![macrosRes[@"ok"] boolValue]) {
+            macrosRes = rc_execute_km_request(@"/", @"GET", nil, nil, nil, nil);
+        }
+        if ([macrosRes[@"ok"] boolValue] && [macrosRes[@"data"] isKindOfClass:[NSString class]]) {
+            NSArray *groups = rc_parse_km_html(macrosRes[@"data"]);
+            for (NSDictionary *group in groups) {
+                NSArray *macros = group[@"macros"];
+                for (NSDictionary *m in macros) {
+                    if ([m[@"name"] localizedCaseInsensitiveCompare:macroName] == NSOrderedSame) {
+                        macroToExecute = m[@"uid"];
+                        break;
+                    }
+                }
+                if (![macroToExecute isEqualToString:macroName]) break;
+            }
+        }
+    }
+    
     NSMutableDictionary *params = [NSMutableDictionary dictionary];
-    params[@"macro"] = macroName;
+    params[@"macro"] = macroToExecute;
     if (triggerValue.length > 0) {
         params[@"value"] = triggerValue;
     }
@@ -4848,6 +4873,15 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
         NSDictionary *fallbackRes = rc_execute_km_request(@"/action.html", @"GET", params, nil, nil, nil);
         if ([fallbackRes[@"ok"] boolValue]) {
             res = fallbackRes;
+        }
+    }
+    if (![res[@"ok"] boolValue] && ![macroToExecute isEqualToString:macroName]) {
+        // Fallback with original macroName if UID execution failed
+        NSMutableDictionary *fallbackParams = [params mutableCopy];
+        fallbackParams[@"macro"] = macroName;
+        NSDictionary *nameRes = rc_execute_km_request(defaultEndpoint, @"GET", fallbackParams, nil, nil, nil);
+        if ([nameRes[@"ok"] boolValue]) {
+            res = nameRes;
         }
     }
     

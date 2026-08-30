@@ -1036,17 +1036,42 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             for (NSString *p in parts) {
                 if (p.length > 0) [cleanParts addObject:p];
             }
-            NSString *subCmd = cleanParts.firstObject ? [(NSString *)cleanParts.firstObject lowercaseString] : @"";
-            if ([subCmd isEqualToString:@"trigger"] && cleanParts.count > 1) {
-                NSString *macro = cleanParts[1];
-                if (cleanParts.count > 2) {
-                    NSString *val = [[cleanParts subarrayWithRange:NSMakeRange(2, cleanParts.count - 2)] componentsJoinedByString:@" "];
-                    result = [NSString stringWithFormat:@"KM: %@ (%@)", macro, val];
-                } else {
-                    result = [NSString stringWithFormat:@"KM: %@", macro];
+            if ([[raw lowercaseString] hasPrefix:@"trigger "]) {
+                NSString *afterTrigger = [[raw substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                NSString *macro = nil;
+                NSString *val = nil;
+                if ([afterTrigger hasPrefix:@"\""]) {
+                    NSRange endQuote = [afterTrigger rangeOfString:@"\"" options:0 range:NSMakeRange(1, afterTrigger.length - 1)];
+                    if (endQuote.location != NSNotFound) {
+                        macro = [afterTrigger substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+                        NSString *rem = [[afterTrigger substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                        if (rem.length > 0) {
+                            if ([rem hasPrefix:@"\""] && [rem hasSuffix:@"\""] && rem.length >= 2) {
+                                val = [rem substringWithRange:NSMakeRange(1, rem.length - 2)];
+                            } else {
+                                val = rem;
+                            }
+                        }
+                    }
                 }
-            } else if ([subCmd isEqualToString:@"url"] && cleanParts.count > 1) {
-                result = [NSString stringWithFormat:@"KM URL: %@", cleanParts[1]];
+                if (!macro) {
+                    NSArray *p = [afterTrigger componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                    NSMutableArray *cp = [NSMutableArray array];
+                    for (NSString *item in p) { if (item.length > 0) [cp addObject:item]; }
+                    if (cp.count > 0) {
+                        macro = cp[0];
+                        if (cp.count > 1) {
+                            val = [[cp subarrayWithRange:NSMakeRange(1, cp.count - 1)] componentsJoinedByString:@" "];
+                        }
+                    }
+                }
+                if (macro.length > 0) {
+                    result = val.length > 0 ? [NSString stringWithFormat:@"KM: %@ (%@)", macro, val] : [NSString stringWithFormat:@"KM: %@", macro];
+                } else {
+                    result = @"KM Trigger";
+                }
+            } else if ([[raw lowercaseString] hasPrefix:@"url "]) {
+                result = [NSString stringWithFormat:@"KM URL: %@", [raw substringFromIndex:4]];
             } else if (raw.length > 0) {
                 result = [NSString stringWithFormat:@"KM: %@", raw];
             } else {

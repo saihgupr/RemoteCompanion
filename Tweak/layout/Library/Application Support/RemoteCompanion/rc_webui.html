@@ -2628,15 +2628,29 @@ function nameForCmd(cmd) {
 function formatKMCommandName(cmd) {
   const raw = cmd.slice(2).trim();
   if (!raw) return 'Keyboard Maestro';
-  const parts = raw.split(/\s+/);
-  const subCmd = parts[0].toLowerCase();
-  if (subCmd === 'trigger' && parts.length > 1) {
-    const macro = parts[1];
-    const val = parts.slice(2).join(' ');
+  if (raw.toLowerCase().startsWith('trigger ')) {
+    let after = raw.slice(8).trim();
+    let macro = '';
+    let val = '';
+    if (after.startsWith('"')) {
+      const endQ = after.indexOf('"', 1);
+      if (endQ !== -1) {
+        macro = after.substring(1, endQ);
+        val = after.substring(endQ + 1).trim();
+      }
+    }
+    if (!macro) {
+      const parts = after.split(/\s+/);
+      macro = parts[0];
+      val = parts.slice(1).join(' ');
+    }
+    if (val.startsWith('"') && val.endsWith('"') && val.length >= 2) {
+      val = val.substring(1, val.length - 1);
+    }
     return `KM: ${macro}${val ? ' (' + val + ')' : ''}`;
   }
-  if (subCmd === 'url' && parts.length > 1) {
-    return `KM URL: ${parts.slice(1).join(' ')}`;
+  if (raw.toLowerCase().startsWith('url ')) {
+    return `KM URL: ${raw.slice(4).trim()}`;
   }
   return `KM: ${raw}`;
 }

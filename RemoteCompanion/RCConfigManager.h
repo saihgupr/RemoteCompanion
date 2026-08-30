@@ -61,6 +61,8 @@
 - (NSDictionary *)toggleInfoForCommand:(NSString *)cmd;
 - (BOOL)isActionDisabled:(id)actionItem;
 - (id)toggleActionDisabled:(id)actionItem;
+- (void)registerKMMacroName:(NSString *)name forUid:(NSString *)uid;
+- (NSString *)nameForKMMacroUid:(NSString *)uid;
 
 // Backup/Restore
 - (NSData *)exportConfigAsJSON;

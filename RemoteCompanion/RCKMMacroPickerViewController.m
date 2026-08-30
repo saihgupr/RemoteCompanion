@@ -118,6 +118,7 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
                 NSString *macroName = rc_km_decode_entities([[tagAttrs substringWithRange:[lMatch rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]);
                 NSString *macroUid = [[tagAttrs substringWithRange:[vMatch rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
                 if (macroName.length > 0 && macroUid.length > 0) {
+                    [[RCConfigManager sharedManager] registerKMMacroName:macroName forUid:macroUid];
                     [macros addObject:@{
                         @"name": macroName,
                         @"uid": macroUid
@@ -382,8 +383,12 @@ static NSArray<NSDictionary *> *rc_km_parse_macro_html(NSString *html) {
     NSString *macroName = macro[@"name"] ?: @"";
     NSString *macroUid = macro[@"uid"] ?: @"";
     
+    if (macroUid.length > 0 && macroName.length > 0) {
+        [[RCConfigManager sharedManager] registerKMMacroName:macroName forUid:macroUid];
+    }
+    
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:macroName
-                                                                   message:[NSString stringWithFormat:@"Group: %@\nUUID: %@", group[@"name"] ?: @"", macroUid]
+                                                                   message:nil
                                                             preferredStyle:UIAlertControllerStyleActionSheet];
     
     [sheet addAction:[UIAlertAction actionWithTitle:@"Trigger (No Parameter)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {

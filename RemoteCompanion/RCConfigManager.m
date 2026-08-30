@@ -1126,7 +1126,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                     }
                 }
                 if (macro.length > 0) {
-                    result = val.length > 0 ? [NSString stringWithFormat:@"KM: %@ (%@)", macro, val] : [NSString stringWithFormat:@"KM: %@", macro];
+                    NSString *displayMacro = [self nameForKMMacroUid:macro] ?: macro;
+                    result = val.length > 0 ? [NSString stringWithFormat:@"KM: %@ (%@)", displayMacro, val] : [NSString stringWithFormat:@"KM: %@", displayMacro];
                 } else {
                     result = @"KM Trigger";
                 }
@@ -1626,6 +1627,25 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     }
     
     return nil;
+}
+
+- (void)registerKMMacroName:(NSString *)name forUid:(NSString *)uid {
+    if (!name.length || !uid.length) return;
+    NSMutableDictionary *dict = _config[@"kmNamesByUuid"];
+    if (!dict) {
+        dict = [NSMutableDictionary dictionary];
+        _config[@"kmNamesByUuid"] = dict;
+    } else if (![dict isKindOfClass:[NSMutableDictionary class]]) {
+        dict = [dict mutableCopy];
+        _config[@"kmNamesByUuid"] = dict;
+    }
+    dict[uid] = name;
+    [self saveConfig];
+}
+
+- (NSString *)nameForKMMacroUid:(NSString *)uid {
+    if (!uid.length) return nil;
+    return _config[@"kmNamesByUuid"][uid];
 }
 
 @end

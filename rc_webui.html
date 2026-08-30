@@ -2716,7 +2716,8 @@ function formatKMCommandName(cmd) {
     if (val.startsWith('"') && val.endsWith('"') && val.length >= 2) {
       val = val.substring(1, val.length - 1);
     }
-    return `KM: ${macro}${val ? ' (' + val + ')' : ''}`;
+    const resolvedName = (config.kmNamesByUuid && config.kmNamesByUuid[macro]) ? config.kmNamesByUuid[macro] : macro;
+    return `KM: ${resolvedName}${val ? ' (' + val + ')' : ''}`;
   }
   if (raw.toLowerCase().startsWith('url ')) {
     return `KM URL: ${raw.slice(4).trim()}`;
@@ -5298,6 +5299,10 @@ function renderKMMacroList(groups) {
     body.className = 'km-group-body';
 
     group.macros.forEach(macro => {
+      if (macro.uid && macro.name) {
+        config.kmNamesByUuid = config.kmNamesByUuid || {};
+        config.kmNamesByUuid[macro.uid] = macro.name;
+      }
       const row = document.createElement('div');
       row.className = 'km-macro-row app-picker-row';
       row.dataset.name = (macro.name || '').toLowerCase();
@@ -5374,6 +5379,11 @@ function filterKMList() {
 
 function selectKMMacro(macro) {
   closeKMDialog();
+  if (macro.uid && macro.name) {
+    config.kmNamesByUuid = config.kmNamesByUuid || {};
+    config.kmNamesByUuid[macro.uid] = macro.name;
+    saveConfig();
+  }
   const target = macro.uid || `"${macro.name}"`;
   showSheet(`Keyboard Maestro: ${macro.name}`, [
     {

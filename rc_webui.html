@@ -1673,6 +1673,56 @@
           <span id="km-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
         </div>
       </div>
+
+      <div class="settings-row" style="border-top: 1px solid rgba(255,255,255,0.08);">
+        <span class="settings-label">MQTT</span>
+        <div class="settings-btn">
+          <input type="checkbox" class="ios-toggle" id="setting-mqtt" onchange="onMQTTToggleChange(this.checked)">
+        </div>
+      </div>
+      <div id="mqtt-credentials-wrapper" style="display:none; padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18);">
+        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+          <div style="flex: 2;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">BROKER HOST</div>
+            <input type="text" id="setting-mqtt-host" placeholder="192.168.1.50 or broker.local" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttHost=this.value.trim();saveConfig()">
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">PORT</div>
+            <input type="number" id="setting-mqtt-port" placeholder="1883" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttPort=parseInt(this.value)||1883;saveConfig()">
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">CLIENT ID</div>
+          <input type="text" id="setting-mqtt-clientid" placeholder="RemoteCompanion" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttClientId=this.value.trim();saveConfig()">
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">USERNAME</div>
+            <input type="text" id="setting-mqtt-user" placeholder="Optional" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttUser=this.value.trim();saveConfig()">
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">PASSWORD</div>
+            <div style="position: relative;">
+              <input type="password" id="setting-mqtt-password" placeholder="Optional" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 40px 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttPassword=this.value.trim();saveConfig()">
+              <button type="button" onclick="toggleMQTTPasswordVisibility()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #8e8e93; cursor: pointer; padding: 6px;"><i class="f7-icons" id="mqtt-password-eye-icon" style="font-size: 18px;">eye</i></button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">DEFAULT TOPIC PREFIX</div>
+          <input type="text" id="setting-mqtt-prefix" placeholder="remotecompanion" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttTopicPrefix=this.value.trim();saveConfig()">
+        </div>
+        
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+          <button class="sys-action-btn green" id="mqtt-test-btn" onclick="testMQTTConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
+          </button>
+          <span id="mqtt-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
+        </div>
+      </div>
     </div>
 
     <div class="action-list-header">Backup</div>
@@ -2613,6 +2663,7 @@ function nameForCmd(cmd) {
   }
   if (lowCmd.startsWith('ha ') || lowCmd === 'ha') return formatHACommandName(cmd);
   if (lowCmd.startsWith('km ') || lowCmd === 'km') return formatKMCommandName(cmd);
+  if (lowCmd.startsWith('mqtt ') || lowCmd === 'mqtt') return formatMQTTCommandName(cmd);
   // Touch gesture display names
   if (lowCmd.startsWith('tap '))   { const p=cmd.slice(4).trim().split(/\s+/); return `Tap (${p[0]||'?'}, ${p[1]||'?'})`; }
   if (lowCmd.startsWith('hold '))  { const p=cmd.slice(5).trim().split(/\s+/); return `Hold (${p[0]||'?'}, ${p[1]||'?'})${p[2]?` ${p[2]}ms`:''}`; }
@@ -2623,6 +2674,20 @@ function nameForCmd(cmd) {
   if (lowCmd === 'swiper' || lowCmd === 'swiperight') return 'Swipe Right';
   // Fallback: capitalize first letter
   return cmd.charAt(0).toUpperCase() + cmd.slice(1);
+}
+
+function formatMQTTCommandName(cmd) {
+  const raw = cmd.slice(4).trim();
+  if (!raw) return 'MQTT: Publish';
+  let after = raw;
+  if (raw.toLowerCase().startsWith('publish ') || raw.toLowerCase().startsWith('pub ')) {
+    after = raw.toLowerCase().startsWith('publish ') ? raw.slice(8).trim() : raw.slice(4).trim();
+  }
+  const parts = after.split(/\s+/);
+  if (parts.length === 0 || !parts[0]) return 'MQTT: Publish';
+  const topic = parts[0];
+  const payload = parts.slice(1).join(' ');
+  return payload ? `MQTT: ${topic} (${payload})` : `MQTT: ${topic}`;
 }
 
 function formatKMCommandName(cmd) {
@@ -2742,6 +2807,7 @@ function iconForCmd(cmd) {
   if (toggleInfo) return { icon:toggleInfo.icon, cls:'icon-dark' };
   if (lowCmd.startsWith('ha ') || lowCmd === 'ha') return { icon:'house_fill', cls:'icon-blue' };
   if (lowCmd.startsWith('km ') || lowCmd === 'km') return { icon:'command', cls:'icon-yellow' };
+  if (lowCmd.startsWith('mqtt ') || lowCmd === 'mqtt') return { icon:'antenna_radiowaves_left_right', cls:'icon-blue' };
   if (lowCmd.startsWith('flashlight ')) return { icon:'bolt_fill',       cls:'icon-orange' };
   if (lowCmd.startsWith('toast'))         return { icon:'text_bubble',     cls:'icon-orange' };
   if (lowCmd.startsWith('lua:'))          return { icon:'command',         cls:'icon-purple' };
@@ -2823,6 +2889,7 @@ const ACTION_SECTIONS = [
   { title:'Integrations', actions:[
     { name:'Home Assistant: Control Entity…',  cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
     { name:'Keyboard Maestro: Trigger Macro…',cmd:'__KM_TRIGGER__', icon:'command', needs_input:true },
+    { name:'MQTT: Publish Topic…',            cmd:'__MQTT_PUBLISH__', icon:'antenna_radiowaves_left_right', needs_input:true },
     { name:'Shortcuts: Run Shortcut…',        cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'SneakyCam: Take Photo',           cmd:'sneakycam photo', icon:'camera_fill' },
     { name:'SneakyCam: Toggle Video',         cmd:'sneakycam video', icon:'video_fill' },
@@ -4476,6 +4543,9 @@ function renderPickerSections() {
         if (a.cmd === '__KM_TRIGGER__') {
           return !!config.kmEnabled;
         }
+        if (a.cmd === '__MQTT_PUBLISH__') {
+          return !!config.mqttEnabled;
+        }
         return true;
       });
     }
@@ -4593,6 +4663,8 @@ function selectPickerAction(act) {
     promptCameraPicker(true);
   } else if (c === '__KM_TRIGGER__') {
     openKMDialog();
+  } else if (c === '__MQTT_PUBLISH__') {
+    promptMQTTActionPicker();
   } else {
     addActionToCurrent(c);
   }
@@ -4864,6 +4936,19 @@ function openSettings() {
     document.getElementById('setting-km-password').value = config.kmPassword || '';
   }
 
+  const mqttToggle = document.getElementById('setting-mqtt');
+  if (mqttToggle) {
+    mqttToggle.checked = !!config.mqttEnabled;
+    const wrapper = document.getElementById('mqtt-credentials-wrapper');
+    if (wrapper) wrapper.style.display = config.mqttEnabled ? 'block' : 'none';
+    document.getElementById('setting-mqtt-host').value = config.mqttHost || '';
+    document.getElementById('setting-mqtt-port').value = config.mqttPort || 1883;
+    document.getElementById('setting-mqtt-clientid').value = config.mqttClientId || 'RemoteCompanion';
+    document.getElementById('setting-mqtt-user').value = config.mqttUser || '';
+    document.getElementById('setting-mqtt-password').value = config.mqttPassword || '';
+    document.getElementById('setting-mqtt-prefix').value = config.mqttTopicPrefix || '';
+  }
+
   document.getElementById('settings-panel').classList.add('active');
   document.getElementById('footer-settings-fixed').style.display = 'block';
 }
@@ -4884,6 +4969,14 @@ function onKMToggleChange(enabled) {
   renderPickerSections();
 }
 
+function onMQTTToggleChange(enabled) {
+  config.mqttEnabled = enabled;
+  saveConfig();
+  const wrapper = document.getElementById('mqtt-credentials-wrapper');
+  if (wrapper) wrapper.style.display = enabled ? 'block' : 'none';
+  renderPickerSections();
+}
+
 function toggleKMPasswordVisibility() {
   const passInput = document.getElementById('setting-km-password');
   const eyeIcon = document.getElementById('km-password-eye-icon');
@@ -4895,6 +4988,95 @@ function toggleKMPasswordVisibility() {
     passInput.type = 'password';
     eyeIcon.textContent = 'eye';
   }
+}
+
+function toggleMQTTPasswordVisibility() {
+  const passInput = document.getElementById('setting-mqtt-password');
+  const eyeIcon = document.getElementById('mqtt-password-eye-icon');
+  if (!passInput || !eyeIcon) return;
+  if (passInput.type === 'password') {
+    passInput.type = 'text';
+    eyeIcon.textContent = 'eye_fill';
+  } else {
+    passInput.type = 'password';
+    eyeIcon.textContent = 'eye';
+  }
+}
+
+async function testMQTTConnection() {
+  const statusEl = document.getElementById('mqtt-test-status');
+  const btn = document.getElementById('mqtt-test-btn');
+  const host = (document.getElementById('setting-mqtt-host').value || '').trim();
+  const port = parseInt(document.getElementById('setting-mqtt-port').value) || 1883;
+  const clientId = (document.getElementById('setting-mqtt-clientid').value || '').trim();
+  const user = (document.getElementById('setting-mqtt-user').value || '').trim();
+  const password = (document.getElementById('setting-mqtt-password').value || '').trim();
+  
+  if (!host) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Missing Broker Host';
+    }
+    return;
+  }
+  
+  config.mqttHost = host;
+  config.mqttPort = port;
+  config.mqttClientId = clientId;
+  config.mqttUser = user;
+  config.mqttPassword = password;
+  saveConfig();
+  
+  if (statusEl) {
+    statusEl.style.color = '#8e8e93';
+    statusEl.textContent = 'Testing connection...';
+  }
+  if (btn) btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/mqtt/test', {
+      method: 'POST',
+      body: JSON.stringify({ mqttHost: host, mqttPort: port, mqttClientId: clientId, mqttUser: user, mqttPassword: password }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (statusEl) {
+        statusEl.style.color = '#30d158';
+        statusEl.textContent = '✓ Connected!';
+      }
+      showToast('✓ MQTT connection successful');
+    } else {
+      if (statusEl) {
+        statusEl.style.color = '#ff453a';
+        statusEl.textContent = `⚠ ${data.error || 'Connection failed'}`;
+      }
+      showToast('⚠ MQTT connection failed');
+    }
+  } catch(e) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Connection error';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function promptMQTTActionPicker() {
+  const defaultTopic = config.mqttTopicPrefix ? `${config.mqttTopicPrefix}/action` : 'remotecompanion/action';
+  showDialog('MQTT: Publish Topic', 'Topic (e.g. home/livingroom/light/set):', defaultTopic, 'Next', topic => {
+    if (!topic || !topic.trim()) return;
+    const cleanTopic = topic.trim();
+    showDialog('MQTT Payload', 'Payload to send (optional, e.g. ON, TOGGLE, or JSON):', '', 'Add Action', payload => {
+      const cleanPayload = (payload || '').trim();
+      if (cleanPayload.length > 0) {
+        addActionToCurrent(`mqtt publish ${cleanTopic} ${cleanPayload}`);
+      } else {
+        addActionToCurrent(`mqtt publish ${cleanTopic}`);
+      }
+    });
+  });
 }
 
 async function testKMConnection() {

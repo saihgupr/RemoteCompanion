@@ -7,6 +7,7 @@
 #import <unistd.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <netdb.h>
 #import <spawn.h>
 #import <notify.h>
 #import <sys/wait.h>
@@ -4894,6 +4895,218 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
     }
 }
 
+static void rc_mqtt_append_rem_len(NSMutableData *data, NSUInteger length) {
+    do {
+        uint8_t d = length % 128;
+        length /= 128;
+        if (length > 0) d |= 128;
+        [data appendBytes:&d length:1];
+    } while (length > 0);
+}
+
+static void rc_mqtt_append_utf8(NSMutableData *data, NSString *str) {
+    if (!str) str = @"";
+    NSData *strData = [str dataUsingEncoding:NSUTF8StringEncoding];
+    uint16_t len = htons((uint16_t)strData.length);
+    [data appendBytes:&len length:2];
+    if (strData.length > 0) [data appendData:strData];
+}
+
+static BOOL rc_mqtt_publish(NSString *host, NSInteger port, NSString *user, NSString *pass, NSString *clientId, NSString *topic, NSString *payload, NSInteger qos, BOOL retain, NSError **error) {
+    if (!host.length) {
+        if (error) *error = [NSError errorWithDomain:@"RCMQTT" code:-1 userInfo:@{NSLocalizedDescriptionKey: @"Host is empty"}];
+        return NO;
+    }
+    
+    char portStr[16];
+    snprintf(portStr, sizeof(portStr), "%ld", (long)(port > 0 ? port : 1883));
+    
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    
+    struct addrinfo *res = NULL;
+    int gai_err = getaddrinfo([host UTF8String], portStr, &hints, &res);
+    if (gai_err != 0 || !res) {
+        if (error) *error = [NSError errorWithDomain:@"RCMQTT" code:-3 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Could not resolve host: %s", gai_strerror(gai_err)]}];
+        return NO;
+    }
+    
+    int sockfd = -1;
+    for (struct addrinfo *rp = res; rp != NULL; rp = rp->ai_next) {
+        sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sockfd == -1) continue;
+        
+        int flags = fcntl(sockfd, F_GETFL, 0);
+        fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+        
+        int conn = connect(sockfd, rp->ai_addr, rp->ai_addrlen);
+        if (conn == 0) {
+            fcntl(sockfd, F_SETFL, flags);
+            break;
+        }
+        if (errno == EINPROGRESS) {
+            fd_set fdset;
+            FD_ZERO(&fdset);
+            FD_SET(sockfd, &fdset);
+            struct timeval tv = { 5, 0 };
+            if (select(sockfd + 1, NULL, &fdset, NULL, &tv) == 1) {
+                int so_error = 0;
+                socklen_t len = sizeof(so_error);
+                getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &so_error, &len);
+                if (so_error == 0) {
+                    fcntl(sockfd, F_SETFL, flags);
+                    break;
+                }
+            }
+        }
+        close(sockfd);
+        sockfd = -1;
+    }
+    freeaddrinfo(res);
+    
+    if (sockfd == -1) {
+        if (error) *error = [NSError errorWithDomain:@"RCMQTT" code:-4 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Could not connect to %@:%ld", host, (long)port]}];
+        return NO;
+    }
+    
+    struct timeval rtv = { 5, 0 };
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&rtv, sizeof(rtv));
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&rtv, sizeof(rtv));
+    
+    // Build CONNECT packet
+    NSMutableData *varHeader = [NSMutableData data];
+    uint16_t protoNameLen = htons(4);
+    [varHeader appendBytes:&protoNameLen length:2];
+    [varHeader appendBytes:"MQTT" length:4];
+    uint8_t protoLevel = 4;
+    [varHeader appendBytes:&protoLevel length:1];
+    uint8_t connFlags = 0x02; // Clean session
+    if (user.length > 0) connFlags |= 0x80;
+    if (pass.length > 0) connFlags |= 0x40;
+    [varHeader appendBytes:&connFlags length:1];
+    uint16_t keepAlive = htons(60);
+    [varHeader appendBytes:&keepAlive length:2];
+    rc_mqtt_append_utf8(varHeader, clientId.length > 0 ? clientId : @"RemoteCompanion");
+    if (user.length > 0) rc_mqtt_append_utf8(varHeader, user);
+    if (pass.length > 0) rc_mqtt_append_utf8(varHeader, pass);
+    
+    NSMutableData *connPkt = [NSMutableData data];
+    uint8_t connType = 0x10;
+    [connPkt appendBytes:&connType length:1];
+    rc_mqtt_append_rem_len(connPkt, varHeader.length);
+    [connPkt appendData:varHeader];
+    
+    send(sockfd, connPkt.bytes, connPkt.length, 0);
+    
+    uint8_t connack[4];
+    ssize_t n = recv(sockfd, connack, 4, 0);
+    if (n < 4 || connack[0] != 0x20 || connack[3] != 0x00) {
+        close(sockfd);
+        if (error) *error = [NSError errorWithDomain:@"RCMQTT" code:-5 userInfo:@{NSLocalizedDescriptionKey: (n >= 4 && connack[3] != 0) ? [NSString stringWithFormat:@"Broker rejected connection (code %d)", connack[3]] : @"Invalid CONNACK from broker"}];
+        return NO;
+    }
+    
+    if (topic.length > 0) {
+        NSMutableData *pubPayload = [NSMutableData data];
+        rc_mqtt_append_utf8(pubPayload, topic);
+        if (qos > 0) {
+            uint16_t pktId = htons(1);
+            [pubPayload appendBytes:&pktId length:2];
+        }
+        if (payload.length > 0) {
+            NSData *pData = [payload dataUsingEncoding:NSUTF8StringEncoding];
+            if (pData) [pubPayload appendData:pData];
+        }
+        
+        NSMutableData *pubPkt = [NSMutableData data];
+        uint8_t pubType = 0x30;
+        if (qos == 1) pubType |= 0x02;
+        if (retain) pubType |= 0x01;
+        [pubPkt appendBytes:&pubType length:1];
+        rc_mqtt_append_rem_len(pubPkt, pubPayload.length);
+        [pubPkt appendData:pubPayload];
+        
+        send(sockfd, pubPkt.bytes, pubPkt.length, 0);
+    }
+    
+    uint8_t disconnectPacket[] = { 0xE0, 0x00 };
+    send(sockfd, disconnectPacket, sizeof(disconnectPacket), 0);
+    close(sockfd);
+    return YES;
+}
+
+static NSString *rc_execute_mqtt_command(NSString *cmdArgs) {
+    if (!g_triggerConfig) load_trigger_config();
+    BOOL mqttEnabled = [g_triggerConfig[@"mqttEnabled"] boolValue];
+    if (!mqttEnabled) {
+        return @"Error: MQTT is disabled in settings\n";
+    }
+    
+    NSString *cleanArgs = [cmdArgs stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cleanArgs.length == 0) {
+        return @"Error: Missing MQTT parameters. Usage: 'mqtt pub <topic> [payload]' or 'mqtt publish <topic> [payload]'\n";
+    }
+    
+    NSString *host = g_triggerConfig[@"mqttHost"] ?: @"192.168.1.50";
+    NSInteger port = [g_triggerConfig[@"mqttPort"] integerValue];
+    if (port <= 0) port = 1883;
+    NSString *user = g_triggerConfig[@"mqttUser"];
+    NSString *pass = g_triggerConfig[@"mqttPassword"];
+    NSString *clientId = g_triggerConfig[@"mqttClientId"] ?: @"RemoteCompanion";
+    
+    NSString *topic = nil;
+    NSString *payload = nil;
+    
+    NSString *after = cleanArgs;
+    if ([cleanArgs hasPrefix:@"publish "] || [cleanArgs hasPrefix:@"pub "]) {
+        after = [cleanArgs hasPrefix:@"publish "] ? [cleanArgs substringFromIndex:8] : [cleanArgs substringFromIndex:4];
+        after = [after stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    }
+    
+    if ([after hasPrefix:@"\""]) {
+        NSRange endQuote = [after rangeOfString:@"\"" options:0 range:NSMakeRange(1, after.length - 1)];
+        if (endQuote.location != NSNotFound) {
+            topic = [after substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+            NSString *rem = [[after substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if (rem.length > 0) {
+                if ([rem hasPrefix:@"\""] && [rem hasSuffix:@"\""] && rem.length >= 2) {
+                    payload = [rem substringWithRange:NSMakeRange(1, rem.length - 2)];
+                } else {
+                    payload = rem;
+                }
+            }
+        }
+    }
+    if (!topic) {
+        NSArray *parts = [after componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        NSMutableArray *cleanParts = [NSMutableArray array];
+        for (NSString *p in parts) { if (p.length > 0) [cleanParts addObject:p]; }
+        if (cleanParts.count > 0) {
+            topic = cleanParts[0];
+            if (cleanParts.count > 1) {
+                payload = [[cleanParts subarrayWithRange:NSMakeRange(1, cleanParts.count - 1)] componentsJoinedByString:@" "];
+            }
+        }
+    }
+    
+    if (!topic || topic.length == 0) {
+        return @"Error: Missing MQTT topic\n";
+    }
+    
+    NSError *error = nil;
+    BOOL success = rc_mqtt_publish(host, port, user, pass, clientId, topic, payload ?: @"", 0, NO, &error);
+    if (success) {
+        NSString *toastDetail = payload.length > 0 ? [NSString stringWithFormat:@"%@ (%@)", topic, payload] : topic;
+        rc_show_hud_toast(@"MQTT Published", toastDetail, @"antenna.radiowaves.left.and.right");
+        return [NSString stringWithFormat:@"MQTT message published to '%@'\n", topic];
+    } else {
+        return [NSString stringWithFormat:@"MQTT publish failed: %@\n", error.localizedDescription ?: @"Connection error"];
+    }
+}
+
 static void rc_execute_shortcut(NSString *shortcutName, NSString *inputArg) {
     if (!shortcutName || shortcutName.length == 0) return;
     
@@ -5232,6 +5445,11 @@ static NSString *handle_command(NSString *cmd) {
     if ([cleanCmd isEqualToString:@"km"] || [cleanCmd hasPrefix:@"km "]) {
         NSString *subArgs = [cleanCmd isEqualToString:@"km"] ? @"" : [cleanCmd substringFromIndex:3];
         return rc_execute_km_command(subArgs);
+    }
+    
+    if ([cleanCmd isEqualToString:@"mqtt"] || [cleanCmd hasPrefix:@"mqtt "]) {
+        NSString *subArgs = [cleanCmd isEqualToString:@"mqtt"] ? @"" : [cleanCmd substringFromIndex:5];
+        return rc_execute_mqtt_command(subArgs);
     }
     
     // Debug hex dump of command
@@ -8233,10 +8451,106 @@ static void start_web_server() {
                                      NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
                                      NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
                                      responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                 } else if ([path isEqualToString:@"/api/mqtt/test"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                       load_trigger_config();
+                                       NSString *overrideHost = nil;
+                                       NSInteger overridePort = 0;
+                                       NSString *overrideUser = nil;
+                                       NSString *overridePass = nil;
+                                       NSString *overrideClientId = nil;
+                                       if ([method isEqualToString:@"POST"]) {
+                                           NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                           int contentLength = 0;
+                                           if (clRange.location != NSNotFound) {
+                                               NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                               contentLength = [afterCl intValue];
+                                           }
+                                           const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                           if (headersEnd != NULL) {
+                                               size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                               size_t availableBodyLength = valread - headerBytesOffset;
+                                               NSMutableData *bodyData = [NSMutableData data];
+                                               if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                               while (bodyData.length < contentLength) {
+                                                   char chunk[4096];
+                                                   ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                                   if (chunkRead <= 0) break;
+                                                   [bodyData appendBytes:chunk length:chunkRead];
+                                               }
+                                               NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                               if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                                   overrideHost = jsonObj[@"mqttHost"];
+                                                   if (jsonObj[@"mqttPort"]) overridePort = [jsonObj[@"mqttPort"] integerValue];
+                                                   overrideUser = jsonObj[@"mqttUser"];
+                                                   overridePass = jsonObj[@"mqttPassword"];
+                                                   overrideClientId = jsonObj[@"mqttClientId"];
+                                               }
+                                           }
+                                       }
+                                       NSString *host = overrideHost.length > 0 ? overrideHost : (g_triggerConfig[@"mqttHost"] ?: @"192.168.1.50");
+                                       NSInteger port = overridePort > 0 ? overridePort : ([g_triggerConfig[@"mqttPort"] integerValue] > 0 ? [g_triggerConfig[@"mqttPort"] integerValue] : 1883);
+                                       NSString *user = overrideUser != nil ? overrideUser : g_triggerConfig[@"mqttUser"];
+                                       NSString *pass = overridePass != nil ? overridePass : g_triggerConfig[@"mqttPassword"];
+                                       NSString *clientId = overrideClientId.length > 0 ? overrideClientId : (g_triggerConfig[@"mqttClientId"] ?: @"RemoteCompanion");
+                                       
+                                       NSError *err = nil;
+                                       BOOL ok = rc_mqtt_publish(host, port, user, pass, clientId, nil, nil, 0, NO, &err);
+                                       NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                       if (ok) {
+                                           resp[@"ok"] = @YES;
+                                           resp[@"message"] = [NSString stringWithFormat:@"Connected to MQTT broker (%@:%ld)", host, (long)port];
+                                       } else {
+                                           resp[@"ok"] = @NO;
+                                           resp[@"error"] = err.localizedDescription ?: @"Connection failed";
+                                       }
+                                       NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                       NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                       responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                   } else if ([path isEqualToString:@"/api/mqtt/publish"] && [method isEqualToString:@"POST"]) {
+                                       load_trigger_config();
+                                       NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                       int contentLength = 0;
+                                       if (clRange.location != NSNotFound) {
+                                           NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                           contentLength = [afterCl intValue];
+                                       }
+                                       const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                       NSString *topic = nil;
+                                       NSString *payload = nil;
+                                       if (headersEnd != NULL) {
+                                           size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                           size_t availableBodyLength = valread - headerBytesOffset;
+                                           NSMutableData *bodyData = [NSMutableData data];
+                                           if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                           while (bodyData.length < contentLength) {
+                                               char chunk[4096];
+                                               ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                               if (chunkRead <= 0) break;
+                                               [bodyData appendBytes:chunk length:chunkRead];
+                                           }
+                                           NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                           if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                               topic = jsonObj[@"topic"];
+                                               payload = jsonObj[@"payload"];
+                                           }
+                                       }
+                                       NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                       if (topic.length > 0) {
+                                           NSString *cmdStr = payload.length > 0 ? [NSString stringWithFormat:@"publish %@ %@", topic, payload] : [NSString stringWithFormat:@"publish %@", topic];
+                                           NSString *mqttRes = rc_execute_mqtt_command(cmdStr);
+                                           resp[@"ok"] = [mqttRes containsString:@"Error:"] || [mqttRes containsString:@"failed:"] ? @NO : @YES;
+                                           resp[@"output"] = mqttRes;
+                                       } else {
+                                           resp[@"ok"] = @NO;
+                                           resp[@"error"] = @"Missing topic parameter";
+                                       }
+                                       NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                       NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                       responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
                                  } else if ([path isEqualToString:@"/api/km/trigger"] && [method isEqualToString:@"POST"]) {
                                      load_trigger_config();
-                                     NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
                                      int contentLength = 0;
+                                     NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
                                      if (clRange.location != NSNotFound) {
                                          NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
                                          contentLength = [afterCl intValue];

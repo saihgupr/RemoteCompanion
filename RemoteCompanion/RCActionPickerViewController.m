@@ -184,6 +184,9 @@
             if (cm.kmEnabled) {
                 [integrations addObject:@{ @"name": @"Keyboard Maestro: Trigger Macro...", @"command": @"__KM_TRIGGER__", @"icon": @"command" }];
             }
+            if (cm.mqttEnabled) {
+                [integrations addObject:@{ @"name": @"MQTT: Publish Topic...", @"command": @"__MQTT_PUBLISH__", @"icon": @"antenna.radiowaves.left.and.right" }];
+            }
             [integrations addObject:@{ @"name": @"Shortcuts: Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" }];
             NSArray *sneakyPaths = @[
                 @"/Library/MobileSubstrate/DynamicLibraries/SneakyCam.dylib",
@@ -414,6 +417,11 @@
 
     if ([command isEqualToString:@"__KM_TRIGGER__"]) {
         [self handleKMTrigger];
+        return;
+    }
+
+    if ([command isEqualToString:@"__MQTT_PUBLISH__"]) {
+        [self handleMQTTPublish];
         return;
     }
 
@@ -895,6 +903,56 @@
         }
     };
     [self.navigationController pushViewController:picker animated:YES];
+}
+
+- (void)handleMQTTPublish {
+    RCConfigManager *cm = [RCConfigManager sharedManager];
+    NSString *defaultTopic = cm.mqttTopicPrefix.length ? [NSString stringWithFormat:@"%@/action", cm.mqttTopicPrefix] : @"remotecompanion/action";
+    
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"MQTT: Publish Topic"
+                                                                   message:@"Enter the MQTT topic and payload to publish:"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"Topic (e.g. home/livingroom/light/set)";
+        tf.text = defaultTopic;
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"Payload (e.g. ON, TOGGLE, 1, or JSON)";
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        NSString *topic = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *payload = [alert.textFields[1].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        if (!topic.length) return;
+        
+        NSString *finalCmd;
+        if (payload.length > 0) {
+            finalCmd = [NSString stringWithFormat:@"mqtt publish %@ %@", topic, payload];
+        } else {
+            finalCmd = [NSString stringWithFormat:@"mqtt publish %@", topic];
+        }
+        
+        if (self.onActionSelected) {
+            self.onActionSelected(finalCmd);
+        }
+        if (self.searchController.isActive) {
+            [self.searchController dismissViewControllerAnimated:NO completion:^{
+                [self dismissViewControllerAnimated:YES completion:nil];
+            }];
+        } else {
+            [self dismissViewControllerAnimated:YES completion:nil];
+        }
+    }]];
+    
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 @end

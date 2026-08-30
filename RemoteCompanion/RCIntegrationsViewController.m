@@ -1,6 +1,7 @@
 #import "RCIntegrationsViewController.h"
 #import "RCHASettingsViewController.h"
 #import "RCKMSettingsViewController.h"
+#import "RCMQTTSettingsViewController.h"
 #import "RCConfigManager.h"
 #import "RCUITweaker.h"
 
@@ -84,7 +85,7 @@
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return 2;
+    return 3;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
@@ -121,6 +122,12 @@
         cell.detailTextLabel.text = cm.kmEnabled ? (cm.kmUrl.length ? cm.kmUrl : @"Enabled (Default URL)") : @"Disabled";
         cell.imageView.image = [UIImage systemImageNamed:@"keyboard.fill"];
         cell.imageView.tintColor = cm.kmEnabled ? [UIColor systemPurpleColor] : [UIColor secondaryLabelColor];
+    } else if (indexPath.row == 2) {
+        cell.textLabel.text = @"MQTT";
+        NSString *hostStr = cm.mqttHost.length ? [NSString stringWithFormat:@"%@:%ld", cm.mqttHost, (long)(cm.mqttPort > 0 ? cm.mqttPort : 1883)] : @"Enabled";
+        cell.detailTextLabel.text = cm.mqttEnabled ? hostStr : @"Disabled";
+        cell.imageView.image = [UIImage systemImageNamed:@"antenna.radiowaves.left.and.right"];
+        cell.imageView.tintColor = cm.mqttEnabled ? [UIColor systemTealColor] : [UIColor secondaryLabelColor];
     }
     
     return cell;
@@ -134,6 +141,9 @@
     } else if (indexPath.row == 1) {
         RCKMSettingsViewController *kmVC = [[RCKMSettingsViewController alloc] init];
         [self.navigationController pushViewController:kmVC animated:YES];
+    } else if (indexPath.row == 2) {
+        RCMQTTSettingsViewController *mqttVC = [[RCMQTTSettingsViewController alloc] init];
+        [self.navigationController pushViewController:mqttVC animated:YES];
     }
 }
 

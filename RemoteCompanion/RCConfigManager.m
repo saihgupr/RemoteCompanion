@@ -336,6 +336,70 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     [self saveConfig];
 }
 
+- (BOOL)mqttEnabled {
+    return [_config[@"mqttEnabled"] boolValue];
+}
+
+- (void)setMqttEnabled:(BOOL)mqttEnabled {
+    _config[@"mqttEnabled"] = @(mqttEnabled);
+    [self saveConfig];
+}
+
+- (NSString *)mqttHost {
+    return _config[@"mqttHost"] ?: @"192.168.1.50";
+}
+
+- (void)setMqttHost:(NSString *)mqttHost {
+    _config[@"mqttHost"] = mqttHost ?: @"192.168.1.50";
+    [self saveConfig];
+}
+
+- (NSInteger)mqttPort {
+    if (_config[@"mqttPort"] == nil) return 1883;
+    return [_config[@"mqttPort"] integerValue];
+}
+
+- (void)setMqttPort:(NSInteger)mqttPort {
+    _config[@"mqttPort"] = @(mqttPort > 0 ? mqttPort : 1883);
+    [self saveConfig];
+}
+
+- (NSString *)mqttUser {
+    return _config[@"mqttUser"] ?: @"";
+}
+
+- (void)setMqttUser:(NSString *)mqttUser {
+    _config[@"mqttUser"] = mqttUser ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)mqttPassword {
+    return _config[@"mqttPassword"] ?: @"";
+}
+
+- (void)setMqttPassword:(NSString *)mqttPassword {
+    _config[@"mqttPassword"] = mqttPassword ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)mqttClientId {
+    return _config[@"mqttClientId"] ?: @"RemoteCompanion";
+}
+
+- (void)setMqttClientId:(NSString *)mqttClientId {
+    _config[@"mqttClientId"] = mqttClientId ?: @"RemoteCompanion";
+    [self saveConfig];
+}
+
+- (NSString *)mqttTopicPrefix {
+    return _config[@"mqttTopicPrefix"] ?: @"remotecompanion";
+}
+
+- (void)setMqttTopicPrefix:(NSString *)mqttTopicPrefix {
+    _config[@"mqttTopicPrefix"] = mqttTopicPrefix ?: @"remotecompanion";
+    [self saveConfig];
+}
+
 - (NSDictionary *)triggerDataForKey:(NSString *)triggerKey {
     return _config[@"triggers"][triggerKey];
 }
@@ -1073,6 +1137,31 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             } else {
                 result = @"Keyboard Maestro";
             }
+        } else if ([cmd hasPrefix:@"mqtt "] || [cmd isEqualToString:@"mqtt"]) {
+            NSString *raw = [cmd hasPrefix:@"mqtt "] ? [cmd substringFromIndex:5] : @"";
+            raw = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if ([raw hasPrefix:@"pub "] || [raw hasPrefix:@"publish "]) {
+                NSString *args = [raw hasPrefix:@"publish "] ? [raw substringFromIndex:8] : [raw substringFromIndex:4];
+                args = [args stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                NSArray *parts = [args componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                NSMutableArray *clean = [NSMutableArray array];
+                for (NSString *p in parts) { if (p.length > 0) [clean addObject:p]; }
+                if (clean.count > 0) {
+                    NSString *topic = clean[0];
+                    if (clean.count > 1) {
+                        NSString *payload = [[clean subarrayWithRange:NSMakeRange(1, clean.count - 1)] componentsJoinedByString:@" "];
+                        result = [NSString stringWithFormat:@"MQTT: %@ (%@)", topic, payload];
+                    } else {
+                        result = [NSString stringWithFormat:@"MQTT: %@", topic];
+                    }
+                } else {
+                    result = @"MQTT Publish";
+                }
+            } else if (raw.length > 0) {
+                result = [NSString stringWithFormat:@"MQTT: %@", raw];
+            } else {
+                result = @"MQTT";
+            }
         } else if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) {
             result = @"Lua Script";
         } else if ([cmd hasPrefix:@"spotify "]) {
@@ -1179,6 +1268,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmd hasPrefix:@"sneakycam video"] || [cmd isEqualToString:@"sneakycam record"] || [cmd isEqualToString:@"sneakycam startstopvideo"]) return @"video.fill";
     if ([cmd hasPrefix:@"ha "] || [cmd isEqualToString:@"ha"]) return @"house.fill";
     if ([cmd hasPrefix:@"km "] || [cmd isEqualToString:@"km"]) return @"command";
+    if ([cmd hasPrefix:@"mqtt "] || [cmd isEqualToString:@"mqtt"]) return @"antenna.radiowaves.left.and.right";
     if ([cmd hasPrefix:@"toast"]) return @"text.bubble.fill";
     if ([cmd hasPrefix:@"root "] || [cmd hasPrefix:@"exec-root "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";

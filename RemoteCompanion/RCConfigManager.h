@@ -15,6 +15,13 @@
 @property (nonatomic, copy) NSString *kmUrl;
 @property (nonatomic, copy) NSString *kmUser;
 @property (nonatomic, copy) NSString *kmPassword;
+@property (nonatomic, assign) BOOL mqttEnabled;
+@property (nonatomic, copy) NSString *mqttHost;
+@property (nonatomic, assign) NSInteger mqttPort;
+@property (nonatomic, copy) NSString *mqttUser;
+@property (nonatomic, copy) NSString *mqttPassword;
+@property (nonatomic, copy) NSString *mqttClientId;
+@property (nonatomic, copy) NSString *mqttTopicPrefix;
 
 
 + (instancetype)sharedManager;

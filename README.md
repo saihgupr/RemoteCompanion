@@ -106,6 +106,9 @@ Access the desktop-class automation hub at `http://[DEVICE_IP]:8080` from any co
 - `rc km trigger <macro_name_or_uuid> [value]` - Trigger a Keyboard Maestro macro on your Mac by Name or UUID (e.g. `rc km trigger "Sleep Display"` or `rc km trigger 12345678-ABCD-EF01-2345-6789ABCDEF01 "MyParam"`).
 - `rc km url <web_trigger_url>` - Trigger a full Keyboard Maestro Web Server action URL (e.g. `rc km url "http://192.168.1.50:4490/action.html?macro=Sleep%20Display"`).
 
+### MQTT Integration
+- `rc mqtt pub <topic> [payload]` / `rc mqtt publish <topic> [payload]` - Publish messages to an MQTT broker (e.g. `rc mqtt pub "home/livingroom/light/set" "TOGGLE"` or `rc mqtt pub "remotecompanion/device/ping"`).
+
 <details>
 <summary><b>Hardware Triggers (Tweak App)</b></summary>
 
@@ -440,6 +443,20 @@ Once configured:
 - **Visual Macro Picker**: Open **Keyboard Maestro: Trigger Macro…** in the action picker to browse and search all macros categorized by group, with instant live filtering and parameter selection.
 - **Parameter Support**: Tapping or long-pressing any KM action in an action sequence allows you to edit or remove its `%TriggerValue%` parameter, test execution immediately, or switch to a different macro.
 - **CLI & Scripts**: Execute KM commands directly via CLI: `rc km trigger "Sleep Display"` or `rc km "My Macro Name" "Optional Value"`.
+
+### MQTT Integration
+
+Connect directly to local or cloud MQTT brokers (e.g. Mosquitto, EMQX, Home Assistant Mosquitto add-on) with zero external dependencies and near-zero battery impact:
+
+1. In the RemoteCompanion Web UI or iOS App, go to **Settings** &rarr; **Integrations** &rarr; **MQTT**.
+2. Toggle on **Enable MQTT**.
+3. Enter your **Broker Host** (e.g. `192.168.1.50` or `homeassistant.local`), **Port** (`1883`), **Client ID**, and optional **Username** & **Password**.
+4. Set an optional **Default Topic Prefix** (e.g. `home/bedroom` or `remotecompanion`).
+5. Tap **Test Connection** to confirm broker communication.
+
+Once configured:
+- **Action Picker**: Select **MQTT: Publish Topic…** to assign publish actions with customizable topics and payloads (strings, numbers, or JSON) to any gesture, hardware button, or scheduled trigger.
+- **CLI**: Publish directly from scripts using `rc mqtt pub <topic> [payload]`.
 
 </details>
 

@@ -10147,6 +10147,18 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                         g_powerIsDown = NO;
                         SRLog(@"[HID] ⚡️ Power UP");
                         
+                        // Invalidate pending power hold timers immediately on physical button release
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            if (g_lockButtonTimer) {
+                                [g_lockButtonTimer invalidate];
+                                g_lockButtonTimer = nil;
+                            }
+                            if (g_systemPowerOffTimer) {
+                                [g_systemPowerOffTimer invalidate];
+                                g_systemPowerOffTimer = nil;
+                            }
+                        });
+
                         // If a combo was triggered, DON'T count this as a click for multi-tap
                         if (g_powerVolComboTriggered) {
                             SRLog(@"[HID] Combo was triggered, resetting power click count.");
@@ -10281,26 +10293,6 @@ static void setup_background_hid_listener() {
     SRLog(@"[RemoteCompanion] Hooked SBProximitySensorManager custom init: %@", g_proximitySensorManager);
     return orig;
 }
-- (void)_setObjectInProximity:(BOOL)arg1 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setObjectInProximity: %d", arg1);
-    %orig;
-}
-- (void)_setProximityDetectionEnabled:(BOOL)arg1 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setProximityDetectionEnabled: %d (forced=%d)", arg1, g_forceProximityDetection);
-    if (g_forceProximityDetection) {
-        %orig(YES);
-    } else {
-        %orig;
-    }
-}
-- (void)client:(id)arg1 wantsProximityDetectionEnabled:(BOOL)arg2 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager client: %@ wantsProximityDetectionEnabled: %d", arg1, arg2);
-    %orig;
-}
-- (void)_updateProxState {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _updateProxState");
-    %orig;
-}
 %end
 
 %hook SBLockHardwareButtonActions
@@ -10332,25 +10324,31 @@ static void setup_background_hid_listener() {
     }
     
     load_trigger_config();
-    BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL longPressEnabled = masterEnabled && 
                    [g_triggerConfig[@"triggers"][@"power_long_press"][@"enabled"] boolValue];
 
-    SRLog(@"Power Button DOWN (Actions) - enabled=%d", enabled);
+    SRLog(@"Power Button DOWN (Actions) - enabled=%d", longPressEnabled);
 
-    if (enabled) {
+    if (longPressEnabled) {
         if (g_lockButtonTimer == nil && !g_lockButtonTriggered) {
             g_lockButtonTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
-                g_lockButtonTriggered = YES;
                 g_lockButtonTimer = nil;
+                if (!g_powerIsDown) {
+                    SRLog(@"Power Long Press ignored because button is not down");
+                    return;
+                }
+                g_lockButtonTriggered = YES;
                 trigger_haptic();
                 RCExecuteTrigger(@"power_long_press");
                 SRLog(@"Power Long Press Fired (Stage 1)!");
                 
                 // Start Stage 2 Timer (System Power Off) - 2.0s later (2.5s total hold)
                 g_systemPowerOffTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:NO block:^(NSTimer *t) {
+                     g_systemPowerOffTimer = nil;
+                     if (!g_powerIsDown) return;
                      SRLog(@"Power Long Press (Stage 2) - Forcing System Power Off Screen");
                      g_forceSystemLongPress = YES;
-                     g_systemPowerOffTimer = nil;
                      
                      // Manually invoke the action again, but this time g_forceSystemLongPress is YES
                      [self performLongPressActions];
@@ -10359,9 +10357,14 @@ static void setup_background_hid_listener() {
         }
     }
 
+    BOOL multiClickEnabled = masterEnabled && 
+        ([g_triggerConfig[@"triggers"][@"power_double_tap"][@"enabled"] boolValue] ||
+         [g_triggerConfig[@"triggers"][@"power_triple_click"][@"enabled"] boolValue] ||
+         [g_triggerConfig[@"triggers"][@"power_quadruple_click"][@"enabled"] boolValue]);
+
     // SUPPRESSION: If a multi-click sequence is in progress, swallow the DOWN event.
     // This stops the phone from waking/locking on subsequent clicks.
-    if (g_powerClickCount >= 1) {
+    if (multiClickEnabled && g_powerClickCount >= 1) {
         SRLog(@"Suppressing system DOWN for click sequence (count=%d)", g_powerClickCount);
         return;
     }
@@ -10390,9 +10393,16 @@ static void setup_background_hid_listener() {
         return; 
     }
 
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL multiClickEnabled = masterEnabled && 
+        ([g_triggerConfig[@"triggers"][@"power_double_tap"][@"enabled"] boolValue] ||
+         [g_triggerConfig[@"triggers"][@"power_triple_click"][@"enabled"] boolValue] ||
+         [g_triggerConfig[@"triggers"][@"power_quadruple_click"][@"enabled"] boolValue]);
+
     // SUPPRESSION: Swallow UP events for 2nd click onwards.
     // Click 1 passes %orig so system can lock/wake normally if sequence stops.
-    if (g_powerClickCount >= 2) {
+    if (multiClickEnabled && g_powerClickCount >= 2) {
         SRLog(@"Suppressing system UP for click #%d", g_powerClickCount);
         return;
     }

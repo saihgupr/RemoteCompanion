@@ -439,9 +439,15 @@ body {
 }
 
 .pm-icon {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
+  object-fit: contain;
+  display: block;
+}
+
+.pm-icon-img {
+  border-radius: 5px;
 }
 
 /* 1-Click Repo URL Box */

@@ -528,6 +528,33 @@ static float sr_previous_volume = -1.0f;
 
 
 
+// Rootless-compatible log path helper
+static NSString *rc_get_log_file_path(void) {
+    static NSString *cachedLogPath = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSFileManager *fm = [NSFileManager defaultManager];
+        if ([fm fileExistsAtPath:@"/var/jb/tmp"]) {
+            cachedLogPath = @"/var/jb/tmp/remotecommand.log";
+        } else if ([fm fileExistsAtPath:@"/var/jb"]) {
+            if ([fm createDirectoryAtPath:@"/var/jb/tmp" withIntermediateDirectories:YES attributes:nil error:nil]) {
+                cachedLogPath = @"/var/jb/tmp/remotecommand.log";
+            }
+        }
+        
+        if (!cachedLogPath) {
+            if ([fm fileExistsAtPath:@"/tmp"]) {
+                cachedLogPath = @"/tmp/remotecommand.log";
+            } else {
+                NSString *logsDir = @"/var/mobile/Library/Logs/RemoteCompanion";
+                [fm createDirectoryAtPath:logsDir withIntermediateDirectories:YES attributes:nil error:nil];
+                cachedLogPath = [logsDir stringByAppendingPathComponent:@"remotecompanion.log"];
+            }
+        }
+    });
+    return cachedLogPath ?: @"/tmp/remotecommand.log";
+}
+
 // File-based logging helper
 void SRLog(NSString *format, ...) {
     va_list args;
@@ -540,8 +567,9 @@ void SRLog(NSString *format, ...) {
     
     // Write to file with synchronization
     @synchronized([NSFileManager defaultManager]) {
+        NSString *logPath = rc_get_log_file_path();
         NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] %@\n", [NSDate date], message];
-        NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
+        NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:logPath];
         if (fileHandle) {
             @try {
                 [fileHandle seekToEndOfFile];
@@ -550,7 +578,8 @@ void SRLog(NSString *format, ...) {
                 [fileHandle closeFile];
             } @catch (NSException *e) {}
         } else {
-            [logMsg writeToFile:@"/tmp/remotecommand.log" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            [logMsg writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            chmod([logPath UTF8String], 0666);
         }
     }
 }
@@ -8353,7 +8382,7 @@ static NSDictionary* get_system_diagnostics(void) {
         : [NSString stringWithFormat:@"http://127.0.0.1:%d", g_actualWebPort];
 
     // Log File Info
-    NSString *logPath = @"/tmp/remotecommand.log";
+    NSString *logPath = rc_get_log_file_path();
     uint64_t logSizeBytes = 0;
     NSDictionary *logAttrs = [[NSFileManager defaultManager] attributesOfItemAtPath:logPath error:nil];
     if (logAttrs) {
@@ -8596,7 +8625,7 @@ static void start_web_server() {
                                         }
                                     }
                                 } else if ([path isEqualToString:@"/api/logs"] && [method isEqualToString:@"GET"]) {
-                                    NSString *logPath = @"/tmp/remotecommand.log";
+                                    NSString *logPath = rc_get_log_file_path();
                                     NSString *logContent = @"";
                                     if ([[NSFileManager defaultManager] fileExistsAtPath:logPath]) {
                                         NSError *err = nil;
@@ -8636,7 +8665,7 @@ static void start_web_server() {
                                     });
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
                                 } else if ([path isEqualToString:@"/api/sysaction/clearlog"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
-                                    NSString *logPath = @"/tmp/remotecommand.log";
+                                    NSString *logPath = rc_get_log_file_path();
                                     [@"" writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
                                 } else if ([path isEqualToString:@"/api/sysaction/safemode"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
@@ -10362,9 +10391,9 @@ static void setup_background_hid_listener() {
          [g_triggerConfig[@"triggers"][@"power_triple_click"][@"enabled"] boolValue] ||
          [g_triggerConfig[@"triggers"][@"power_quadruple_click"][@"enabled"] boolValue]);
 
-    // SUPPRESSION: If a multi-click sequence is in progress, swallow the DOWN event.
-    // This stops the phone from waking/locking on subsequent clicks.
-    if (multiClickEnabled && g_powerClickCount >= 1) {
+    // SUPPRESSION: If a multi-click sequence is in progress, swallow the DOWN event for 2nd click onwards.
+    // This stops the phone from waking/locking on subsequent clicks while allowing single-tap %orig.
+    if (multiClickEnabled && g_powerClickCount >= 2) {
         SRLog(@"Suppressing system DOWN for click sequence (count=%d)", g_powerClickCount);
         return;
     }
@@ -10425,6 +10454,35 @@ static void setup_background_hid_listener() {
         g_forceSystemLongPress = NO; // Reset immediately
         %orig;
         return;
+    }
+
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL longPressEnabled = masterEnabled && 
+                   [g_triggerConfig[@"triggers"][@"power_long_press"][@"enabled"] boolValue];
+
+    if (longPressEnabled) {
+        if (!g_lockButtonTriggered) {
+            if (g_lockButtonTimer) {
+                [g_lockButtonTimer invalidate];
+                g_lockButtonTimer = nil;
+            }
+            g_lockButtonTriggered = YES;
+            trigger_haptic();
+            RCExecuteTrigger(@"power_long_press");
+            SRLog(@"Power Long Press Fired (via performLongPressActions)!");
+            
+            // Start Stage 2 Timer (System Power Off) - 2.0s later
+            g_systemPowerOffTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:NO block:^(NSTimer *t) {
+                 g_systemPowerOffTimer = nil;
+                 if (!g_powerIsDown) return;
+                 SRLog(@"Power Long Press (Stage 2) - Forcing System Power Off Screen");
+                 g_forceSystemLongPress = YES;
+                 [self performLongPressActions];
+            }];
+        }
+        SRLog(@"Power Long Press Actions (Default) Suppressed (Stage 1 active)");
+        return; 
     }
 
     if (g_lockButtonTriggered) {

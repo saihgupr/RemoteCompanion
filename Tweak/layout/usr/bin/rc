@@ -96,8 +96,19 @@ elif [[ "$_CMD" == "safe-mode" || "$_CMD" == "safe_mode" ]]; then
     _CMD="safemode"
 elif [[ "$_CMD" == "shortcut "* ]]; then
     _CMD="shortcut:${_CMD#shortcut }"
-elif [[ "$_CMD" == "log" ]]; then
-    ssh -o StrictHostKeyChecking=no mobile@$IP "tail -f /tmp/remotecommand.log"
+elif [[ "$_CMD" == "log" || "$_CMD" == "logs" ]]; then
+    if [[ "$IP" == "127.0.0.1" ]]; then
+        for log_candidate in "/var/jb/tmp/remotecommand.log" "/tmp/remotecommand.log" "/var/mobile/Library/Logs/RemoteCompanion/remotecompanion.log"; do
+            if [ -f "$log_candidate" ]; then
+                tail -f "$log_candidate"
+                exit 0
+            fi
+        done
+        tail -f /tmp/remotecommand.log
+    else
+        REMOTE_LOG_CMD="for log_candidate in /var/jb/tmp/remotecommand.log /tmp/remotecommand.log /var/mobile/Library/Logs/RemoteCompanion/remotecompanion.log; do if [ -f \"\$log_candidate\" ]; then tail -f \"\$log_candidate\"; exit 0; fi; done; tail -f /tmp/remotecommand.log"
+        ssh -o StrictHostKeyChecking=no mobile@$IP "$REMOTE_LOG_CMD"
+    fi
     exit 0
 fi
 

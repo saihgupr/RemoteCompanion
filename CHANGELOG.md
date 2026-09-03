@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.3] - 2026-09-03
+
+### Fixed
+- **Location Services Action Editor**: Added `location` to `toggleInfoForCommand:` so Location Services actions in action sequences can be tapped to interactively cycle or select between **On**, **Off**, and **Toggle**.
+
 ## [3.6.2] - 2026-09-03
 
 ### Added

@@ -12,6 +12,7 @@ RemoteCompanion provides fast, scriptable system control for modern rootless jai
 > - **Safe Mode Action & CLI**: Enter Safe Mode directly from CLI (`rc safemode`), Web UI, or iOS companion app.
 
 <p align="center">
+  <a href="https://saihgupr.github.io/remotecompanion/"><strong>🌐 Official Website & Web Hub</strong></a> •
   <a href="#features">Features</a> •
   <a href="#web-ui--automations-hub">Web UI Hub</a> •
   <a href="#cli-commands--system-control">CLI Commands</a> •

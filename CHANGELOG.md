@@ -35,6 +35,12 @@ All notable changes to this project will be documented in this file.
 - **Streamlined Camera Action Picker**: Simplified camera options in the iOS and Web UI action pickers to clean, minimal **Open Camera** and **Open Video Camera** items while preserving specialized parameter variations when manually configured or imported.
 - **Wider Web UI Modals**: Increased the modal dialog widths for App Launch and Time Range trigger selectors for better readability on desktop and mobile browsers.
 
+### Fixed
+- **Power Button Lock & Proximity Sensor Suppression (#34)**:
+  - Resolved an issue where pressing the power button to lock the screen was unresponsive or delayed while the proximity sensor was covered (e.g. holding or handling the top of the device).
+  - Multi-click power button suppression logic now only intercepts events when multi-click power triggers (`power_double_tap`, `power_triple_click`, `power_quadruple_click`) are actively enabled in configuration, restoring immediate native `%orig` handling when unassigned.
+  - Power long press handling now checks whether `power_long_press` is actively enabled before intercepting `performLongPressActions`, allowing standard lock and system behavior to proceed without latency or sensor blocking.
+
 ## [3.5.2] - 2026-08-29
 
 ### Fixed

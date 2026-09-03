@@ -322,11 +322,14 @@ Add `https://saihgupr.github.io/remotecompanion` to your package manager:
 Download the latest `.deb` package from [Releases](https://github.com/saihgupr/remotecompanion/releases) and install via Sileo, Filza, or `dpkg -i`.
 
 #### Option 3: Build from Source
+Ensure you have [Theos](https://theos.dev) installed.
 ```bash
 git clone https://github.com/saihgupr/remotecompanion.git
 cd remotecompanion
-./deploy.sh
+./build.sh
 ```
+By default, `./build.sh` builds the unified rootless `.deb` package (companion app, web UI, CLI, and tweak). You can also pass `--rootful`, `--roothide`, `--all`, or `--clean`.
+
 
 ### 3. Usage Methods
 

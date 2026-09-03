@@ -1,6 +1,7 @@
 #import "RCSettingsViewController.h"
 #import "RCConfigManager.h"
 #import "RCUITweaker.h"
+#import "RCIntegrationsViewController.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 @interface RCSettingsViewController () <UIDocumentPickerDelegate>
@@ -100,6 +101,10 @@
     [self applyTweaks];
 }
 
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)handleTweaksChanged:(NSNotification *)note {
     [self applyTweaks];
 }
@@ -131,12 +136,13 @@
 #pragma mark - Table View Data Source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 2;
+    return 3;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
     NSString *title;
     if (section == 0) title = @"General";
+    else if (section == 1) title = @"Integrations";
     else title = @"Backup";
     
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 40)];
@@ -156,6 +162,8 @@
     if (section == 0) {
         return nil;
     } else if (section == 1) {
+        return @"Configure connections to external services and automations.";
+    } else if (section == 2) {
         return @"Export your configuration to share or backup. Import to restore.";
     }
     return nil;
@@ -163,13 +171,14 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return 3; // Master + NFC + WebUI
+    if (section == 1) return 1; // Integrations Submenu Row
     return 2; // Export, Import
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-    
     RCConfigManager *cm = [RCConfigManager sharedManager];
+    
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     cell.backgroundColor = [cm tweakColorForKey:@"blockBackground" defaultVal:0.12];
     
     UIView *selBg = [[UIView alloc] init];
@@ -179,34 +188,44 @@
     cell.layer.borderColor = [cm tweakColorForKey:@"borders" defaultVal:0.14].CGColor;
     cell.layer.borderWidth = 1.0;
     cell.contentView.backgroundColor = [UIColor clearColor];
-    
     cell.layer.masksToBounds = YES;
-    
     cell.textLabel.textColor = [UIColor labelColor];
+    if (cell.detailTextLabel) {
+        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    }
     
     if (indexPath.section == 0) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"Enable All Triggers";
             _masterSwitch = [[UISwitch alloc] init];
-            _masterSwitch.on = [RCConfigManager sharedManager].masterEnabled;
+            _masterSwitch.on = cm.masterEnabled;
             [_masterSwitch addTarget:self action:@selector(masterToggleChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = _masterSwitch;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         } else if (indexPath.row == 1) {
             cell.textLabel.text = @"NFC Scanning";
             _nfcSwitch = [[UISwitch alloc] init];
-            _nfcSwitch.on = [RCConfigManager sharedManager].nfcEnabled;
+            _nfcSwitch.on = cm.nfcEnabled;
             [_nfcSwitch addTarget:self action:@selector(nfcToggleChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = _nfcSwitch;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         } else if (indexPath.row == 2) {
             cell.textLabel.text = @"Web UI";
             _webUISwitch = [[UISwitch alloc] init];
-            _webUISwitch.on = [RCConfigManager sharedManager].webUIEnabled;
+            _webUISwitch.on = cm.webUIEnabled;
             [_webUISwitch addTarget:self action:@selector(webUIToggleChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = _webUISwitch;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         }
+    } else if (indexPath.section == 1) {
+        cell.textLabel.text = @"Integrations";
+        UIImage *puzzleImg = [UIImage systemImageNamed:@"puzzlepiece.extension.fill"];
+        if (!puzzleImg) {
+            puzzleImg = [UIImage systemImageNamed:@"network"];
+        }
+        cell.imageView.image = puzzleImg;
+        cell.imageView.tintColor = [UIColor systemIndigoColor];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"Export Configuration";
@@ -228,6 +247,9 @@
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
     if (indexPath.section == 1) {
+        RCIntegrationsViewController *integrationsVC = [[RCIntegrationsViewController alloc] init];
+        [self.navigationController pushViewController:integrationsVC animated:YES];
+    } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
             [self exportConfig];
         } else {
@@ -235,8 +257,6 @@
         }
     }
 }
-
-
 
 #pragma mark - Actions
 

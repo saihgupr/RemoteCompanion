@@ -1,6 +1,8 @@
 #import "RCActionPickerViewController.h"
 #import "RCServerClient.h"
 #import "RCConfigManager.h"
+#import "RCHAEntityPickerViewController.h"
+#import "RCKMMacroPickerViewController.h"
 
 @interface RCActionPickerViewController () <UISearchResultsUpdating>
 @property (nonatomic, strong) NSArray<NSString *> *sectionTitles;
@@ -60,9 +62,24 @@
     self.navigationItem.hidesSearchBarWhenScrolling = NO;
     self.definesPresentationContext = YES;
     
-    // Categories and actions
-    // Each action: @{ @"name": display name, @"command": rc command }
-    _sectionTitles = @[@"Media", @"Device Controls", @"Connectivity", @"System", @"Audio", @"Home Assistant", @"Scripting & Logic"];
+    [self rebuildSections];
+    
+    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ActionCell"];
+    self.tableView.rowHeight = 60; // Increased touch target
+    
+    [self applyTweaks];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self rebuildSections];
+    [self.tableView reloadData];
+}
+
+- (void)rebuildSections {
+    RCConfigManager *cm = [RCConfigManager sharedManager];
+    
+    _sectionTitles = @[@"Media", @"Device Controls", @"Connectivity", @"System", @"Integrations", @"Scripting & Logic"];
     
     _sections = @[
         // Media
@@ -77,7 +94,14 @@
                 @{ @"name": @"Volume Down", @"command": @"volume down", @"icon": @"speaker.wave.1.fill" },
                 @{ @"name": @"Set Volume...", @"command": @"__SET_VOLUME__", @"icon": @"speaker.wave.3.fill" },
                 @{ @"name": @"Set Brightness...", @"command": @"__SET_BRIGHTNESS__", @"icon": @"sun.max.fill" },
-                @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" }
+                @{ @"name": @"Mute", @"command": @"mute toggle", @"icon": @"speaker.slash.fill" },
+                @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
+                @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
+                @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
+                @{ @"name": @"Open Camera...", @"command": @"__CAMERA_PICKER__", @"icon": @"camera.fill" },
+                @{ @"name": @"Open Video Camera...", @"command": @"__CAMERA_VIDEO_PICKER__", @"icon": @"video.fill" },
+                @{ @"name": @"Camera Shutter / Snap", @"command": @"camera shutter", @"icon": @"camera.circle.fill" },
+                @{ @"name": @"Camera Record Toggle", @"command": @"camera record", @"icon": @"record.circle.fill" }
             ]];
             NSArray *audioStreamPaths = @[
                 @"/Applications/AudioReceiver.app",
@@ -129,11 +153,41 @@
             @{ @"name": @"Disconnect AirPlay", @"command": @"airplay disconnect", @"icon": @"airplayaudio.badge.exclamationmark" }
         ],
         // System
+        @[
+            @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
+            @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" },
+            @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
+            @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },
+            @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
+            @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
+            @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
+            @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
+            @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
+            @{ @"name": @"App Switcher", @"command": @"switcher", @"icon": @"square.stack.3d.up.fill" },
+            @{ @"name": @"Previous App", @"command": @"previous app", @"icon": @"arrow.uturn.backward" },
+            @{ @"name": @"Control Center", @"command": @"open control center", @"icon": @"gear" },
+            @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
+            @{ @"name": @"Safe Mode", @"command": @"safemode", @"icon": @"shield.slash.fill" },
+            @{ @"name": @"Soft Reboot (ldrestart)", @"command": @"ldrestart", @"icon": @"arrow.clockwise" },
+            @{ @"name": @"Userspace Reboot", @"command": @"userspace-reboot", @"icon": @"arrow.clockwise.circle" },
+            @{ @"name": @"Refresh Icon Cache (uicache)", @"command": @"uicache", @"icon": @"square.grid.2x2" },
+            @{ @"name": @"Silent Vibration", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
+            @{ @"name": @"Ring Vibration", @"command": @"vibration ring-toggle", @"icon": @"bell" },
+            @{ @"name": @"Low Power Mode", @"command": @"low power toggle", @"icon": @"battery.25" }
+        ],
+        // Integrations
         ({
-            NSMutableArray *sys = [NSMutableArray arrayWithArray:@[
-                @{ @"name": @"Haptic Feedback", @"command": @"haptic", @"icon": @"hand.tap.fill" },
-                @{ @"name": @"Screenshot", @"command": @"screenshot", @"icon": @"camera.fill" }
-            ]];
+            NSMutableArray *integrations = [NSMutableArray array];
+            if (cm.haEnabled) {
+                [integrations addObject:@{ @"name": @"Home Assistant: Control Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" }];
+            }
+            if (cm.kmEnabled) {
+                [integrations addObject:@{ @"name": @"Keyboard Maestro: Trigger Macro...", @"command": @"__KM_TRIGGER__", @"icon": @"command" }];
+            }
+            if (cm.mqttEnabled) {
+                [integrations addObject:@{ @"name": @"MQTT: Publish Topic...", @"command": @"__MQTT_PUBLISH__", @"icon": @"antenna.radiowaves.left.and.right" }];
+            }
+            [integrations addObject:@{ @"name": @"Shortcuts: Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" }];
             NSArray *sneakyPaths = @[
                 @"/Library/MobileSubstrate/DynamicLibraries/SneakyCam.dylib",
                 @"/Library/MobileSubstrate/DynamicLibraries/sneakycam.dylib",
@@ -157,43 +211,12 @@
                 if ([fm fileExistsAtPath:p]) { sneakyInstalled = YES; break; }
             }
             if (sneakyInstalled) {
-                [sys addObject:@{ @"name": @"SneakyCam Photo", @"command": @"sneakycam photo", @"icon": @"camera.aperture" }];
-                [sys addObject:@{ @"name": @"SneakyCam Video", @"command": @"sneakycam video", @"icon": @"video.fill" }];
+                [integrations addObject:@{ @"name": @"SneakyCam: Take Photo", @"command": @"sneakycam photo", @"icon": @"camera.aperture" }];
+                [integrations addObject:@{ @"name": @"SneakyCam: Toggle Video", @"command": @"sneakycam video", @"icon": @"video.fill" }];
             }
-            [sys addObjectsFromArray:@[
-                @{ @"name": @"Run Shortcut...", @"command": @"__SHORTCUT_PICKER__", @"icon": @"command" },
-                @{ @"name": @"Open App...", @"command": @"__OPEN_APP__", @"icon": @"square.grid.2x2.fill" },
-                @{ @"name": @"Kill App...", @"command": @"__KILL_APP__", @"icon": @"xmark.square.fill" },
-                @{ @"name": @"Lock Device", @"command": @"lock", @"icon": @"lock.fill" },
-                @{ @"name": @"Unlock Device", @"command": @"unlock", @"icon": @"lock.open.fill" },
-                @{ @"name": @"Do Not Disturb", @"command": @"dnd toggle", @"icon": @"moon.fill" },
-                @{ @"name": @"Activate Siri", @"command": @"siri", @"icon": @"mic.circle.fill" },
-                @{ @"name": @"Home Button", @"command": @"home", @"icon": @"house.fill" },
-                @{ @"name": @"App Switcher", @"command": @"switcher", @"icon": @"square.stack.3d.up.fill" },
-                @{ @"name": @"Previous App", @"command": @"previous app", @"icon": @"arrow.uturn.backward" },
-                @{ @"name": @"Control Center", @"command": @"open control center", @"icon": @"gear" },
-                @{ @"name": @"Respring Device", @"command": @"respring", @"icon": @"memories" },
-                @{ @"name": @"Soft Reboot (ldrestart)", @"command": @"ldrestart", @"icon": @"arrow.clockwise" },
-                @{ @"name": @"Userspace Reboot", @"command": @"userspace-reboot", @"icon": @"arrow.clockwise.circle" },
-                @{ @"name": @"Refresh Icon Cache (uicache)", @"command": @"uicache", @"icon": @"square.grid.2x2" },
-                @{ @"name": @"Silent Vibration", @"command": @"vibration silent-toggle", @"icon": @"bell.slash" },
-                @{ @"name": @"Ring Vibration", @"command": @"vibration ring-toggle", @"icon": @"bell" },
-                @{ @"name": @"Low Power Mode", @"command": @"low power toggle", @"icon": @"battery.25" }
-            ]];
-            sys;
+            [integrations addObject:@{ @"name": @"AudioMix: Toggle", @"command": @"audiomix toggle", @"icon": @"music.note" }];
+            integrations;
         }),
-        // Audio (ANC & AudioMix)
-        @[
-            @{ @"name": @"ANC On", @"command": @"anc on", @"icon": @"ear.badge.checkmark" },
-            @{ @"name": @"ANC Off", @"command": @"anc off", @"icon": @"ear" },
-            @{ @"name": @"Transparency Mode", @"command": @"anc transparency", @"icon": @"waveform.circle.fill" },
-            @{ @"name": @"AudioMix", @"command": @"audiomix toggle", @"icon": @"music.note" }
-        ],
-        // Home Assistant
-        @[
-            @{ @"name": @"Select Entity...", @"command": @"__HA_PICKER__", @"icon": @"house.fill" },
-            @{ @"name": @"Call Service...", @"command": @"__HA_CUSTOM__", @"icon": @"slider.horizontal.3" }
-        ],
         // Scripting & Logic
         @[
             @{ @"name": @"Custom Lua Script", @"command": @"__LUA_SCRIPT__", @"icon": @"scroll.fill" },
@@ -203,11 +226,6 @@
             @{ @"name": @"Toast...", @"command": @"__TOAST__", @"icon": @"text.bubble.fill" }
         ]
     ];
-    
-    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"ActionCell"];
-    self.tableView.rowHeight = 60; // Increased touch target
-    
-    [self applyTweaks];
 }
 
 - (void)cancel {
@@ -326,7 +344,7 @@
         [cmd isEqualToString:@"__DELAY__"] ||
         [cmd isEqualToString:@"__CUSTOM__"] ||
         [cmd isEqualToString:@"__HA_PICKER__"] ||
-        [cmd isEqualToString:@"__HA_CUSTOM__"] ||
+        [cmd isEqualToString:@"__KM_TRIGGER__"] ||
         [cmd isEqualToString:@"__TAP__"] ||
         [cmd isEqualToString:@"__HOLD__"] ||
         [cmd isEqualToString:@"__SWIPE__"]) {
@@ -397,8 +415,23 @@
         return;
     }
 
-    if ([command isEqualToString:@"__HA_CUSTOM__"]) {
-        [self handleHACustom];
+    if ([command isEqualToString:@"__KM_TRIGGER__"]) {
+        [self handleKMTrigger];
+        return;
+    }
+
+    if ([command isEqualToString:@"__MQTT_PUBLISH__"]) {
+        [self handleMQTTPublish];
+        return;
+    }
+
+    if ([command isEqualToString:@"__CAMERA_PICKER__"]) {
+        [self handleCameraPicker:NO];
+        return;
+    }
+
+    if ([command isEqualToString:@"__CAMERA_VIDEO_PICKER__"]) {
+        [self handleCameraPicker:YES];
         return;
     }
 
@@ -416,6 +449,52 @@
         [self dismissViewControllerAnimated:YES completion:nil];
     }
 }
+
+- (void)handleCameraPicker:(BOOL)isVideo {
+    NSDictionary *toggleInfo = [[RCConfigManager sharedManager] toggleInfoForCommand:isVideo ? @"camera video 2x" : @"camera photo"];
+    if (!toggleInfo) return;
+    
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:toggleInfo[@"name"]
+                                                                   message:@"Select desired mode/lens"
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    NSArray *suffixes = toggleInfo[@"suffixes"];
+    NSArray *displaySuffixes = toggleInfo[@"displaySuffixes"];
+    NSString *canonicalPrefix = toggleInfo[@"prefixes"][0];
+    
+    __weak typeof(self) weakSelf = self;
+    for (NSUInteger idx = 0; idx < suffixes.count; idx++) {
+        NSString *suffix = suffixes[idx];
+        NSString *displaySuffix = displaySuffixes[idx];
+        
+        [sheet addAction:[UIAlertAction actionWithTitle:displaySuffix
+                                                  style:UIAlertActionStyleDefault
+                                                handler:^(__unused UIAlertAction * _Nonnull action) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            
+            NSString *chosenCmd = [NSString stringWithFormat:@"%@%@", canonicalPrefix, suffix];
+            if (strongSelf.onActionSelected) {
+                strongSelf.onActionSelected(chosenCmd);
+            }
+            if (strongSelf.searchController.isActive) {
+                [strongSelf.searchController dismissViewControllerAnimated:NO completion:^{
+                    [strongSelf dismissViewControllerAnimated:YES completion:nil];
+                }];
+            } else {
+                [strongSelf dismissViewControllerAnimated:YES completion:nil];
+            }
+        }]];
+    }
+    
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    
+    sheet.popoverPresentationController.sourceView = self.view;
+    sheet.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1);
+    
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
 - (void)handleTouchCoordInputWithTitle:(NSString *)title
                            placeholder:(NSString *)placeholder
                                  build:(NSString *(^)(NSString *))build {
@@ -792,28 +871,12 @@
     [self.tableView reloadData];
 }
 
-- (void)handleHACustom {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Custom HA Service Call"
-                                                                   message:@"Enter service and entity (e.g. light.turn_on light.bedroom_lights):"
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"light.turn_on light.bedroom_lights";
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (!val.length) return;
-        NSString *cmd;
-        if ([val hasPrefix:@"ha call "]) {
-            cmd = val;
-        } else if ([val hasPrefix:@"ha "]) {
-            cmd = [NSString stringWithFormat:@"ha call %@", [val substringFromIndex:3]];
-        } else {
-            cmd = [NSString stringWithFormat:@"ha call %@", val];
+- (void)handleHAPicker {
+    RCHAEntityPickerViewController *picker = [[RCHAEntityPickerViewController alloc] init];
+    picker.onEntitySelected = ^(NSString *cmd) {
+        if (self.onActionSelected) {
+            self.onActionSelected(cmd);
         }
-        if (self.onActionSelected) self.onActionSelected(cmd);
         if (self.searchController.isActive) {
             [self.searchController dismissViewControllerAnimated:NO completion:^{
                 [self dismissViewControllerAnimated:YES completion:nil];
@@ -821,25 +884,65 @@
         } else {
             [self dismissViewControllerAnimated:YES completion:nil];
         }
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
+    };
+    [self.navigationController pushViewController:picker animated:YES];
 }
 
-- (void)handleHAPicker {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Control Home Assistant Entity"
-                                                                   message:@"Enter command or entity ID (e.g. toggle light.bedroom_lights or turn_on switch.fan):"
+- (void)handleKMTrigger {
+    RCKMMacroPickerViewController *picker = [[RCKMMacroPickerViewController alloc] init];
+    picker.onMacroSelected = ^(NSString *cmd) {
+        if (self.onActionSelected) {
+            self.onActionSelected(cmd);
+        }
+        if (self.searchController.isActive) {
+            [self.searchController dismissViewControllerAnimated:NO completion:^{
+                [self dismissViewControllerAnimated:YES completion:nil];
+            }];
+        } else {
+            [self dismissViewControllerAnimated:YES completion:nil];
+        }
+    };
+    [self.navigationController pushViewController:picker animated:YES];
+}
+
+- (void)handleMQTTPublish {
+    RCConfigManager *cm = [RCConfigManager sharedManager];
+    NSString *defaultTopic = cm.mqttTopicPrefix.length ? [NSString stringWithFormat:@"%@/action", cm.mqttTopicPrefix] : @"remotecompanion/action";
+    
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"MQTT: Publish Topic"
+                                                                   message:@"Enter the MQTT topic and payload to publish:"
                                                             preferredStyle:UIAlertControllerStyleAlert];
+    
     [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-        tf.placeholder = @"toggle light.bedroom_lights";
+        tf.placeholder = @"Topic (e.g. home/livingroom/light/set)";
+        tf.text = defaultTopic;
         tf.autocorrectionType = UITextAutocorrectionTypeNo;
         tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
     }];
+    
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"Payload (e.g. ON, TOGGLE, 1, or JSON)";
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (!val.length) return;
-        NSString *cmd = [val hasPrefix:@"ha "] ? val : [NSString stringWithFormat:@"ha %@", val];
-        if (self.onActionSelected) self.onActionSelected(cmd);
+        NSString *topic = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *payload = [alert.textFields[1].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        if (!topic.length) return;
+        
+        NSString *finalCmd;
+        if (payload.length > 0) {
+            finalCmd = [NSString stringWithFormat:@"mqtt publish %@ %@", topic, payload];
+        } else {
+            finalCmd = [NSString stringWithFormat:@"mqtt publish %@", topic];
+        }
+        
+        if (self.onActionSelected) {
+            self.onActionSelected(finalCmd);
+        }
         if (self.searchController.isActive) {
             [self.searchController dismissViewControllerAnimated:NO completion:^{
                 [self dismissViewControllerAnimated:YES completion:nil];
@@ -848,6 +951,7 @@
             [self dismissViewControllerAnimated:YES completion:nil];
         }
     }]];
+    
     [self presentViewController:alert animated:YES completion:nil];
 }
 

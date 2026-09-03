@@ -2,65 +2,571 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RemoteCompanion Repository</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            max-width: 800px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        .container {
-            background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
-            border-bottom: 3px solid #007aff;
-            padding-bottom: 10px;
-        }
-        .repo-url {
-            background: #f8f8f8;
-            padding: 15px;
-            border-radius: 5px;
-            font-family: 'Monaco', 'Courier New', monospace;
-            margin: 20px 0;
-            word-break: break-all;
-        }
-        .button {
-            display: inline-block;
-            background: #007aff;
-            color: white;
-            padding: 12px 24px;
-            text-decoration: none;
-            border-radius: 5px;
-            margin-top: 20px;
-        }
-        .button:hover {
-            background: #0051d5;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>RemoteCompanion — Modern iOS Automation & Jailbreak Repo</title>
+    
+    <!-- SEO & Metadata -->
+    <meta name="description" content="Official repository for RemoteCompanion: Scriptable system control, gesture automation, and desktop hub for modern jailbroken iOS (iOS 14.0–16.x).">
+    <meta name="keywords" content="RemoteCompanion, iOS, Jailbreak, Sileo, Zebra, Cydia, Dopamine, Palera1n, Rootless, RootHide, Tweaks, Automation, Home Assistant, Keyboard Maestro, MQTT">
+    <meta name="author" content="saihgupr">
+    <meta name="theme-color" content="#0071e3" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+
+    <!-- Open Graph (Reddit, iMessage, Discord, Facebook) -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://saihgupr.github.io/remotecompanion/">
+    <meta property="og:title" content="RemoteCompanion — iOS Automation & Jailbreak Repo">
+    <meta property="og:description" content="Scriptable system control, gesture automation, and desktop hub for modern jailbroken iOS. Supports iOS 14.0–16.x (Rootless & Rootful).">
+    <meta property="og:image" content="https://saihgupr.github.io/remotecompanion/Icon.png">
+    <meta property="og:image:alt" content="RemoteCompanion App Icon">
+    <meta property="og:site_name" content="RemoteCompanion Repository">
+
+    <!-- Twitter / X Card (Enables app icon preview on Reddit link posts) -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="RemoteCompanion — iOS Automation & Jailbreak Repo">
+    <meta name="twitter:description" content="Scriptable system control, gesture automation, and desktop hub for modern jailbroken iOS. Supports iOS 14.0–16.x (Rootless & Rootful).">
+    <meta name="twitter:image" content="https://saihgupr.github.io/remotecompanion/Icon.png">
+    <meta name="twitter:image:alt" content="RemoteCompanion Icon">
+
+    <!-- App Favicons -->
+    <link rel="icon" type="image/png" href="Icon.png">
+    <link rel="apple-touch-icon" href="Icon.png">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>RemoteCompanion Repository</h1>
-        <p>Official repository for RemoteCompanion tweaks.</p>
-        
-        <h2>Add to Sileo or Cydia</h2>
-        <p>Copy and paste this URL into your package manager:</p>
-        <div class="repo-url">https://saihgupr.github.io/remotecompanion/</div>
-        
-        <a href="cydia://url/https://cydia.saurik.com/api/share#?source=https://saihgupr.github.io/remotecompanion/" class="button">Add to Cydia</a>
-        <a href="sileo://source/https://saihgupr.github.io/remotecompanion/" class="button">Add to Sileo</a>
-        
-        <h2>Packages</h2>
-        <ul>
-            <li><strong>RemoteCompanion</strong> - Remote control your iPhone via TCP commands and NFC tags</li>
-        </ul>
+    <div class="ambient-glow"></div>
+
+    <!-- Navigation Header -->
+    <header class="nav-header">
+        <div class="nav-container">
+            <a href="#" class="nav-brand">
+                <img src="Icon.png" alt="RemoteCompanion" class="nav-logo">
+                <span>RemoteCompanion</span>
+            </a>
+            <ul class="nav-links">
+                <li><a href="#features" class="nav-link">Features</a></li>
+                <li><a href="#webui" class="nav-link">Web Hub</a></li>
+                <li><a href="#cli" class="nav-link">CLI</a></li>
+                <li><a href="#changelog" class="nav-link">Changelog</a></li>
+                <li><a href="#download" class="nav-link">Install</a></li>
+            </ul>
+            <div class="nav-actions">
+                <button id="themeToggleBtn" class="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Dark/Light Mode">
+                    <svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="page-container">
+        <!-- Hero Header -->
+        <section class="hero-section">
+            <div class="hero-icon-wrapper">
+                <img src="Icon.png" alt="RemoteCompanion Icon" class="hero-app-icon">
+            </div>
+            <div class="hero-title-group">
+                <h1 class="hero-title">RemoteCompanion</h1>
+                <p class="hero-tagline">Scriptable system control, gesture automation, and desktop hub for modern jailbroken iOS.</p>
+                <div class="badge-group">
+                    <span class="compat-badge"><span class="badge-dot"></span> v3.6.0 Latest</span>
+                    <span class="compat-badge">iOS 14.0 – 16.x</span>
+                    <span class="compat-badge secondary">Rootless (Dopamine / Palera1n)</span>
+                    <span class="compat-badge secondary">Rootful & RootHide</span>
+                    <span class="compat-badge secondary">arm64 / arm64e</span>
+                </div>
+            </div>
+
+            <!-- One-Tap Package Manager Action Buttons -->
+            <div class="package-actions">
+                <a href="sileo://source/https://saihgupr.github.io/remotecompanion/" class="btn-pm btn-sileo" title="Add to Sileo">
+                    <img src="images/Icon_Sileo.png" alt="Sileo" class="pm-icon pm-icon-img">
+                    <span>Add to Sileo</span>
+                </a>
+                <a href="zbra://sources/add/https://saihgupr.github.io/remotecompanion/" class="btn-pm btn-zebra" title="Add to Zebra">
+                    <img src="images/zeeb.svg" alt="Zebra" class="pm-icon">
+                    <span>Add to Zebra</span>
+                </a>
+                <a href="cydia://url/https://cydia.saurik.com/api/share#?source=https://saihgupr.github.io/remotecompanion/" class="btn-pm btn-cydia" title="Add to Cydia">
+                    <img src="images/Cydia_logo.png" alt="Cydia" class="pm-icon pm-icon-img">
+                    <span>Add to Cydia</span>
+                </a>
+                <a href="https://github.com/saihgupr/remotecompanion/releases" class="btn-pm btn-releases" target="_blank" rel="noopener" title="Direct DEB Downloads">
+                    <svg class="pm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Direct .deb</span>
+                </a>
+            </div>
+
+            <!-- 1-Click Repo URL Box -->
+            <div class="repo-url-card">
+                <div class="repo-url-info">
+                    <span class="repo-url-label">Repository URL</span>
+                    <span id="repoUrlText" class="repo-url-text">https://saihgupr.github.io/remotecompanion/</span>
+                </div>
+                <button id="copyRepoBtn" class="btn-copy" onclick="copyRepoUrl()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span id="copyBtnText">Copy</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Package Metadata Grid -->
+        <section id="packages" class="glass-card">
+            <div class="section-title-group">
+                <div class="section-label">Repository Package</div>
+                <h2 class="section-title">Package Information</h2>
+            </div>
+            <div class="meta-grid">
+                <div class="meta-item">
+                    <span class="meta-label">Package Name</span>
+                    <span class="meta-value">RemoteCompanion</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Identifier</span>
+                    <span class="meta-value mono">com.saihgupr.remotecompanion</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Latest Version</span>
+                    <span class="meta-value">3.6.0</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Architectures</span>
+                    <span class="meta-value mono">iphoneos-arm64, iphoneos-arm</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Section / Category</span>
+                    <span class="meta-value">System & Automation</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">License & Support</span>
+                    <span class="meta-value">MIT / Open Source</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Showcase -->
+        <section id="features">
+            <div class="section-title-group">
+                <div class="section-label">Core Capabilities</div>
+                <h2 class="section-title">Designed for Modern Power Users</h2>
+                <p class="section-subtitle">Deep hardware hooks, smart home connectivity, and native system triggers with zero battery drain.</p>
+            </div>
+
+            <div class="features-grid">
+                <!-- Card 1: Hardware & Gestures -->
+                <div class="feature-card">
+                    <div class="feature-header">
+                        <div class="feature-icon-box">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                                <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="feature-title">Hardware & Gesture Triggers</h3>
+                            <span class="meta-label">Buttons & Sensors</span>
+                        </div>
+                    </div>
+                    <p class="feature-desc">Bind multi-step action sequences to physical buttons, device sensors, and hardware state changes.</p>
+                    <ul class="feature-list">
+                        <li class="feature-list-item"><span class="feature-check">✓</span> Power & Volume button hold & combos</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> Touch ID tap / long-press & Ringer switch</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> NFC background tags & Proximity pocket detection</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> Power connect/disconnect & Status Bar double-tap</li>
+                    </ul>
+                </div>
+
+                <!-- Card 2: Smart Home & Integrations -->
+                <div class="feature-card">
+                    <div class="feature-header">
+                        <div class="feature-icon-box purple">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="feature-title">Integrations Hub</h3>
+                            <span class="meta-label">IoT & Desktop Automation</span>
+                        </div>
+                    </div>
+                    <p class="feature-desc">Seamlessly communicate with smart home ecosystems, Mac productivity tools, and IoT brokers.</p>
+                    <ul class="feature-list">
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Home Assistant:</strong> Full entity picker & live state control</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Keyboard Maestro:</strong> Visual macro picker & params</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Native MQTT 3.1.1:</strong> Publish actions & background subscription triggers</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Siri Shortcuts:</strong> Deep native workflow integration</li>
+                    </ul>
+                </div>
+
+                <!-- Card 3: Camera & Security Automation -->
+                <div class="feature-card">
+                    <div class="feature-header">
+                        <div class="feature-icon-box green">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                                <circle cx="12" cy="13" r="4"></circle>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="feature-title">Camera & Stealth Actions</h3>
+                            <span class="meta-label">Capture & Lockscreen</span>
+                        </div>
+                    </div>
+                    <p class="feature-desc">Automated photo/video recording and lockscreen camera bridging for instant capture.</p>
+                    <ul class="feature-list">
+                        <li class="feature-list-item"><span class="feature-check">✓</span> Lock Screen Camera Launch Trigger bridging</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> Video recording automation with custom modes & zoom</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> Native SneakyCam background photo/video triggers</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> Haptic feedback & HUD toast overlays</li>
+                    </ul>
+                </div>
+
+                <!-- Card 4: System Control & Scripting -->
+                <div class="feature-card">
+                    <div class="feature-header">
+                        <div class="feature-icon-box orange">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="4 17 10 11 4 5"></polyline>
+                                <line x1="12" y1="19" x2="20" y2="19"></line>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="feature-title">Scripting & Conditional Logic</h3>
+                            <span class="meta-label">Lua, Time & Safe Mode</span>
+                        </div>
+                    </div>
+                    <p class="feature-desc">Build smart branching rules with time-of-day, proximity, Bluetooth connection, and Lua engines.</p>
+                    <ul class="feature-list">
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Time of Day:</strong> If Time Between AM/PM conditional blocks</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Location Services:</strong> Native GPS toggle & status queries</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Safe Mode:</strong> One-tap diagnostic restart via CLI & UI</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Lua Engine:</strong> Full Objective-C runtime bridge (`objc_call`)</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Web UI & Automations Hub Banner -->
+        <section id="webui" class="showcase-banner">
+            <div class="showcase-content">
+                <div class="section-label">Desktop Web Interface</div>
+                <h2 class="section-title">Visual Workflow Hub & Live Diagnostics</h2>
+                <p class="section-subtitle">Manage triggers, build drag-and-drop action sequences, monitor system health, and copy API endpoints right from your desktop browser at <code>http://[DEVICE_IP]:8080</code>.</p>
+            </div>
+            <div class="showcase-image-wrapper">
+                <img src="images/webui.png" alt="RemoteCompanion Web UI Workflow Editor" class="showcase-img" loading="lazy">
+            </div>
+            <div class="gallery-grid">
+                <div class="gallery-item">
+                    <img src="images/health.png" alt="Device Health & Diagnostics Dashboard" loading="lazy">
+                    <div class="gallery-caption">Device Diagnostics & Quick Maintenance</div>
+                </div>
+                <div class="gallery-item">
+                    <img src="images/logs.png" alt="Real-time Streaming Log Viewer" loading="lazy">
+                    <div class="gallery-caption">Live Streaming System Logs Console</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CLI Commands Cheatsheet -->
+        <section id="cli" class="terminal-card">
+            <div class="terminal-header">
+                <div class="terminal-dots">
+                    <span class="terminal-dot dot-red"></span>
+                    <span class="terminal-dot dot-yellow"></span>
+                    <span class="terminal-dot dot-green"></span>
+                </div>
+                <span class="terminal-title">Terminal & SSH CLI Cheatsheet — Click to Copy</span>
+                <span style="width: 40px;"></span>
+            </div>
+            <div class="cli-command-grid">
+                <div class="cli-chip" onclick="copyCommand('rc playpause', this)">
+                    <span class="cli-code">rc playpause</span>
+                    <span class="cli-desc">Toggle Media</span>
+                </div>
+                <div class="cli-chip" onclick="copyCommand('rc volume 75', this)">
+                    <span class="cli-code">rc volume 75</span>
+                    <span class="cli-desc">Set Volume</span>
+                </div>
+                <div class="cli-chip" onclick="copyCommand('rc ha toggle light.desk', this)">
+                    <span class="cli-code">rc ha toggle &lt;entity&gt;</span>
+                    <span class="cli-desc">Home Assistant</span>
+                </div>
+                <div class="cli-chip" onclick="copyCommand('rc km trigger &quot;Focus Mode&quot;', this)">
+                    <span class="cli-code">rc km trigger &lt;name&gt;</span>
+                    <span class="cli-desc">Keyboard Maestro</span>
+                </div>
+                <div class="cli-chip" onclick="copyCommand('rc mqtt pub home/status online', this)">
+                    <span class="cli-code">rc mqtt pub &lt;topic&gt; [payload]</span>
+                    <span class="cli-desc">MQTT Publish</span>
+                </div>
+                <div class="cli-chip" onclick="copyCommand('rc location toggle', this)">
+                    <span class="cli-code">rc location toggle</span>
+                    <span class="cli-desc">GPS / Location</span>
+                </div>
+                <div class="cli-chip" onclick="copyCommand('rc safemode', this)">
+                    <span class="cli-code">rc safemode</span>
+                    <span class="cli-desc">Safe Mode</span>
+                </div>
+                <div class="cli-chip" onclick="copyCommand('rc webui on', this)">
+                    <span class="cli-code">rc webui on</span>
+                    <span class="cli-desc">Start Web Server</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Changelog Section -->
+        <section id="changelog" class="changelog-card">
+            <div class="changelog-header">
+                <div>
+                    <div class="section-label">Release Notes</div>
+                    <h2 class="section-title">What's New in v3.6.0</h2>
+                </div>
+                <span class="version-badge">August 30, 2026</span>
+            </div>
+
+            <div class="changelog-list">
+                <div class="changelog-item">
+                    <span class="changelog-tag tag-new">New</span>
+                    <p class="changelog-text"><strong>Native MQTT 3.1.1 Integration:</strong> Publish messages from any hardware trigger, plus background SpringBoard subscription listener for local action execution on incoming broker topics.</p>
+                </div>
+                <div class="changelog-item">
+                    <span class="changelog-tag tag-new">New</span>
+                    <p class="changelog-text"><strong>Nested Integrations Hub:</strong> Dedicated Settings sub-screens for Home Assistant, Keyboard Maestro (with visual macro selector & %TriggerValue% editing), and MQTT.</p>
+                </div>
+                <div class="changelog-item">
+                    <span class="changelog-tag tag-new">New</span>
+                    <p class="changelog-text"><strong>Time of Day Conditionals (`time_between`):</strong> Native sequence branching based on 12-hour AM/PM or 24-hour time ranges crossing midnight.</p>
+                </div>
+                <div class="changelog-item">
+                    <span class="changelog-tag tag-new">New</span>
+                    <p class="changelog-text"><strong>Lock Screen Camera Bridge:</strong> Reliable trigger execution when opening the Camera directly from the locked CoverSheet.</p>
+                </div>
+                <div class="changelog-item">
+                    <span class="changelog-tag tag-improved">Improved</span>
+                    <p class="changelog-text"><strong>Action Enable / Disable:</strong> Easily toggle individual actions on/off within sequences in the iOS app and Web UI without deleting them.</p>
+                </div>
+                <div class="changelog-item">
+                    <span class="changelog-tag tag-new">New</span>
+                    <p class="changelog-text"><strong>Location Services & Safe Mode:</strong> Full CLI (`rc location`, `rc safemode`), Web UI, and iOS app controls.</p>
+                </div>
+            </div>
+
+            <!-- Expandable Past Releases -->
+            <details class="history-accordion">
+                <summary>View Previous Version History (v3.5.2 – v3.0.0)</summary>
+                <div class="history-content">
+                    <div class="changelog-item">
+                        <span class="changelog-tag tag-fix">v3.5.2</span>
+                        <p class="changelog-text">Modernized Siri Shortcuts execution with WorkflowKit / VoiceShortcutClient fallbacks, respring reliability improvements, and multi-button combo detection.</p>
+                    </div>
+                    <div class="changelog-item">
+                        <span class="changelog-tag tag-new">v3.5.0</span>
+                        <p class="changelog-text">Added SneakyCam photo/video triggers, Web UI live system log viewer console (`/api/logs`), and AC Power Connect/Disconnect triggers.</p>
+                    </div>
+                    <div class="changelog-item">
+                        <span class="changelog-tag tag-new">v3.4.0</span>
+                        <p class="changelog-text">Cellular Data control, Dynamic Web UI Port fallback (8080–8099), HUD toast notifications, and Proximity / Pocket sensor conditions.</p>
+                    </div>
+                </div>
+            </details>
+        </section>
+
+        <!-- Installation & Downloads -->
+        <section id="download">
+            <div class="section-title-group">
+                <div class="section-label">Getting Started</div>
+                <h2 class="section-title">Installation & Sideloading</h2>
+            </div>
+
+            <div class="install-grid">
+                <!-- Method 1: Package Manager -->
+                <div class="install-card">
+                    <h3 class="feature-title">1. Via Package Manager (Recommended)</h3>
+                    <div class="step-item">
+                        <span class="step-num">1</span>
+                        <p class="step-text">Tap <strong>Add to Sileo</strong> or <strong>Add to Zebra</strong> at the top of this page, or manually add <code>https://saihgupr.github.io/remotecompanion/</code> to your Sources.</p>
+                    </div>
+                    <div class="step-item">
+                        <span class="step-num">2</span>
+                        <p class="step-text">Search for <strong>RemoteCompanion</strong> and install the latest release.</p>
+                    </div>
+                    <div class="step-item">
+                        <span class="step-num">3</span>
+                        <p class="step-text">Respring your device. Open the <strong>RemoteCompanion</strong> companion app from your home screen or configure via Settings.</p>
+                    </div>
+                </div>
+
+                <!-- Method 2: Manual DEB Download -->
+                <div class="install-card">
+                    <h3 class="feature-title">2. Direct .deb Downloads</h3>
+                    <p class="feature-desc">Download prebuilt Debian binaries directly for Filza or terminal installation:</p>
+                    <div class="direct-downloads">
+                        <a href="com.saihgupr.remotecompanion_3.6.0_iphoneos-arm64.deb" class="deb-btn" download>
+                            <div>
+                                <div>Rootless (arm64) .deb</div>
+                                <span class="deb-meta">Dopamine / Palera1n • v3.6.0</span>
+                            </div>
+                            <span>⬇</span>
+                        </a>
+                        <a href="com.saihgupr.remotecompanion_3.6.0_iphoneos-arm.deb" class="deb-btn" download>
+                            <div>
+                                <div>Rootful (arm) .deb</div>
+                                <span class="deb-meta">Legacy Rootful • v3.6.0</span>
+                            </div>
+                            <span>⬇</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="page-footer">
+        <div class="footer-container">
+            <div class="footer-top">
+                <div class="nav-brand">
+                    <img src="Icon.png" alt="RemoteCompanion" class="nav-logo">
+                    <span>RemoteCompanion</span>
+                </div>
+                <ul class="footer-links">
+                    <li><a href="https://github.com/saihgupr/remotecompanion" class="footer-link" target="_blank" rel="noopener">GitHub</a></li>
+                    <li><a href="https://github.com/saihgupr/remotecompanion/issues" class="footer-link" target="_blank" rel="noopener">Issues</a></li>
+                    <li><a href="https://github.com/saihgupr/remotecompanion/blob/master/SCRIPTING.md" class="footer-link" target="_blank" rel="noopener">AI Scripting Guide</a></li>
+                    <li><a href="https://github.com/saihgupr/remotecompanion/blob/master/CHANGELOG.md" class="footer-link" target="_blank" rel="noopener">Full Changelog</a></li>
+                </ul>
+            </div>
+            <div class="footer-bottom">
+                <span>RemoteCompanion is open source software released under the MIT License.</span>
+                <span>Crafted for the iOS Jailbreak & Home Automation Community</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#30d158" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span id="toastMessage">Copied to clipboard!</span>
     </div>
+
+    <!-- Interactive Script -->
+    <script>
+        // 1-Click Copy Repo URL
+        function copyRepoUrl() {
+            const repoUrl = "https://saihgupr.github.io/remotecompanion/";
+            navigator.clipboard.writeText(repoUrl).then(() => {
+                const btn = document.getElementById("copyRepoBtn");
+                const btnText = document.getElementById("copyBtnText");
+                btn.classList.add("copied");
+                btnText.textContent = "Copied!";
+                showToast("Repository URL copied to clipboard!");
+
+                setTimeout(() => {
+                    btn.classList.remove("copied");
+                    btnText.textContent = "Copy";
+                }, 1800);
+            }).catch(err => {
+                showToast("Failed to copy URL");
+            });
+        }
+
+        // Copy CLI Command
+        function copyCommand(text, element) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast(`Copied: ${text}`);
+                if (element) {
+                    const originalBorder = element.style.borderColor;
+                    element.style.borderColor = "#30d158";
+                    setTimeout(() => {
+                        element.style.borderColor = originalBorder;
+                    }, 800);
+                }
+            });
+        }
+
+        // Show Toast Notification
+        let toastTimeout;
+        function showToast(msg) {
+            const toast = document.getElementById("toast");
+            const toastMsg = document.getElementById("toastMessage");
+            toastMsg.textContent = msg;
+            toast.classList.add("show");
+
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove("show");
+            }, 2200);
+        }
+
+        // Theme Toggle
+        const themeToggleBtn = document.getElementById("themeToggleBtn");
+        const themeIcon = document.getElementById("themeIcon");
+
+        function updateThemeIcon(isDark) {
+            if (isDark) {
+                // Moon icon
+                themeIcon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>`;
+            } else {
+                // Sun icon
+                themeIcon.innerHTML = `
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                `;
+            }
+        }
+
+        // Initialize theme based on preference or saved setting
+        const savedTheme = localStorage.getItem("rc_theme");
+        if (savedTheme) {
+            document.body.setAttribute("data-theme", savedTheme);
+            updateThemeIcon(savedTheme === "dark");
+        } else {
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            updateThemeIcon(prefersDark);
+        }
+
+        themeToggleBtn.addEventListener("click", () => {
+            const currentTheme = document.body.getAttribute("data-theme");
+            let newTheme;
+            if (currentTheme === "dark") {
+                newTheme = "light";
+            } else if (currentTheme === "light") {
+                newTheme = "dark";
+            } else {
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                newTheme = prefersDark ? "light" : "dark";
+            }
+            document.body.setAttribute("data-theme", newTheme);
+            localStorage.setItem("rc_theme", newTheme);
+            updateThemeIcon(newTheme === "dark");
+        });
+    </script>
 </body>
 </html>

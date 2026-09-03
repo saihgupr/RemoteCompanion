@@ -9,6 +9,7 @@
 #import "RCAppPickerViewController.h"
 #import "RCNotificationTriggerViewController.h"
 #import "RCScheduledTriggerViewController.h"
+#import "RCMQTTTriggerViewController.h"
 
 #define kSimulateNotificationPrefix "com.pizzaman.rc.simulate."
 
@@ -41,6 +42,7 @@
     if ([triggerKey hasPrefix:@"app_launch_"]) return @"app.badge";
     if ([triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"]) return @"bell.badge.fill";
     if ([triggerKey hasPrefix:@"sched_"]) return @"clock.fill";
+    if ([triggerKey hasPrefix:@"mqtt_"] || [triggerKey hasPrefix:@"mqtt_sub_"]) return @"antenna.radiowaves.left.and.right";
     if ([triggerKey isEqualToString:@"shake"]) return @"waveform.path.ecg";
     if ([triggerKey isEqualToString:@"trigger_power_connect"]) return @"bolt.fill";
     if ([triggerKey isEqualToString:@"trigger_power_disconnect"]) return @"bolt.slash.fill";
@@ -317,6 +319,13 @@
     }
     addSection(schedKeys, @"Scheduled Triggers", YES);
 
+    // MQTT Subscription Triggers Section
+    NSMutableArray *mqttKeys = [NSMutableArray array];
+    for (NSString *key in [[RCConfigManager sharedManager] allConfiguredTriggerKeys]) {
+        if ([key hasPrefix:@"mqtt_sub_"] || [key hasPrefix:@"mqtt_"]) [mqttKeys addObject:key];
+    }
+    addSection(mqttKeys, @"MQTT Subscription Triggers", YES);
+
     self.sections = sections;
     self.sectionTitles = titles;
 
@@ -389,6 +398,11 @@
 
     [alert addAction:[UIAlertAction actionWithTitle:@"Scheduled Trigger" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
         RCScheduledTriggerViewController *vc = [[RCScheduledTriggerViewController alloc] init];
+        [self.navigationController pushViewController:vc animated:YES];
+    }]];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"MQTT Topic" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        RCMQTTTriggerViewController *vc = [[RCMQTTTriggerViewController alloc] init];
         [self.navigationController pushViewController:vc animated:YES];
     }]];
     
@@ -772,8 +786,8 @@
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
     NSString *triggerKey = _sections[indexPath.section][indexPath.row];
 
-    // Only allow delete for NFC, WiFi, BT, App, Notif, Sched, Device State triggers
-    if (![triggerKey hasPrefix:@"nfc_"] && ![triggerKey hasPrefix:@"wifi_"] && ![triggerKey hasPrefix:@"bt_"] && ![triggerKey hasPrefix:@"app_launch_"] && ![triggerKey hasPrefix:@"notif_"] && ![triggerKey hasPrefix:@"notify_"] && ![triggerKey hasPrefix:@"sched_"] && ![triggerKey hasPrefix:@"trigger_device_"] && ![triggerKey hasPrefix:@"trigger_media_"]) {
+    // Only allow delete for NFC, WiFi, BT, App, Notif, Sched, MQTT, Device State triggers
+    if (![triggerKey hasPrefix:@"nfc_"] && ![triggerKey hasPrefix:@"wifi_"] && ![triggerKey hasPrefix:@"bt_"] && ![triggerKey hasPrefix:@"app_launch_"] && ![triggerKey hasPrefix:@"notif_"] && ![triggerKey hasPrefix:@"notify_"] && ![triggerKey hasPrefix:@"sched_"] && ![triggerKey hasPrefix:@"mqtt_"] && ![triggerKey hasPrefix:@"mqtt_sub_"] && ![triggerKey hasPrefix:@"trigger_device_"] && ![triggerKey hasPrefix:@"trigger_media_"]) {
         return [UISwipeActionsConfiguration configurationWithActions:@[]];
     }
 

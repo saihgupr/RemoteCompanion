@@ -1,0 +1,343 @@
+#import "RCHAEntityPickerViewController.h"
+#import "RCConfigManager.h"
+#import "RCUITweaker.h"
+
+@interface RCHAInsecureSessionDelegate : NSObject <NSURLSessionDelegate>
++ (instancetype)sharedDelegate;
+@end
+
+@implementation RCHAInsecureSessionDelegate
++ (instancetype)sharedDelegate {
+    static RCHAInsecureSessionDelegate *del = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        del = [[RCHAInsecureSessionDelegate alloc] init];
+    });
+    return del;
+}
+
+- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler {
+    if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
+        completionHandler(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]);
+    } else {
+        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
+    }
+}
+@end
+
+@interface RCHAEntityPickerViewController () <UISearchResultsUpdating>
+@property (nonatomic, strong) NSArray<NSDictionary *> *allEntities;
+@property (nonatomic, strong) NSArray<NSDictionary *> *filteredEntities;
+@property (nonatomic, strong) UISearchController *searchController;
+@property (nonatomic, strong) UIActivityIndicatorView *spinner;
+@end
+
+@implementation RCHAEntityPickerViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    self.title = @"Home Assistant";
+    
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.navigationController.navigationBar.tintColor = [UIColor labelColor];
+    
+    RCConfigManager *cm = [RCConfigManager sharedManager];
+    CGFloat mainBG = [cm tweakValueForKey:@"mainBackground" defaultVal:0.09];
+    UIColor *pickerBG = [cm tweakColorForKey:@"actionPickerBackground" defaultVal:mainBG];
+    self.view.backgroundColor = pickerBG;
+    self.tableView.backgroundColor = pickerBG;
+    
+    self.tableView.rowHeight = 64;
+    
+    self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
+    self.searchController.searchResultsUpdater = self;
+    self.searchController.obscuresBackgroundDuringPresentation = NO;
+    self.searchController.searchBar.placeholder = @"Search Entities";
+    self.navigationItem.searchController = self.searchController;
+    self.navigationItem.hidesSearchBarWhenScrolling = NO;
+    self.definesPresentationContext = YES;
+    
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Manual" style:UIBarButtonItemStylePlain target:self action:@selector(promptManualEntry)];
+    
+    UIRefreshControl *refresh = [[UIRefreshControl alloc] init];
+    [refresh addTarget:self action:@selector(fetchEntities) forControlEvents:UIControlEventValueChanged];
+    self.tableView.refreshControl = refresh;
+    
+    [self fetchEntities];
+}
+
+- (void)fetchEntities {
+    RCConfigManager *cm = [RCConfigManager sharedManager];
+    if (!cm.haUrl.length || !cm.haToken.length) {
+        [self.tableView.refreshControl endRefreshing];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Home Assistant Not Configured"
+                                                                       message:@"Please configure your Home Assistant Server URL and Access Token in Settings."
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Manual Entry" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            [self promptManualEntry];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:^(UIAlertAction *a) {
+            [self.navigationController popViewControllerAnimated:YES];
+        }]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    
+    _spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    [_spinner startAnimating];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:_spinner];
+    
+    NSString *base = cm.haUrl;
+    if ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/api/states", base]];
+    
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    req.timeoutInterval = 10.0;
+    [req setValue:[NSString stringWithFormat:@"Bearer %@", cm.haToken] forHTTPHeaderField:@"Authorization"];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    config.timeoutIntervalForRequest = 10.0;
+    config.timeoutIntervalForResource = 10.0;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:[RCHAInsecureSessionDelegate sharedDelegate] delegateQueue:nil];
+    
+    [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *res, NSError *err) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.tableView.refreshControl endRefreshing];
+            self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Manual" style:UIBarButtonItemStylePlain target:self action:@selector(promptManualEntry)];
+            
+            NSHTTPURLResponse *httpRes = (NSHTTPURLResponse *)res;
+            if (!err && httpRes.statusCode == 200 && data) {
+                id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                if ([json isKindOfClass:[NSArray class]]) {
+                    NSArray *supportedDomains = @[@"light", @"switch", @"scene", @"script", @"automation", @"media_player", @"cover", @"climate", @"lock", @"fan", @"button", @"input_boolean", @"vacuum", @"camera"];
+                    NSMutableArray *valid = [NSMutableArray array];
+                    for (NSDictionary *entity in (NSArray *)json) {
+                        if (![entity isKindOfClass:[NSDictionary class]]) continue;
+                        NSString *eid = entity[@"entity_id"];
+                        if (!eid.length) continue;
+                        NSString *domain = [eid componentsSeparatedByString:@"."].firstObject;
+                        if ([supportedDomains containsObject:domain]) {
+                            [valid addObject:entity];
+                        }
+                    }
+                    
+                    [valid sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+                        NSString *nameA = a[@"attributes"][@"friendly_name"] ?: a[@"entity_id"];
+                        NSString *nameB = b[@"attributes"][@"friendly_name"] ?: b[@"entity_id"];
+                        return [nameA localizedCaseInsensitiveCompare:nameB];
+                    }];
+                    
+                    self.allEntities = [valid copy];
+                    [self updateFilteredResults];
+                    [self.tableView reloadData];
+                    return;
+                }
+            }
+            
+            // Error handling
+            NSString *msg = err ? err.localizedDescription : (httpRes.statusCode == 401 ? @"Unauthorized (check HA token)" : [NSString stringWithFormat:@"HTTP Error %ld", (long)httpRes.statusCode]);
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Failed to Load Entities"
+                                                                           message:msg
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Retry" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+                [self fetchEntities];
+            }]];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Manual Entry" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+                [self promptManualEntry];
+            }]];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        });
+    }] resume];
+}
+
+- (void)promptManualEntry {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Home Assistant Command"
+                                                                   message:@"Enter Home Assistant command or entity ID (e.g. toggle light.bedroom or call light.turn_on light.bedroom):"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"toggle light.bedroom";
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!val.length) return;
+        NSString *cmd = [val hasPrefix:@"ha "] ? val : [NSString stringWithFormat:@"ha %@", val];
+        if (self.onEntitySelected) self.onEntitySelected(cmd);
+        [self.navigationController popViewControllerAnimated:YES];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)updateFilteredResults {
+    NSString *query = [self.searchController.searchBar.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]].lowercaseString;
+    if (!query.length) {
+        self.filteredEntities = self.allEntities;
+    } else {
+        NSPredicate *pred = [NSPredicate predicateWithBlock:^BOOL(NSDictionary *entity, NSDictionary *bindings) {
+            NSString *eid = [entity[@"entity_id"] lowercaseString];
+            NSString *name = [entity[@"attributes"][@"friendly_name"] lowercaseString];
+            return [eid containsString:query] || (name && [name containsString:query]);
+        }];
+        self.filteredEntities = [self.allEntities filteredArrayUsingPredicate:pred];
+    }
+}
+
+#pragma mark - Search Results Updating
+
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
+    [self updateFilteredResults];
+    [self.tableView reloadData];
+}
+
+#pragma mark - Table View
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return self.filteredEntities.count;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"HACell"];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"HACell"];
+    }
+    
+    RCConfigManager *cm = [RCConfigManager sharedManager];
+    cell.backgroundColor = [cm tweakColorForKey:@"blockBackground" defaultVal:0.12];
+    cell.layer.borderColor = [cm tweakColorForKey:@"borders" defaultVal:0.14].CGColor;
+    cell.layer.borderWidth = 1.0;
+    cell.layer.masksToBounds = YES;
+    
+    UIView *selBg = [[UIView alloc] init];
+    selBg.backgroundColor = [cm tweakColorForKey:@"selectionHighlight" defaultVal:0.15];
+    cell.selectedBackgroundView = selBg;
+    
+    NSDictionary *entity = self.filteredEntities[indexPath.row];
+    NSString *eid = entity[@"entity_id"] ?: @"";
+    NSString *friendlyName = entity[@"attributes"][@"friendly_name"] ?: eid;
+    NSString *state = entity[@"state"] ?: @"";
+    NSString *domain = [eid componentsSeparatedByString:@"."].firstObject;
+    
+    cell.textLabel.text = friendlyName;
+    cell.textLabel.textColor = [UIColor labelColor];
+    cell.textLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ • %@", eid, state];
+    cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    cell.detailTextLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightRegular];
+    
+    NSString *symbolName = @"house.fill";
+    UIColor *symbolColor = [UIColor systemBlueColor];
+    
+    if ([domain isEqualToString:@"light"]) {
+        symbolName = @"lightbulb.fill";
+        symbolColor = [UIColor systemYellowColor];
+    } else if ([domain isEqualToString:@"switch"]) {
+        symbolName = @"power";
+        symbolColor = [UIColor systemGreenColor];
+    } else if ([domain isEqualToString:@"scene"]) {
+        symbolName = @"sparkles";
+        symbolColor = [UIColor systemPurpleColor];
+    } else if ([domain isEqualToString:@"script"]) {
+        symbolName = @"command";
+        symbolColor = [UIColor systemIndigoColor];
+    } else if ([domain isEqualToString:@"automation"]) {
+        symbolName = @"gearshape.2.fill";
+        symbolColor = [UIColor systemOrangeColor];
+    } else if ([domain isEqualToString:@"media_player"]) {
+        symbolName = @"play.circle.fill";
+        symbolColor = [UIColor systemPinkColor];
+    } else if ([domain isEqualToString:@"cover"]) {
+        symbolName = @"slider.horizontal.3";
+        symbolColor = [UIColor systemGrayColor];
+    } else if ([domain isEqualToString:@"lock"]) {
+        symbolName = @"lock.fill";
+        symbolColor = [UIColor systemRedColor];
+    } else if ([domain isEqualToString:@"fan"]) {
+        symbolName = @"fanblades.fill";
+        symbolColor = [UIColor systemTealColor];
+    }
+    
+    cell.imageView.image = [UIImage systemImageNamed:symbolName];
+    cell.imageView.tintColor = symbolColor;
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    
+    NSDictionary *entity = self.filteredEntities[indexPath.row];
+    NSString *eid = entity[@"entity_id"] ?: @"";
+    NSString *friendlyName = entity[@"attributes"][@"friendly_name"] ?: eid;
+    NSString *domain = [eid componentsSeparatedByString:@"."].firstObject;
+    
+    if ([domain isEqualToString:@"scene"]) {
+        NSString *cmd = [NSString stringWithFormat:@"ha call scene.turn_on %@", eid];
+        if (self.onEntitySelected) self.onEntitySelected(cmd);
+        [self.navigationController popViewControllerAnimated:YES];
+        return;
+    }
+    
+    if ([domain isEqualToString:@"script"]) {
+        NSString *scriptName = [eid componentsSeparatedByString:@"."].lastObject;
+        NSString *cmd = [NSString stringWithFormat:@"ha call script.%@ %@", scriptName, eid];
+        if (self.onEntitySelected) self.onEntitySelected(cmd);
+        [self.navigationController popViewControllerAnimated:YES];
+        return;
+    }
+    
+    if ([domain isEqualToString:@"automation"]) {
+        NSString *cmd = [NSString stringWithFormat:@"ha call automation.trigger %@", eid];
+        if (self.onEntitySelected) self.onEntitySelected(cmd);
+        [self.navigationController popViewControllerAnimated:YES];
+        return;
+    }
+    
+    // Action sheet for controllable entities
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:friendlyName
+                                                                   message:eid
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    [sheet addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Toggle (%@)", friendlyName]
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction *a) {
+        NSString *cmd = [NSString stringWithFormat:@"ha toggle %@", eid];
+        if (self.onEntitySelected) self.onEntitySelected(cmd);
+        [self.navigationController popViewControllerAnimated:YES];
+    }]];
+    
+    [sheet addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Turn On (%@)", friendlyName]
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction *a) {
+        NSString *cmd = [NSString stringWithFormat:@"ha turn_on %@", eid];
+        if (self.onEntitySelected) self.onEntitySelected(cmd);
+        [self.navigationController popViewControllerAnimated:YES];
+    }]];
+    
+    [sheet addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Turn Off (%@)", friendlyName]
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction *a) {
+        NSString *cmd = [NSString stringWithFormat:@"ha turn_off %@", eid];
+        if (self.onEntitySelected) self.onEntitySelected(cmd);
+        [self.navigationController popViewControllerAnimated:YES];
+    }]];
+    
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    
+    if (sheet.popoverPresentationController) {
+        UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
+        sheet.popoverPresentationController.sourceView = cell;
+        sheet.popoverPresentationController.sourceRect = cell.bounds;
+    }
+    
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+@end

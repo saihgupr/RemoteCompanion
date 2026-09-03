@@ -10,9 +10,54 @@
 #import "RCWiFiTriggerViewController.h"
 #import "RCBluetoothTriggerViewController.h"
 #import "RCNFCTriggerViewController.h"
+#import "RCKMMacroPickerViewController.h"
 #import <notify.h>
 
 #define kSimulateNotificationPrefix "com.pizzaman.rc.simulate."
+
+static void rc_parse_km_cmd(NSString *cmd, NSString **outMacro, NSString **outParam) {
+    if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
+        if (outMacro) *outMacro = @"";
+        if (outParam) *outParam = @"";
+        return;
+    }
+    NSString *raw = [cmd hasPrefix:@"km "] ? [cmd substringFromIndex:3] : cmd;
+    raw = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *macro = nil;
+    NSString *param = nil;
+    if ([[raw lowercaseString] hasPrefix:@"trigger "]) {
+        NSString *after = [[raw substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([after hasPrefix:@"\""]) {
+            NSRange endQ = [after rangeOfString:@"\"" options:0 range:NSMakeRange(1, after.length - 1)];
+            if (endQ.location != NSNotFound) {
+                macro = [after substringWithRange:NSMakeRange(1, endQ.location - 1)];
+                NSString *rem = [[after substringFromIndex:endQ.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (rem.length > 0) {
+                    if ([rem hasPrefix:@"\""] && [rem hasSuffix:@"\""] && rem.length >= 2) {
+                        param = [rem substringWithRange:NSMakeRange(1, rem.length - 2)];
+                    } else {
+                        param = rem;
+                    }
+                }
+            }
+        }
+        if (!macro) {
+            NSArray *parts = [after componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSMutableArray *cp = [NSMutableArray array];
+            for (NSString *p in parts) { if (p.length > 0) [cp addObject:p]; }
+            if (cp.count > 0) {
+                macro = cp[0];
+                if (cp.count > 1) {
+                    param = [[cp subarrayWithRange:NSMakeRange(1, cp.count - 1)] componentsJoinedByString:@" "];
+                }
+            }
+        }
+    } else {
+        macro = raw;
+    }
+    if (outMacro) *outMacro = macro ?: @"";
+    if (outParam) *outParam = param ?: @"";
+}
 
 
 @interface UIImage (Private)
@@ -949,6 +994,10 @@ static id g_actionClipboard = nil;
 - (NSArray<NSDictionary *> *)ifConditionDefinitions {
     return @[
         @{
+            @"key": @"time_between",
+            @"title": @"Time of Day (Between)"
+        },
+        @{
             @"key": @"lock",
             @"title": @"Lock Status",
             @"values": @[
@@ -1047,6 +1096,74 @@ static id g_actionClipboard = nil;
 
 - (void)presentIfValuePickerForCondition:(NSDictionary *)condition existingIndex:(NSInteger)existingIndex insertIndex:(NSInteger)insertIndex type:(NSString *)type {
     NSString *actionType = type ?: @"if";
+    
+    if ([condition[@"key"] isEqualToString:@"time_between"]) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Time of Day Condition"
+                                                                       message:@"Enter start and end time (e.g. 09:00 - 17:00 or 9:00 AM - 5:00 PM):"
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+            textField.placeholder = @"Start Time (e.g. 09:00)";
+            textField.keyboardType = UIKeyboardTypeDefault;
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)self.actions.count) {
+                NSDictionary *act = self.actions[existingIndex];
+                if ([act isKindOfClass:[NSDictionary class]]) {
+                    NSString *val = act[@"expectedValue"] ?: @"";
+                    NSArray *p = [val componentsSeparatedByString:@"-"];
+                    if (p.count > 0) textField.text = [p[0] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                }
+            } else {
+                textField.text = @"09:00";
+            }
+        }];
+        [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+            textField.placeholder = @"End Time (e.g. 17:00)";
+            textField.keyboardType = UIKeyboardTypeDefault;
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)self.actions.count) {
+                NSDictionary *act = self.actions[existingIndex];
+                if ([act isKindOfClass:[NSDictionary class]]) {
+                    NSString *val = act[@"expectedValue"] ?: @"";
+                    NSArray *p = [val componentsSeparatedByString:@"-"];
+                    if (p.count > 1) textField.text = [p[1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                }
+            } else {
+                textField.text = @"17:00";
+            }
+        }];
+        __weak typeof(self) weakSelf = self;
+        [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            NSString *start = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            NSString *end = [alert.textFields[1].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (start.length == 0) start = @"09:00";
+            if (end.length == 0) end = @"17:00";
+            NSString *rangeVal = [NSString stringWithFormat:@"%@ - %@", start, end];
+            
+            NSDictionary *ifAction = @{
+                @"type": actionType,
+                @"conditionKey": @"time_between",
+                @"conditionTitle": @"Time of Day",
+                @"expectedValue": rangeVal,
+                @"expectedTitle": rangeVal
+            };
+            
+            if (existingIndex != NSNotFound && existingIndex >= 0 && existingIndex < (NSInteger)strongSelf.actions.count) {
+                strongSelf.actions[existingIndex] = ifAction;
+            } else if (insertIndex != NSNotFound && insertIndex >= 0 && insertIndex <= (NSInteger)strongSelf.actions.count) {
+                [strongSelf.actions insertObject:ifAction atIndex:insertIndex];
+                [strongSelf.actions insertObject:@{ @"type": @"end_if" } atIndex:insertIndex + 1];
+            } else {
+                [strongSelf.actions addObject:ifAction];
+                [strongSelf.actions addObject:@{ @"type": @"end_if" }];
+            }
+            [strongSelf saveActions];
+            [strongSelf.tableView reloadData];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        [self configurePopoverSourceForAlert:alert];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
     
     if ([condition[@"key"] isEqualToString:@"front_app"]) {
         RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
@@ -1242,6 +1359,10 @@ static id g_actionClipboard = nil;
 - (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state != UIGestureRecognizerStateBegan) return;
     
+    UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [haptic prepare];
+    [haptic impactOccurred];
+    
     CGPoint touchPoint = [gesture locationInView:self.tableView];
     NSIndexPath *indexPath = [self.tableView indexPathForRowAtPoint:touchPoint];
     
@@ -1251,6 +1372,15 @@ static id g_actionClipboard = nil;
     
     if (indexPath) {
         id item = self.actions[indexPath.row];
+        BOOL isDisabled = [[RCConfigManager sharedManager] isActionDisabled:item];
+        
+        // Disable / Enable option
+        NSString *toggleTitle = isDisabled ? @"Enable Action" : @"Disable Action";
+        [alert addAction:[UIAlertAction actionWithTitle:toggleTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            self.actions[indexPath.row] = [[RCConfigManager sharedManager] toggleActionDisabled:item];
+            [self saveActions];
+            [self.tableView reloadData];
+        }]];
         
         // Copy option
         [alert addAction:[UIAlertAction actionWithTitle:@"Copy" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
@@ -1268,6 +1398,37 @@ static id g_actionClipboard = nil;
                 [self.actions insertObject:[g_actionClipboard copy] atIndex:indexPath.row + 1];
                 [self saveActions];
                 [self.tableView reloadData];
+            }]];
+        }
+        
+        // Keyboard Maestro options
+        NSString *longPressCmdStr = [item isKindOfClass:[NSDictionary class]] ? ((NSDictionary *)item)[@"command"] : item;
+        if ([longPressCmdStr isKindOfClass:[NSString class]] && ([longPressCmdStr hasPrefix:@"km "] || [longPressCmdStr isEqualToString:@"km"])) {
+            NSString *macroName = @"";
+            NSString *paramVal = @"";
+            rc_parse_km_cmd(longPressCmdStr, &macroName, &paramVal);
+            
+            [alert addAction:[UIAlertAction actionWithTitle:@"Edit Parameter / Value…" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                [self promptEditKMParameterAtIndex:indexPath.row];
+            }]];
+            
+            if (paramVal.length > 0) {
+                [alert addAction:[UIAlertAction actionWithTitle:@"Remove Parameter" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                    NSString *newCmd = [NSString stringWithFormat:@"km trigger \"%@\"", macroName];
+                    if ([self.actions[indexPath.row] isKindOfClass:[NSDictionary class]]) {
+                        NSMutableDictionary *d = [self.actions[indexPath.row] mutableCopy];
+                        d[@"command"] = newCmd;
+                        self.actions[indexPath.row] = d;
+                    } else {
+                        self.actions[indexPath.row] = newCmd;
+                    }
+                    [self saveActions];
+                    [self.tableView reloadData];
+                }]];
+            }
+            
+            [alert addAction:[UIAlertAction actionWithTitle:@"Test Macro" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                [[RCServerClient sharedClient] executeCommand:longPressCmdStr completion:^(NSString * _Nullable output, NSError * _Nullable error) {}];
             }]];
         }
 
@@ -1422,10 +1583,15 @@ static id g_actionClipboard = nil;
     id actionData = self.actions[indexPath.row];
     
     if ([actionData isKindOfClass:[NSDictionary class]]) {
-        if ([self isIfActionItem:actionData] || [self isElseIfActionItem:actionData]) {
-            [self presentIfConditionPickerForIndex:indexPath.row];
+        NSDictionary *dict = (NSDictionary *)actionData;
+        if (dict[@"command"] && [dict[@"command"] isKindOfClass:[NSString class]]) {
+            actionData = dict[@"command"];
+        } else {
+            if ([self isIfActionItem:actionData] || [self isElseIfActionItem:actionData]) {
+                [self presentIfConditionPickerForIndex:indexPath.row];
+            }
+            return;
         }
-        return;
     }
     
     NSString *currentAction = (NSString *)actionData;
@@ -1458,7 +1624,13 @@ static id g_actionClipboard = nil;
                     newCommand = @"audiomix";
                 }
                 
-                strongSelf.actions[indexPath.row] = newCommand;
+                if ([strongSelf.actions[indexPath.row] isKindOfClass:[NSDictionary class]]) {
+                    NSMutableDictionary *d = [strongSelf.actions[indexPath.row] mutableCopy];
+                    d[@"command"] = newCommand;
+                    strongSelf.actions[indexPath.row] = d;
+                } else {
+                    strongSelf.actions[indexPath.row] = newCommand;
+                }
                 [strongSelf saveActions];
                 [strongSelf.tableView reloadData];
             }]];
@@ -1617,6 +1789,67 @@ static id g_actionClipboard = nil;
         [self editBluetoothConnectAtIndex:indexPath.row isDisconnect:NO];
     } else if ([currentAction hasPrefix:@"bt disconnect "] || [currentAction hasPrefix:@"bluetooth disconnect "] || [currentAction hasPrefix:@"bt-disconnect "]) {
         [self editBluetoothConnectAtIndex:indexPath.row isDisconnect:YES];
+    } else if ([currentAction hasPrefix:@"km "] || [currentAction isEqualToString:@"km"]) {
+        NSString *macroName = @"";
+        NSString *paramVal = @"";
+        rc_parse_km_cmd(currentAction, &macroName, &paramVal);
+        
+        UIAlertController *sheet = [UIAlertController alertControllerWithTitle:macroName.length ? macroName : @"Keyboard Maestro"
+                                                                       message:paramVal.length ? [NSString stringWithFormat:@"Parameter: %@", paramVal] : @"No parameter configured"
+                                                                preferredStyle:UIAlertControllerStyleActionSheet];
+        
+        [sheet addAction:[UIAlertAction actionWithTitle:@"Edit Parameter / Value…" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [self promptEditKMParameterAtIndex:indexPath.row];
+        }]];
+        
+        if (paramVal.length > 0) {
+            [sheet addAction:[UIAlertAction actionWithTitle:@"Remove Parameter" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                NSString *newCmd = [NSString stringWithFormat:@"km trigger \"%@\"", macroName];
+                if ([self.actions[indexPath.row] isKindOfClass:[NSDictionary class]]) {
+                    NSMutableDictionary *d = [self.actions[indexPath.row] mutableCopy];
+                    d[@"command"] = newCmd;
+                    self.actions[indexPath.row] = d;
+                } else {
+                    self.actions[indexPath.row] = newCmd;
+                }
+                [self saveActions];
+                [self.tableView reloadData];
+            }]];
+        }
+        
+        [sheet addAction:[UIAlertAction actionWithTitle:@"Change Macro…" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            RCKMMacroPickerViewController *picker = [[RCKMMacroPickerViewController alloc] init];
+            picker.onMacroSelected = ^(NSString *cmd) {
+                if ([self.actions[indexPath.row] isKindOfClass:[NSDictionary class]]) {
+                    NSMutableDictionary *d = [self.actions[indexPath.row] mutableCopy];
+                    d[@"command"] = cmd;
+                    self.actions[indexPath.row] = d;
+                } else {
+                    self.actions[indexPath.row] = cmd;
+                }
+                [self saveActions];
+                [self.tableView reloadData];
+                [self dismissViewControllerAnimated:YES completion:nil];
+            };
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:picker];
+            picker.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Cancel" style:UIBarButtonItemStylePlain target:self action:@selector(dismissModalPicker)];
+            [self presentViewController:nav animated:YES completion:nil];
+        }]];
+        
+        [sheet addAction:[UIAlertAction actionWithTitle:@"Test Macro" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [[RCServerClient sharedClient] executeCommand:currentAction completion:^(NSString * _Nullable output, NSError * _Nullable error) {}];
+        }]];
+        
+        [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        
+        sheet.popoverPresentationController.sourceView = self.view;
+        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+        if (cell) {
+            sheet.popoverPresentationController.sourceRect = cell.bounds;
+            sheet.popoverPresentationController.sourceView = cell;
+        }
+        [self presentViewController:sheet animated:YES completion:nil];
+        return;
     } else {
         // Generic edit for other commands - show alert with current command
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Edit Action"
@@ -1641,6 +1874,50 @@ static id g_actionClipboard = nil;
 
         [self presentViewController:alert animated:YES completion:nil];
     }
+}
+
+- (void)promptEditKMParameterAtIndex:(NSInteger)index {
+    if (index < 0 || index >= self.actions.count) return;
+    id item = self.actions[index];
+    NSString *cmdStr = [item isKindOfClass:[NSDictionary class]] ? ((NSDictionary *)item)[@"command"] : item;
+    NSString *macroName = @"";
+    NSString *paramVal = @"";
+    rc_parse_km_cmd(cmdStr, &macroName, &paramVal);
+    
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Parameter: %@", macroName]
+                                                                   message:@"Enter value passed to KM %TriggerValue% (leave empty for none):"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.text = paramVal;
+        tf.placeholder = @"Parameter / Value (optional)";
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        NSString *val = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *newCmd;
+        if (val.length > 0) {
+            newCmd = [NSString stringWithFormat:@"km trigger \"%@\" \"%@\"", macroName, val];
+        } else {
+            newCmd = [NSString stringWithFormat:@"km trigger \"%@\"", macroName];
+        }
+        if ([self.actions[index] isKindOfClass:[NSDictionary class]]) {
+            NSMutableDictionary *d = [self.actions[index] mutableCopy];
+            d[@"command"] = newCmd;
+            self.actions[index] = d;
+        } else {
+            self.actions[index] = newCmd;
+        }
+        [self saveActions];
+        [self.tableView reloadData];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)dismissModalPicker {
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)editAirPlayConnectAtIndex:(NSInteger)index {
@@ -1918,7 +2195,7 @@ static id g_actionClipboard = nil;
     cell.detailTextLabel.adjustsFontSizeToFitWidth = YES;
     cell.detailTextLabel.minimumScaleFactor = 0.80f;
 
-    if ([actionItem isKindOfClass:[NSDictionary class]]) {
+    if ([actionItem isKindOfClass:[NSDictionary class]] && !((NSDictionary *)actionItem)[@"command"]) {
         cell.textLabel.text = cleanName;
         cell.textLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
         BOOL isControl = [self isEndIfActionItem:actionItem] || [self isElseActionItem:actionItem];
@@ -1932,10 +2209,14 @@ static id g_actionClipboard = nil;
         handleView.tintColor = [UIColor systemGray3Color];
         cell.accessoryView = handleView;
         [self applySectionCardStyleToCell:cell atIndexPath:indexPath];
+        
+        BOOL isDisabled = [[RCConfigManager sharedManager] isActionDisabled:actionItem];
+        cell.contentView.alpha = isDisabled ? 0.38f : 1.0f;
+        cell.accessoryView.alpha = isDisabled ? 0.38f : 1.0f;
         return cell;
     }
 
-    NSString *action = (NSString *)actionItem;
+    NSString *action = [actionItem isKindOfClass:[NSDictionary class]] ? ((NSDictionary *)actionItem)[@"command"] : (NSString *)actionItem;
     NSDictionary *toggleInfo = [[RCConfigManager sharedManager] toggleInfoForCommand:action];
 
     // Logic to separate "Type" from "Value"
@@ -1998,7 +2279,7 @@ static id g_actionClipboard = nil;
             } else if ([action hasPrefix:@"airplay disconnect"]) {
                 cell.textLabel.text = cleanName;
                 subtitle = nil;
-            } else if ([action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
+            } else if ([action isEqualToString:@"respring"] || [action isEqualToString:@"safemode"] || [action isEqualToString:@"safe-mode"] || [action isEqualToString:@"ldrestart"] || [action isEqualToString:@"userspace-reboot"] || [action isEqualToString:@"uicache"] || [action isEqualToString:@"player status"]) {
                 cell.textLabel.text = cleanName;
                 subtitle = nil;
             } else {
@@ -2048,6 +2329,10 @@ static id g_actionClipboard = nil;
     handleView.tintColor = [UIColor systemGray3Color];
     cell.accessoryView = handleView;
     [self applySectionCardStyleToCell:cell atIndexPath:indexPath];
+    
+    BOOL isDisabled = [[RCConfigManager sharedManager] isActionDisabled:actionItem];
+    cell.contentView.alpha = isDisabled ? 0.38f : 1.0f;
+    cell.accessoryView.alpha = isDisabled ? 0.38f : 1.0f;
     return cell;
 }
 

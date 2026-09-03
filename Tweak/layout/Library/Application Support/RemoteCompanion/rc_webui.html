@@ -742,6 +742,12 @@
     /* Open state handle in CSS as fallback */
     .action-seq-row.del-open .action-seq-inner { transform: translateX(-75px); }
 
+    /* Disabled action styling */
+    .action-seq-row.action-disabled .action-seq-inner {
+      opacity: 0.38;
+      filter: grayscale(0.5);
+    }
+
     /* ── Indent Guides Visual Hierarchy ── */
     .nest-style-btn {
       background: rgba(255, 255, 255, 0.06);
@@ -908,6 +914,25 @@
       text-transform: uppercase; color: #8e8e93;
       padding: 0 32px; margin: 24px 0 6px;
     }
+    .app-picker-list .picker-section-header {
+      padding: 10px 14px 4px;
+      margin: 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: #8e8e93;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: #2c2c2e;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .app-picker-list .list-card {
+      margin: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+    }
     .picker-row {
       display: flex; align-items: center;
       min-height: 50px;
@@ -929,11 +954,11 @@
     /* ── Bottom sheet ── */
     .sheet-backdrop {
       position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-      z-index: 800; display: none;
+      z-index: 950; display: none;
     }
     .sheet-backdrop.visible { display: block; }
     .sheet {
-      position: fixed; bottom: 0; left: 50%; z-index: 801;
+      position: fixed; bottom: 0; left: 50%; z-index: 951;
       width: calc(100% - 48px); max-width: 560px;
       padding-bottom: env(safe-area-inset-bottom, 20px);
       transform: translateX(-50%) translateY(100%);
@@ -1128,6 +1153,70 @@
     .app-picker-row-inner { flex: 1; min-width: 0; }
     .app-picker-name { font-size: 16px; color: #fff; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .app-picker-bid { font-size: 12px; color: #636366; font-family: "SF Mono", Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+
+    /* ── KM Macro Picker ── */
+    .km-group-container {
+      margin-bottom: 8px;
+    }
+    .km-group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 8px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .km-group-header:active, .km-group-header:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    .km-group-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #98989d;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .km-group-badge {
+      background: rgba(255,255,255,0.14);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+    .km-group-chevron {
+      font-size: 12px;
+      color: #8e8e93;
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+    }
+    .km-group-container.collapsed .km-group-body {
+      display: none;
+    }
+    .km-group-container.collapsed .km-group-chevron {
+      transform: rotate(-90deg);
+    }
+    .km-group-body {
+      margin-top: 4px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.18);
+      overflow: hidden;
+    }
+    .spin {
+      animation: km-spin 0.8s linear infinite;
+    }
+    @keyframes km-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
 
     /* ── Toast ── */
     .toast {
@@ -1478,19 +1567,22 @@
   </div>
 </div>
 
-<!-- ══ ACTION PICKER PANEL ════════════════════════════════════════════════ -->
-<div class="rc-panel" id="picker-panel">
-  <div class="panel-navbar">
-    <button class="panel-back" onclick="closePickerPanel()">
-      <i class="f7-icons">xmark</i> Cancel
-    </button>
-    <div class="panel-title">Select Action</div>
-    <div style="width:80px"></div>
+<!-- ══ ACTION PICKER DIALOG ════════════════════════════════════════════════ -->
+<div class="dialog-backdrop" id="picker-dialog-backdrop" onclick="_pickerBackdropClick(event)">
+  <div class="dialog-box app-launch-dialog" style="max-width: 480px; width: 90%;">
+    <div class="dialog-title">Select Action</div>
+    <div class="dialog-msg" style="text-align:center;padding:0 16px 6px">Choose an action to add to this trigger.</div>
+    <div style="padding:0 14px 10px; display:flex; flex-direction:column; flex:1; min-height:0;">
+      <div class="app-picker-search-wrap">
+        <i class="f7-icons" style="font-size:16px;color:#8e8e93;flex-shrink:0">search</i>
+        <input class="app-picker-search" type="text" placeholder="Search actions…" id="action-search" autocorrect="off" autocapitalize="none" spellcheck="false" oninput="renderPickerSections()">
+      </div>
+      <div class="app-picker-list" id="picker-content" style="max-height: 48vh; max-height: 48dvh; overflow-y: auto;"></div>
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closePickerPanel()">Cancel</button>
+    </div>
   </div>
-  <div class="search-wrap">
-    <input class="search-input" type="search" placeholder="Search Actions" id="action-search" oninput="renderPickerSections()">
-  </div>
-  <div id="picker-content"></div>
 </div>
 
 <!-- ══ SETTINGS PANEL ════════════════════════════════════════════════════ -->
@@ -1547,6 +1639,88 @@
             <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
           </button>
           <span id="ha-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
+        </div>
+      </div>
+
+      <div class="settings-row" style="border-top: 1px solid rgba(255,255,255,0.08);">
+        <span class="settings-label">Keyboard Maestro</span>
+        <div class="settings-btn">
+          <input type="checkbox" class="ios-toggle" id="setting-km" onchange="onKMToggleChange(this.checked)">
+        </div>
+      </div>
+      <div id="km-credentials-wrapper" style="display:none; padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18);">
+        <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">WEB SERVER URL</div>
+        <input type="url" id="setting-km-url" placeholder="http://192.168.1.50:4490" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; margin-bottom: 12px; outline: none;" onchange="config.kmUrl=this.value.trim();saveConfig()">
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">USERNAME</div>
+            <input type="text" id="setting-km-user" placeholder="Optional" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.kmUser=this.value.trim();saveConfig()">
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">PASSWORD</div>
+            <div style="position: relative;">
+              <input type="password" id="setting-km-password" placeholder="Optional" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 40px 10px 12px; font-size: 15px; outline: none;" onchange="config.kmPassword=this.value.trim();saveConfig()">
+              <button type="button" onclick="toggleKMPasswordVisibility()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #8e8e93; cursor: pointer; padding: 6px;"><i class="f7-icons" id="km-password-eye-icon" style="font-size: 18px;">eye</i></button>
+            </div>
+          </div>
+        </div>
+        
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+          <button class="sys-action-btn green" id="km-test-btn" onclick="testKMConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
+          </button>
+          <span id="km-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
+        </div>
+      </div>
+
+      <div class="settings-row" style="border-top: 1px solid rgba(255,255,255,0.08);">
+        <span class="settings-label">MQTT</span>
+        <div class="settings-btn">
+          <input type="checkbox" class="ios-toggle" id="setting-mqtt" onchange="onMQTTToggleChange(this.checked)">
+        </div>
+      </div>
+      <div id="mqtt-credentials-wrapper" style="display:none; padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18);">
+        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+          <div style="flex: 2;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">BROKER HOST</div>
+            <input type="text" id="setting-mqtt-host" placeholder="192.168.1.50 or broker.local" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttHost=this.value.trim();saveConfig()">
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">PORT</div>
+            <input type="number" id="setting-mqtt-port" placeholder="1883" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttPort=parseInt(this.value)||1883;saveConfig()">
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">CLIENT ID</div>
+          <input type="text" id="setting-mqtt-clientid" placeholder="RemoteCompanion" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttClientId=this.value.trim();saveConfig()">
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">USERNAME</div>
+            <input type="text" id="setting-mqtt-user" placeholder="Optional" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttUser=this.value.trim();saveConfig()">
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">PASSWORD</div>
+            <div style="position: relative;">
+              <input type="password" id="setting-mqtt-password" placeholder="Optional" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 40px 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttPassword=this.value.trim();saveConfig()">
+              <button type="button" onclick="toggleMQTTPasswordVisibility()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #8e8e93; cursor: pointer; padding: 6px;"><i class="f7-icons" id="mqtt-password-eye-icon" style="font-size: 18px;">eye</i></button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #8e8e93; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px;">DEFAULT TOPIC PREFIX</div>
+          <input type="text" id="setting-mqtt-prefix" placeholder="remotecompanion" autocorrect="off" autocapitalize="none" spellcheck="false" style="width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 15px; outline: none;" onchange="config.mqttTopicPrefix=this.value.trim();saveConfig()">
+        </div>
+        
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+          <button class="sys-action-btn green" id="mqtt-test-btn" onclick="testMQTTConnection()" style="margin: 0; padding: 8px 16px; font-size: 14px; border-radius: 8px; font-weight: 600;">
+            <i class="f7-icons" style="font-size: 16px; margin-right: 4px;">bolt_fill</i> Test Connection
+          </button>
+          <span id="mqtt-test-status" style="font-size: 13px; color: #8e8e93; margin-left: 12px;"></span>
         </div>
       </div>
     </div>
@@ -1701,7 +1875,7 @@
 
 <!-- ══ APP LAUNCH TRIGGER DIALOG ═════════════════════════════════════════ -->
 <div class="dialog-backdrop" id="app-launch-dialog-backdrop">
-  <div class="dialog-box app-launch-dialog">
+  <div class="dialog-box app-launch-dialog" style="max-width: 460px; width: 90%;">
     <div class="dialog-title">New App Launch Trigger</div>
     <div class="dialog-msg" style="text-align:center;padding:0 16px 6px">Fires when an app is opened on the device.</div>
     <div style="padding:0 14px 10px">
@@ -1715,6 +1889,31 @@
     </div>
     <div class="dialog-btns">
       <button onclick="closeAppLaunchDialog()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TIME RANGE CONDITION DIALOG ═════════════════════════════════════ -->
+<div class="dialog-backdrop" id="time-cond-dialog-backdrop">
+  <div class="dialog-box" style="max-width: 440px; width: 90%;">
+    <div class="dialog-title" id="time-cond-dialog-title">Time of Day Condition</div>
+    <div class="dialog-msg" style="padding-bottom: 8px;">Run actions only between these times:</div>
+    <div style="padding:0 16px 14px; display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:10px;">
+        <span style="font-size:14px; color:#fff; font-weight:500;">Start Time</span>
+        <input type="time" id="time-cond-start" class="dialog-input" style="margin:0; width:130px; text-align:center; font-size:15px; padding:6px 10px;" value="09:00" oninput="updateTimeCondPreview()">
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:10px;">
+        <span style="font-size:14px; color:#fff; font-weight:500;">End Time</span>
+        <input type="time" id="time-cond-end" class="dialog-input" style="margin:0; width:130px; text-align:center; font-size:15px; padding:6px 10px;" value="17:00" oninput="updateTimeCondPreview()">
+      </div>
+      <div id="time-cond-hint" style="font-size:12px; color:#8e8e93; text-align:center; line-height:1.3; min-height:16px;">
+        Actions will only run if current time is between 9:00 AM and 5:00 PM.
+      </div>
+    </div>
+    <div class="dialog-btns">
+      <button onclick="closeTimeCondDialog()" style="color:#ff3b30;">Cancel</button>
+      <button onclick="saveTimeCondDialog()" style="font-weight:600;">Save</button>
     </div>
   </div>
 </div>
@@ -1735,6 +1934,32 @@
     </div>
     <div class="dialog-btns">
       <button onclick="closeHADialog()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ KEYBOARD MAESTRO ACTION DIALOG ═══════════════════════════════════ -->
+<div class="dialog-backdrop" id="km-dialog-backdrop">
+  <div class="dialog-box app-launch-dialog" style="max-width: 560px; width: 90%;">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 18px 6px;">
+      <div class="dialog-title" style="margin:0; text-align:left; font-size:17px; font-weight:700;">Keyboard Maestro Macros</div>
+      <button class="km-refresh-btn" onclick="refreshKMMacros()" title="Refresh Macros" style="background:rgba(255,255,255,0.08); border:none; color:#007aff; border-radius:8px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background 0.15s;">
+        <i class="f7-icons" id="km-refresh-icon" style="font-size:16px;">arrow_clockwise</i>
+      </button>
+    </div>
+    <div class="dialog-msg" style="text-align:left; padding:0 18px 8px; font-size:13px;">Select a macro from your Mac to execute:</div>
+    <div style="padding:0 14px 10px;">
+      <div class="app-picker-search-wrap">
+        <i class="f7-icons" style="font-size:16px; color:#8e8e93; flex-shrink:0;">search</i>
+        <input class="app-picker-search" id="km-picker-search" type="text" placeholder="Search macros and groups…" autocorrect="off" autocapitalize="none" spellcheck="false" oninput="filterKMList()">
+      </div>
+      <div class="app-picker-list km-macro-list" id="km-picker-list" style="max-height:320px; overflow-y:auto;">
+        <div class="app-picker-loading" id="km-picker-loading">Loading macros from Mac…</div>
+      </div>
+    </div>
+    <div class="dialog-btns" style="border-top:1px solid rgba(255,255,255,0.08); display:flex;">
+      <button onclick="promptManualKMAction()" style="flex:1; border-right:1px solid rgba(255,255,255,0.08); font-size:14px; color:#8e8e93;">Manual Entry…</button>
+      <button onclick="closeKMDialog()" style="flex:1; font-size:14px; color:#ff3b30;">Cancel</button>
     </div>
   </div>
 </div>
@@ -2008,6 +2233,20 @@
             </div>
             <div class="sys-row">
               <div class="sys-row-left">
+                <div class="sys-row-icon icon-orange"><i class="f7-icons">shield_slash_fill</i></div>
+                <div class="sys-row-label-group">
+                  <span class="sys-row-label">Safe Mode</span>
+                  <span class="sys-row-sublabel">Restart SpringBoard with tweaks disabled</span>
+                </div>
+              </div>
+              <div class="sys-row-right">
+                <button onclick="triggerSafeModeAction()" class="sys-action-btn orange">
+                  <i class="f7-icons" style="font-size:14px;">shield_slash_fill</i> Safe Mode
+                </button>
+              </div>
+            </div>
+            <div class="sys-row">
+              <div class="sys-row-left">
                 <div class="sys-row-icon icon-blue"><i class="f7-icons">square_grid_2x2</i></div>
                 <div class="sys-row-label-group">
                   <span class="sys-row-label">UICache</span>
@@ -2218,6 +2457,7 @@ const TRIGGER_SECTIONS = [
   { title: 'Notification Triggers',  id: 'notif',     keys: [], dynamic: true, prefix: 'notif_',      deletable: true },
   { title: 'App Launch Triggers',    id: 'app',       keys: [], dynamic: true, prefix: 'app_launch_', deletable: true },
   { title: 'Scheduled Triggers',     id: 'sched',     keys: [], dynamic: true, prefix: 'sched_',      deletable: true },
+  { title: 'MQTT Subscription Triggers', id: 'mqtt', keys: [], dynamic: true, prefix: 'mqtt_sub_', prefix2: 'mqtt_', deletable: true },
 ];
 
 const TRIGGER_NAMES = {
@@ -2293,6 +2533,7 @@ function iconForKey(key) {
   if (key.startsWith('app_launch_')) return { icon:'app_badge_fill',                cls:'icon-pink' };
   if (key.startsWith('notif_') || key.startsWith('notify_'))      return { icon:'bell_circle_fill',              cls:'icon-red' };
   if (key.startsWith('sched_'))      return { icon:'clock_fill',                    cls:'icon-orange' };
+  if (key.startsWith('mqtt_sub_') || key.startsWith('mqtt_')) return { icon:'antenna_radiowaves_left_right', cls:'icon-blue' };
   return { icon:'hand_tap', cls:'icon-gray' };
 }
 
@@ -2313,6 +2554,8 @@ function nameForKey(key) {
     return `Notif: ${key.slice(6)}`;
   }
   if (key.startsWith('sched_'))      return `Sched: ${key.slice(6)}`;
+  if (key.startsWith('mqtt_sub_'))   return `MQTT: ${key.slice(9)}`;
+  if (key.startsWith('mqtt_'))       return `MQTT: ${key.slice(5)}`;
   return key;
 }
 
@@ -2323,15 +2566,25 @@ const CMD_NAMES = {
   'flashlight':'Flashlight Toggle','flashlight on':'Flashlight On','flashlight off':'Flashlight Off','flashlight toggle':'Flashlight Toggle',
   'appearance dark':'Appearance Dark','appearance light':'Appearance Light','appearance toggle':'Appearance Toggle',
   'rotate lock':'Rotate Lock','rotate unlock':'Rotate Unlock','rotate toggle':'Rotate Toggle',
+  'location on':'Location Services On','location off':'Location Services Off','location toggle':'Location Services Toggle',
   'wifi on':'WiFi On','wifi off':'WiFi Off','wifi toggle':'WiFi Toggle',
   'bluetooth on':'Bluetooth On','bluetooth off':'Bluetooth Off','bluetooth toggle':'Bluetooth Toggle',
   'airplane on':'Airplane On','airplane off':'Airplane Off','airplane toggle':'Airplane Toggle',
   'haptic':'Haptic Feedback','screenshot':'Screenshot',
+  'camera photo 0.5x':'Open Camera (Photo 0.5x)','camera photo 2x':'Open Camera (Photo 2x)','camera photo':'Open Camera (Photo)',
+  'camera portrait 2x':'Open Camera (Portrait 2x)','camera portrait':'Open Camera (Portrait)',
+  'camera video 2x flash':'Open Video Camera (2x, Flash)',
+  'camera video 2x':'Open Video Camera (2x)','camera video':'Open Video Camera','open camera video 2x':'Open Video Camera (2x)','open camera video':'Open Video Camera',
+  'camera front':'Open Camera (Front Selfie)','camera selfie':'Open Camera (Front Selfie)',
+  'camera slomo':'Open Camera (Slo-Mo)','camera timelapse':'Open Camera (Time-Lapse)',
+  'camera cinematic':'Open Camera (Cinematic)','camera pano':'Open Camera (Pano)',
+  'camera shutter':'Camera Shutter / Snap','camera snap':'Camera Shutter / Snap',
+  'camera record':'Camera Record Toggle','camera record toggle':'Camera Record Toggle',
   'sneakycam photo':'SneakyCam Photo','sneakycam takephoto':'SneakyCam Photo','sneakycam video':'SneakyCam Video','sneakycam startstopvideo':'SneakyCam Video','sneakycam record':'SneakyCam Video',
   'lock':'Lock Device','unlock':'Unlock Device',
   'dnd on':'Do Not Disturb On','dnd off':'Do Not Disturb Off','dnd toggle':'Do Not Disturb Toggle',
   'audiomix on':'AudioMix On','audiomix off':'AudioMix Off','audiomix toggle':'AudioMix Toggle',
-  'respring':'Respring','siri':'Activate Siri','home':'Home Button','switcher':'App Switcher',
+  'respring':'Respring','safemode':'Safe Mode','safe-mode':'Safe Mode','siri':'Activate Siri','home':'Home Button','switcher':'App Switcher',
   'previous app':'Previous App',
   'open control center':'Control Center',
   'ldrestart':'Soft Reboot','userspace-reboot':'Userspace Reboot','uicache':'Refresh Icon Cache',
@@ -2348,9 +2601,13 @@ const CMD_NAMES = {
 function nameForCmd(cmd) {
   if (!cmd) return 'Unknown';
   if (typeof cmd === 'object') {
+    if (cmd.command && typeof cmd.command === 'string') {
+      return nameForCmd(cmd.command);
+    }
     const t = (cmd.type||'').toLowerCase();
-    if (t === 'if') return `If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
-    if (t === 'else_if') return `Else If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
+    const isTime = (cmd.conditionKey === 'time_between' || cmd.conditionName === 'time_between' || (cmd.conditionTitle||'').toLowerCase().includes('time'));
+    if (t === 'if') return isTime ? `If Time is Between ${cmd.expectedTitle||cmd.expectedValue||'Time Range'}` : `If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
+    if (t === 'else_if') return isTime ? `Else If Time is Between ${cmd.expectedTitle||cmd.expectedValue||'Time Range'}` : `Else If ${cmd.conditionTitle||'Condition'} is ${cmd.expectedTitle||'Value'}`;
     if (t === 'else') return 'Else';
     if (t === 'end_if' || t === 'end') return 'End If';
     if (t === 'repeat') return `Repeat ${cmd.count||''}`;
@@ -2362,6 +2619,29 @@ function nameForCmd(cmd) {
   }
   const lowCmd = cmd.toLowerCase().trim();
   if (CMD_NAMES[lowCmd]) return CMD_NAMES[lowCmd];
+  if (lowCmd.startsWith('camera') || lowCmd.startsWith('open camera')) {
+    let modeName = 'Photo';
+    if (lowCmd.includes('video') || lowCmd.includes('2x')) modeName = 'Video';
+    if (lowCmd.includes('photo')) modeName = 'Photo';
+    if (lowCmd.includes('portrait')) modeName = 'Portrait';
+    if (lowCmd.includes('slomo') || lowCmd.includes('slo-mo')) modeName = 'Slo-Mo';
+    if (lowCmd.includes('timelapse') || lowCmd.includes('time-lapse')) modeName = 'Time-Lapse';
+    if (lowCmd.includes('pano') || lowCmd.includes('panorama')) modeName = 'Pano';
+    if (lowCmd.includes('cinematic')) modeName = 'Cinematic';
+
+    const details = [];
+    if (lowCmd.includes('front') || lowCmd.includes('selfie')) details.push('Front');
+    const rx = /(\d+(\.\d+)?)\s*x/i;
+    const m = lowCmd.match(rx);
+    if (m) details.push(m[0]);
+    else if (modeName === 'Video' && !lowCmd.includes('front')) details.push('2x');
+    if (lowCmd.includes('flash') || lowCmd.includes('torch')) details.push('Flash');
+    if (lowCmd.includes('record')) details.push('Record');
+    if (lowCmd.includes('snap')) details.push('Snap');
+
+    const detStr = details.length ? ` (${details.join(', ')})` : '';
+    return `Open Camera (${modeName}${detStr})`;
+  }
   if (lowCmd.startsWith('sneakycam photo') || lowCmd === 'sneakycam takephoto') return 'SneakyCam Photo';
   if (lowCmd.startsWith('sneakycam video') || lowCmd === 'sneakycam record' || lowCmd === 'sneakycam startstopvideo') return 'SneakyCam Video';
   if (lowCmd.startsWith('flashlight ')) return `Flashlight ${cmd.slice(11)}%`;
@@ -2386,6 +2666,8 @@ function nameForCmd(cmd) {
     return `Kill ${app ? app.name : cmd.slice(5).trim()}`;
   }
   if (lowCmd.startsWith('ha ') || lowCmd === 'ha') return formatHACommandName(cmd);
+  if (lowCmd.startsWith('km ') || lowCmd === 'km') return formatKMCommandName(cmd);
+  if (lowCmd.startsWith('mqtt ') || lowCmd === 'mqtt') return formatMQTTCommandName(cmd);
   // Touch gesture display names
   if (lowCmd.startsWith('tap '))   { const p=cmd.slice(4).trim().split(/\s+/); return `Tap (${p[0]||'?'}, ${p[1]||'?'})`; }
   if (lowCmd.startsWith('hold '))  { const p=cmd.slice(5).trim().split(/\s+/); return `Hold (${p[0]||'?'}, ${p[1]||'?'})${p[2]?` ${p[2]}ms`:''}`; }
@@ -2396,6 +2678,51 @@ function nameForCmd(cmd) {
   if (lowCmd === 'swiper' || lowCmd === 'swiperight') return 'Swipe Right';
   // Fallback: capitalize first letter
   return cmd.charAt(0).toUpperCase() + cmd.slice(1);
+}
+
+function formatMQTTCommandName(cmd) {
+  const raw = cmd.slice(4).trim();
+  if (!raw) return 'MQTT: Publish';
+  let after = raw;
+  if (raw.toLowerCase().startsWith('publish ') || raw.toLowerCase().startsWith('pub ')) {
+    after = raw.toLowerCase().startsWith('publish ') ? raw.slice(8).trim() : raw.slice(4).trim();
+  }
+  const parts = after.split(/\s+/);
+  if (parts.length === 0 || !parts[0]) return 'MQTT: Publish';
+  const topic = parts[0];
+  const payload = parts.slice(1).join(' ');
+  return payload ? `MQTT: ${topic} (${payload})` : `MQTT: ${topic}`;
+}
+
+function formatKMCommandName(cmd) {
+  const raw = cmd.slice(2).trim();
+  if (!raw) return 'Keyboard Maestro';
+  if (raw.toLowerCase().startsWith('trigger ')) {
+    let after = raw.slice(8).trim();
+    let macro = '';
+    let val = '';
+    if (after.startsWith('"')) {
+      const endQ = after.indexOf('"', 1);
+      if (endQ !== -1) {
+        macro = after.substring(1, endQ);
+        val = after.substring(endQ + 1).trim();
+      }
+    }
+    if (!macro) {
+      const parts = after.split(/\s+/);
+      macro = parts[0];
+      val = parts.slice(1).join(' ');
+    }
+    if (val.startsWith('"') && val.endsWith('"') && val.length >= 2) {
+      val = val.substring(1, val.length - 1);
+    }
+    const resolvedName = (config.kmNamesByUuid && config.kmNamesByUuid[macro]) ? config.kmNamesByUuid[macro] : macro;
+    return `KM: ${resolvedName}${val ? ' (' + val + ')' : ''}`;
+  }
+  if (raw.toLowerCase().startsWith('url ')) {
+    return `KM URL: ${raw.slice(4).trim()}`;
+  }
+  return `KM: ${raw}`;
 }
 
 function formatHACommandName(cmd) {
@@ -2441,6 +2768,9 @@ function formatHACommandName(cmd) {
 function iconForCmd(cmd) {
   if (!cmd) return { icon:'questionmark', cls:'icon-gray' };
   if (typeof cmd === 'object') {
+    if (cmd.command && typeof cmd.command === 'string') {
+      return iconForCmd(cmd.command);
+    }
     const t = (cmd.type||'').toLowerCase();
     if (t === 'if' || t === 'else_if' || t === 'else') return { icon:'arrow_triangle_branch', cls:'icon-purple' };
     if (t === 'end_if' || t === 'end') return { icon:'arrow_turn_up_left', cls:'icon-purple' };
@@ -2453,13 +2783,14 @@ function iconForCmd(cmd) {
     'queuealbum':'music_note_list','queue album':'music_note_list','queueartist':'music_mic','queue artist':'music_mic','shuffleall':'shuffle','shuffle all songs':'shuffle','deletesong':'trash','delete song':'trash','delete current song':'trash',
     'flashlight':'bolt_fill','flashlight on':'bolt_fill','flashlight off':'bolt_slash_fill','flashlight toggle':'bolt_fill',
     'appearance dark':'moon_fill','appearance light':'sun_max_fill','appearance toggle':'moon_fill',
+    'location on':'location_fill','location off':'location_slash','location toggle':'location_fill',
     'wifi on':'wifi','wifi off':'wifi_slash','wifi toggle':'wifi',
     'bluetooth on':'bolt_horizontal_fill','bluetooth off':'bolt_horizontal','bluetooth toggle':'bolt_horizontal_fill',
     'airplane on':'airplane','airplane off':'airplane','airplane toggle':'airplane',
     'lock':'lock_fill','unlock':'lock_open_fill',
     'dnd on':'moon_fill','dnd off':'moon','dnd toggle':'moon_circle_fill',
     'audiomix on':'equalizer','audiomix off':'equalizer','audiomix toggle':'equalizer',
-    'respring':'arrow_2_circlepath','siri':'mic_fill','home':'house_fill',
+    'respring':'arrow_2_circlepath','safemode':'shield_slash_fill','safe-mode':'shield_slash_fill','siri':'mic_fill','home':'house_fill',
     'open control center':'gear',
     'low power on':'battery_25','low power off':'battery_100',
     'screenshot':'camera_fill','haptic':'hand_raised_fill',
@@ -2467,12 +2798,21 @@ function iconForCmd(cmd) {
     'mute':'speaker_slash_fill','mute on':'speaker_slash_fill','mute off':'speaker_3_fill','mute toggle':'speaker_slash_fill',
   };
   const lowCmd = cmd.toLowerCase().trim();
+  if (lowCmd.startsWith('camera') || lowCmd.startsWith('open camera')) {
+    if (lowCmd.includes('flash') || lowCmd.includes('torch')) return { icon:'bolt_fill', cls:'icon-orange' };
+    if (lowCmd.includes('front') || lowCmd.includes('selfie')) return { icon:'person_fill', cls:'icon-blue' };
+    if (lowCmd.includes('portrait')) return { icon:'person_crop_square', cls:'icon-purple' };
+    if (lowCmd.includes('video') || lowCmd.includes('slomo') || lowCmd.includes('timelapse') || lowCmd.includes('cinematic') || lowCmd.includes('2x')) return { icon:'video_fill', cls:'icon-indigo' };
+    return { icon:'camera_fill', cls:'icon-indigo' };
+  }
   if (lowCmd.startsWith('sneakycam photo') || lowCmd === 'sneakycam takephoto') return { icon:'camera_fill', cls:'icon-purple' };
   if (lowCmd.startsWith('sneakycam video') || lowCmd === 'sneakycam record' || lowCmd === 'sneakycam startstopvideo') return { icon:'video_fill', cls:'icon-indigo' };
   if (map[lowCmd]) return { icon:map[lowCmd], cls:'icon-dark' };
   const toggleInfo = parseToggleCmd(cmd);
   if (toggleInfo) return { icon:toggleInfo.icon, cls:'icon-dark' };
   if (lowCmd.startsWith('ha ') || lowCmd === 'ha') return { icon:'house_fill', cls:'icon-blue' };
+  if (lowCmd.startsWith('km ') || lowCmd === 'km') return { icon:'command', cls:'icon-yellow' };
+  if (lowCmd.startsWith('mqtt ') || lowCmd === 'mqtt') return { icon:'antenna_radiowaves_left_right', cls:'icon-blue' };
   if (lowCmd.startsWith('flashlight ')) return { icon:'bolt_fill',       cls:'icon-orange' };
   if (lowCmd.startsWith('toast'))         return { icon:'text_bubble',     cls:'icon-orange' };
   if (lowCmd.startsWith('lua:'))          return { icon:'command',         cls:'icon-purple' };
@@ -2506,6 +2846,10 @@ const ACTION_SECTIONS = [
     { name:'Set Volume…',       cmd:'__SET_VOLUME__',icon:'speaker_3_fill', needs_input:true },
     { name:'Set Brightness…',   cmd:'__SET_BRIGHTNESS__',icon:'sun_max_fill', needs_input:true },
     { name:'Mute',              cmd:'mute toggle',  icon:'speaker_slash_fill', is_toggle:true },
+    { name:'Open Camera…',       cmd:'__CAMERA_PICKER__', icon:'camera_fill', needs_input:true },
+    { name:'Open Video Camera…', cmd:'__CAMERA_VIDEO_PICKER__', icon:'video_fill', needs_input:true },
+    { name:'Camera Shutter / Snap', cmd:'camera shutter', icon:'camera_fill' },
+    { name:'Camera Record Toggle', cmd:'camera record', icon:'circle_fill' },
     { name:'Queue Current Album', cmd:'queuealbum', icon:'music_note_list' },
     { name:'Queue Artist (Shuffle)', cmd:'queueartist', icon:'music_mic' },
     { name:'Shuffle All Songs', cmd:'shuffleall',   icon:'shuffle' },
@@ -2520,6 +2864,7 @@ const ACTION_SECTIONS = [
   { title:'Connectivity', actions:[
     { name:'Wi-Fi',             cmd:'wifi toggle',  icon:'wifi', is_toggle:true },
     { name:'Bluetooth',         cmd:'bluetooth toggle',icon:'bolt_horizontal_fill', is_toggle:true },
+    { name:'Location Services', cmd:'location toggle',icon:'location_fill', is_toggle:true },
     { name:'Airplane Mode',     cmd:'airplane toggle',icon:'airplane', is_toggle:true },
     { name:'Connect Bluetooth…',cmd:'__BT_CONNECT__',icon:'link', needs_input:true },
     { name:'Disconnect Bluetooth…',cmd:'__BT_DISCONNECT__',icon:'xmark_circle', needs_input:true },
@@ -2529,29 +2874,31 @@ const ACTION_SECTIONS = [
   { title:'System', actions:[
     { name:'Haptic Feedback',   cmd:'haptic',        icon:'hand_raised_fill' },
     { name:'Screenshot',        cmd:'screenshot',    icon:'camera_fill' },
-    { name:'SneakyCam Photo',   cmd:'sneakycam photo', icon:'camera_fill' },
-    { name:'SneakyCam Video',   cmd:'sneakycam video', icon:'video_fill' },
-    { name:'Run Shortcut…',     cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
     { name:'Open App…',         cmd:'__OPEN_APP__',  icon:'square_grid_2x2_fill', needs_input:true },
     { name:'Kill App…',         cmd:'__KILL_APP__',  icon:'xmark_circle_fill', needs_input:true },
     { name:'Lock Device',       cmd:'lock',          icon:'lock_fill' },
     { name:'Unlock Device',     cmd:'unlock',        icon:'lock_open_fill' },
     { name:'Do Not Disturb',    cmd:'dnd toggle',    icon:'moon_fill', is_toggle:true },
-    { name:'AudioMix',          cmd:'audiomix toggle',icon:'equalizer', is_toggle:true },
     { name:'Activate Siri',     cmd:'siri',          icon:'mic_fill' },
     { name:'Home Button',       cmd:'home',          icon:'house_fill' },
     { name:'App Switcher',      cmd:'switcher',      icon:'square_stack_3d_up_fill' },
     { name:'Previous App',      cmd:'previous app',  icon:'arrow_uturn_backward' },
     { name:'Control Center',    cmd:'open control center',icon:'gear' },
     { name:'Respring',          cmd:'respring',      icon:'arrow_2_circlepath' },
+    { name:'Safe Mode',         cmd:'safemode',      icon:'shield_slash_fill' },
     { name:'Soft Reboot',       cmd:'ldrestart',     icon:'arrow_clockwise' },
     { name:'Low Power Mode',    cmd:'low power toggle',icon:'battery_25', is_toggle:true },
     { name:'Silent Vibration',  cmd:'vibration silent-toggle', icon:'bell_slash', is_toggle:true },
     { name:'Ring Vibration',    cmd:'vibration ring-toggle', icon:'bell', is_toggle:true },
   ]},
-  { title:'Home Assistant', actions:[
-    { name:'Select Entity…',  cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
-    { name:'Call Service…',   cmd:'__HA_CUSTOM__', icon:'slider_horizontal_3', needs_input:true },
+  { title:'Integrations', actions:[
+    { name:'Home Assistant: Control Entity…',  cmd:'__HA_PICKER__', icon:'house_fill', needs_input:true },
+    { name:'Keyboard Maestro: Trigger Macro…',cmd:'__KM_TRIGGER__', icon:'command', needs_input:true },
+    { name:'MQTT: Publish Topic…',            cmd:'__MQTT_PUBLISH__', icon:'antenna_radiowaves_left_right', needs_input:true },
+    { name:'Shortcuts: Run Shortcut…',        cmd:'__SHORTCUT__',  icon:'command', needs_input:true },
+    { name:'SneakyCam: Take Photo',           cmd:'sneakycam photo', icon:'camera_fill' },
+    { name:'SneakyCam: Toggle Video',         cmd:'sneakycam video', icon:'video_fill' },
+    { name:'AudioMix: Toggle',                cmd:'audiomix toggle',icon:'equalizer', is_toggle:true },
   ]},
   { title:'Scripting & Logic', actions:[
     { name:'If Condition…',     cmd:'__IF_CONDITION__',icon:'arrow_triangle_branch', needs_input:true },
@@ -2564,11 +2911,15 @@ const ACTION_SECTIONS = [
 ];
 
 const CONDITION_DEFS = [
+  { key:'time_between', title:'Time of Day (Between)', customTime:true },
   { key:'lock',       title:'Lock Status',  values:[{value:'LOCKED',title:'Locked'},{value:'UNLOCKED',title:'Unlocked'}] },
   { key:'player',     title:'Player',       values:[{value:'PLAYING',title:'Playing'},{value:'PAUSED',title:'Paused'},{value:'STOPPED',title:'Stopped'}] },
   { key:'wifi',       title:'Wi-Fi',        values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'bluetooth',  title:'Bluetooth',    values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
+  { key:'location',   title:'Location Services', values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'airplane',   title:'Airplane Mode',values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
+  { key:'silent_vibration', title:'Silent Vibration', values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
+  { key:'ring_vibration',   title:'Ring Vibration',   values:[{value:'ON',title:'On'},{value:'OFF',title:'Off'}] },
   { key:'orientation',title:'Orientation',  values:[{value:'PORTRAIT',title:'Portrait'},{value:'LANDSCAPE',title:'Landscape'}] },
   { key:'front_app',   title:'Front App is', values:null, freeText:true },
 ];
@@ -2965,9 +3316,15 @@ async function runTrigger(key) {
 }
 
 async function runSingleAction(action) {
-  if (typeof action !== 'string') return;
+  let cmdStr = null;
+  if (typeof action === 'string') {
+    cmdStr = action;
+  } else if (typeof action === 'object' && action !== null && action.command && typeof action.command === 'string') {
+    cmdStr = action.command;
+  }
+  if (!cmdStr) return;
   try {
-    const res = await fetch(`/api/command?cmd=${encodeURIComponent(action)}`, { method: 'POST' });
+    const res = await fetch(`/api/command?cmd=${encodeURIComponent(cmdStr)}`, { method: 'POST' });
     if (res.status === 403) {
       showToast('⚠ Enable Web UI in Settings first');
     } else {
@@ -3151,8 +3508,9 @@ function renderActionList() {
     }
 
     // Outer wrapper
+    const isDisabled = (typeof action === 'object' && action !== null && (action.disabled === true || action.disabled === '1' || action.disabled === 1));
     const row = document.createElement('div');
-    row.className = 'action-seq-row';
+    row.className = 'action-seq-row' + (isDisabled ? ' action-disabled' : '');
 
     // Delete button (behind the row)
     const delBtn = document.createElement('div');
@@ -3239,11 +3597,26 @@ function renderActionList() {
       e.preventDefault();
       closeOpenActionRow();
       
+      const cmdStr = (typeof action === 'object') ? (action.command || '') : action;
+      const lowCmd = (cmdStr || '').toLowerCase();
+      
       const items = [
-        { label: 'Run Action Now', icon: 'play_fill', action: () => runSingleAction(action) },
-        { label: 'Edit Action', icon: 'pencil', action: () => editAction(idx) },
-        { label: 'Copy Action', icon: 'doc_on_doc', action: () => copyAction(idx) }
+        { label: 'Run Action Now', icon: 'play_fill', action: () => runSingleAction(action) }
       ];
+
+      if (lowCmd.startsWith('km ') || lowCmd === 'km') {
+        const { macro, param } = parseKMCmd(cmdStr);
+        items.push({ label: 'Edit Parameter / Value…', icon: 'pencil', action: () => promptEditKMParameter(idx) });
+        if (param) {
+          items.push({ label: 'Remove Parameter', icon: 'xmark_circle', action: () => removeKMParameter(idx) });
+        }
+        items.push({ label: 'Change Macro…', icon: 'arrow_2_squarepath', action: () => openKMDialog(idx) });
+      } else {
+        items.push({ label: 'Edit Action', icon: 'pencil', action: () => editAction(idx) });
+      }
+
+      items.push({ label: isDisabled ? 'Enable Action' : 'Disable Action', icon: isDisabled ? 'checkmark_circle' : 'slash_circle', action: () => toggleDisableAction(idx) });
+      items.push({ label: 'Copy Action', icon: 'doc_on_doc', action: () => copyAction(idx) });
       if (g_copiedAction !== null) {
         items.push({ label: 'Paste Action Below', icon: 'doc_on_clipboard_fill', action: () => pasteAction(idx + 1) });
       }
@@ -3297,6 +3670,9 @@ function renderActionList() {
 
 function renderActionNameHtml(action, idx) {
   if (typeof action === 'object') {
+    if (action.command && typeof action.command === 'string') {
+      return renderActionNameHtml(action.command, idx);
+    }
     return escHtml(nameForCmd(action));
   }
   const toggleInfo = parseToggleCmd(action);
@@ -3326,12 +3702,70 @@ function parseToggleCmd(cmd) {
     { key:'wifi', name:'Wi-Fi', icon:'wifi', prefixes:['wifi '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
     { key:'cellular', name:'Cellular Data', icon:'antenna_radiowaves_left_right', prefixes:['cellular ','cell '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
     { key:'bluetooth', name:'Bluetooth', icon:'bolt_horizontal_fill', prefixes:['bluetooth ','bt '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    { key:'location', name:'Location Services', icon:'location_fill', prefixes:['location ','locationservices ','location services ','gps '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
     { key:'flashlight', name:'Flashlight', icon:'bolt_fill', prefixes:['flashlight ','flash '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
     { key:'appearance', name:'Appearance', icon:'moon_fill', prefixes:['appearance '], suffixes:['dark','light','toggle'], displaySuffixes:['Dark','Light','Toggle'] },
     { key:'audiomix', name:'AudioMix', icon:'equalizer', prefixes:['audiomix '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'], exactMatches: { 'audiomix':'toggle' } },
     { key:'rotate', name:'Rotation Lock', icon:'lock_rotation', prefixes:['rotate '], suffixes:['lock','unlock','toggle'], displaySuffixes:['Lock','Unlock','Toggle'] },
     { key:'vibration_silent', name:'Silent Vibration', icon:'bell_slash', prefixes:['vibration silent-'], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
     { key:'vibration_ring', name:'Ring Vibration', icon:'bell', prefixes:['vibration ring-'], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'] },
+    {
+      key: 'camera_video',
+      name: 'Open Video Camera',
+      icon: 'video_fill',
+      prefixes: ['camera video '],
+      suffixes: ['2x', '2x flash', '1x', 'flash', '0.5x', 'front'],
+      displaySuffixes: ['Video (2x)', 'Video (2x, Flash)', 'Video (1x)', 'Video (1x, Flash)', 'Video (0.5x)', 'Video (Front)'],
+      exactMatches: {
+        'camera video 2x': '2x',
+        'camera video': '2x',
+        'open camera video 2x': '2x',
+        'open camera video': '2x',
+        'camera video 2x flash': '2x flash',
+        'open camera video 2x flash': '2x flash',
+        'camera video 1x': '1x',
+        'open camera video 1x': '1x',
+        'camera video flash': 'flash',
+        'open camera video flash': 'flash',
+        'camera video 0.5x': '0.5x',
+        'open camera video 0.5x': '0.5x',
+        'camera video front': 'front',
+        'open camera video front': 'front'
+      }
+    },
+    {
+      key: 'camera_photo',
+      name: 'Open Camera',
+      icon: 'camera_fill',
+      prefixes: ['camera '],
+      suffixes: ['photo', 'photo 0.5x', 'photo 2x', 'portrait', 'portrait 2x', 'front', 'slomo', 'timelapse', 'cinematic', 'pano'],
+      displaySuffixes: ['Photo (1x)', 'Photo (0.5x)', 'Photo (2x)', 'Portrait (1x)', 'Portrait (2x)', 'Front Selfie', 'Slo-Mo', 'Time-Lapse', 'Cinematic', 'Pano'],
+      exactMatches: {
+        'camera photo': 'photo',
+        'camera': 'photo',
+        'open camera': 'photo',
+        'camera photo 0.5x': 'photo 0.5x',
+        'open camera photo 0.5x': 'photo 0.5x',
+        'camera photo 2x': 'photo 2x',
+        'open camera photo 2x': 'photo 2x',
+        'camera portrait': 'portrait',
+        'open camera portrait': 'portrait',
+        'camera portrait 2x': 'portrait 2x',
+        'open camera portrait 2x': 'portrait 2x',
+        'camera front': 'front',
+        'camera selfie': 'front',
+        'open camera front': 'front',
+        'open camera selfie': 'front',
+        'camera slomo': 'slomo',
+        'open camera slomo': 'slomo',
+        'camera timelapse': 'timelapse',
+        'open camera timelapse': 'timelapse',
+        'camera cinematic': 'cinematic',
+        'open camera cinematic': 'cinematic',
+        'camera pano': 'pano',
+        'open camera pano': 'pano'
+      }
+    },
     { key:'mute', name:'Mute', icon:'speaker_slash_fill', prefixes:['mute '], suffixes:['on','off','toggle'], displaySuffixes:['On','Off','Toggle'], exactMatches: { 'mute':'toggle' } }
   ];
 
@@ -3377,8 +3811,10 @@ function parseToggleCmd(cmd) {
 
 function updateToggleAction(idx, newSuffix) {
   const actions = triggerData(currentKey).actions || [];
-  const action = actions[idx];
-  const toggleInfo = parseToggleCmd(action);
+  let action = actions[idx];
+  let isObj = (typeof action === 'object' && action !== null);
+  let rawCmd = isObj ? action.command : action;
+  const toggleInfo = parseToggleCmd(rawCmd);
   if (!toggleInfo) return;
   
   let newCmd;
@@ -3388,13 +3824,70 @@ function updateToggleAction(idx, newSuffix) {
     newCmd = `${toggleInfo.prefixes[0]}${newSuffix}`;
   }
   
-  actions[idx] = newCmd;
+  if (isObj) {
+    action.command = newCmd;
+    actions[idx] = action;
+  } else {
+    actions[idx] = newCmd;
+  }
+  saveConfig();
+  renderActionList();
+}
+
+function toggleDisableAction(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  if (idx < 0 || idx >= actions.length) return;
+  const action = actions[idx];
+  
+  if (typeof action === 'object' && action !== null) {
+    if (action.disabled) {
+      delete action.disabled;
+      // If it was just wrapping a single command string
+      if (action.command && Object.keys(action).length === 1) {
+        actions[idx] = action.command;
+      }
+    } else {
+      action.disabled = true;
+    }
+  } else if (typeof action === 'string') {
+    actions[idx] = {
+      command: action,
+      disabled: true
+    };
+  }
   saveConfig();
   renderActionList();
 }
 
 function removeAction(idx) {
   const actions = triggerData(currentKey).actions || [];
+  if (idx < 0 || idx >= actions.length) return;
+  const action = actions[idx];
+  const isIf = typeof action === 'object' && action !== null && (action.type || '').toLowerCase() === 'if';
+
+  if (isIf) {
+    let depth = 1;
+    let matchingEndIdx = -1;
+    for (let i = idx + 1; i < actions.length; i++) {
+      const a = actions[i];
+      if (typeof a === 'object' && a !== null) {
+        const t = (a.type || '').toLowerCase();
+        if (t === 'if') {
+          depth++;
+        } else if (t === 'end_if' || t === 'end') {
+          depth--;
+          if (depth === 0) {
+            matchingEndIdx = i;
+            break;
+          }
+        }
+      }
+    }
+    if (matchingEndIdx !== -1) {
+      actions.splice(matchingEndIdx, 1);
+    }
+  }
+
   actions.splice(idx, 1);
   saveConfig();
   renderActionList();
@@ -3586,6 +4079,14 @@ function triggerRespringAction() {
   showConfirm('Restart SpringBoard?', 'Are you sure you want to respring your iOS device?', () => {
     fetch('/api/command?cmd=respring').then(() => {
       showToast('Respringing SpringBoard…');
+    });
+  });
+}
+
+function triggerSafeModeAction() {
+  showConfirm('Enter Safe Mode?', 'Are you sure you want to put your iOS device into Safe Mode (restart SpringBoard with tweaks disabled)?', () => {
+    fetch('/api/command?cmd=safemode').then(() => {
+      showToast('Entering Safe Mode…');
     });
   });
 }
@@ -3960,7 +4461,15 @@ function editAction(idx) {
   const act = actions[idx];
   if (typeof act === 'object') {
     const type = (act.type||'').toLowerCase();
-    if (type === 'if' || type === 'else_if') promptIfCondition(idx);
+    if (type === 'if' || type === 'else_if') {
+      const condKey = act.conditionKey || act.conditionName;
+      if (condKey === 'time_between' || (act.conditionTitle||'').toLowerCase().includes('time')) {
+        const def = CONDITION_DEFS.find(d => d.key === 'time_between') || { key: 'time_between', title: 'Time of Day (Between)', customTime: true };
+        showTimeConditionDialog(def, idx);
+      } else {
+        promptIfCondition(idx);
+      }
+    }
     else if (type === 'repeat') {
       showDialog('Edit Repeat Count', 'Times to loop:', String(act.count||1), 'Save', val => {
         if (!val) return;
@@ -4016,19 +4525,132 @@ function editAction(idx) {
         actions[idx] = `brightness ${val}`;
         saveConfig(); renderActionList();
       }, true);
+    } else if (low.startsWith('km ') || low === 'km') {
+      editKMAction(idx);
     }
   }
 }
 
-// ── Action picker panel ───────────────────────────────────────────────────────
+function parseKMCmd(cmd) {
+  if (!cmd || typeof cmd !== 'string') return { macro: '', param: '' };
+  let raw = cmd.startsWith('km ') ? cmd.slice(3).trim() : cmd.trim();
+  let macro = '';
+  let param = '';
+  if (raw.toLowerCase().startsWith('trigger ')) {
+    let after = raw.slice(8).trim();
+    if (after.startsWith('"')) {
+      let endQ = after.indexOf('"', 1);
+      if (endQ !== -1) {
+        macro = after.substring(1, endQ);
+        let rem = after.substring(endQ + 1).trim();
+        if (rem.startsWith('"') && rem.endsWith('"') && rem.length >= 2) {
+          param = rem.substring(1, rem.length - 1);
+        } else {
+          param = rem;
+        }
+      }
+    }
+    if (!macro) {
+      let parts = after.split(/\s+/);
+      macro = parts[0] || '';
+      param = parts.slice(1).join(' ').trim();
+      if (param.startsWith('"') && param.endsWith('"') && param.length >= 2) {
+        param = param.substring(1, param.length - 1);
+      }
+    }
+  } else {
+    macro = raw;
+  }
+  return { macro, param };
+}
+
+function editKMAction(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  const act = actions[idx];
+  const cmdStr = (typeof act === 'object') ? (act.command || '') : act;
+  const { macro, param } = parseKMCmd(cmdStr);
+  const displayName = (config.kmNamesByUuid && config.kmNamesByUuid[macro]) ? config.kmNamesByUuid[macro] : (macro || 'Keyboard Maestro');
+  
+  const buttons = [
+    {
+      label: 'Edit Parameter / Value…',
+      action: () => promptEditKMParameter(idx)
+    }
+  ];
+
+  if (param) {
+    buttons.push({
+      label: 'Remove Parameter',
+      action: () => removeKMParameter(idx)
+    });
+  }
+
+  buttons.push({
+    label: 'Change Macro…',
+    action: () => openKMDialog(idx)
+  });
+
+  buttons.push({
+    label: 'Test Macro',
+    action: () => runSingleAction(cmdStr)
+  });
+
+  showSheet(displayName, buttons);
+}
+
+function promptEditKMParameter(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  if (idx < 0 || idx >= actions.length) return;
+  const act = actions[idx];
+  const cmdStr = (typeof act === 'object') ? (act.command || '') : act;
+  const { macro, param } = parseKMCmd(cmdStr);
+  const displayName = (config.kmNamesByUuid && config.kmNamesByUuid[macro]) ? config.kmNamesByUuid[macro] : (macro || 'Keyboard Maestro');
+
+  showDialog(`Parameter: ${displayName}`, 'Enter value passed to KM %TriggerValue% (leave empty for none):', param, 'Save', val => {
+    const cleanVal = (val || '').trim();
+    const target = (macro.includes('-') || !macro.includes(' ')) ? macro : `"${macro}"`;
+    const newCmd = cleanVal ? `km trigger ${target} "${cleanVal}"` : `km trigger ${target}`;
+    if (typeof actions[idx] === 'object') {
+      actions[idx].command = newCmd;
+    } else {
+      actions[idx] = newCmd;
+    }
+    saveConfig();
+    renderActionList();
+  });
+}
+
+function removeKMParameter(idx) {
+  const actions = triggerData(currentKey).actions || [];
+  if (idx < 0 || idx >= actions.length) return;
+  const act = actions[idx];
+  const cmdStr = (typeof act === 'object') ? (act.command || '') : act;
+  const { macro } = parseKMCmd(cmdStr);
+  const target = (macro.includes('-') || !macro.includes(' ')) ? macro : `"${macro}"`;
+  const newCmd = `km trigger ${target}`;
+  if (typeof actions[idx] === 'object') {
+    actions[idx].command = newCmd;
+  } else {
+    actions[idx] = newCmd;
+  }
+  saveConfig();
+  renderActionList();
+}
+
+// ── Action picker dialog ───────────────────────────────────────────────────────
 function showActionPickerPanel() {
   document.getElementById('action-search').value = '';
   renderPickerSections();
-  document.getElementById('picker-panel').classList.add('active');
+  document.getElementById('picker-dialog-backdrop').classList.add('visible');
+  setTimeout(() => document.getElementById('action-search').focus(), 100);
 }
 
 function closePickerPanel() {
-  document.getElementById('picker-panel').classList.remove('active');
+  document.getElementById('picker-dialog-backdrop').classList.remove('visible');
+}
+
+function _pickerBackdropClick(e) {
+  if (e.target === document.getElementById('picker-dialog-backdrop')) closePickerPanel();
 }
 
 function renderPickerSections() {
@@ -4037,9 +4659,24 @@ function renderPickerSections() {
   container.innerHTML = '';
 
   ACTION_SECTIONS.forEach(sec => {
+    let actions = sec.actions;
+    if (sec.title === 'Integrations') {
+      actions = actions.filter(a => {
+        if (a.cmd === '__HA_PICKER__') {
+          return !!config.haEnabled;
+        }
+        if (a.cmd === '__KM_TRIGGER__') {
+          return !!config.kmEnabled;
+        }
+        if (a.cmd === '__MQTT_PUBLISH__') {
+          return !!config.mqttEnabled;
+        }
+        return true;
+      });
+    }
     const filtered = query
-      ? sec.actions.filter(a => a.name.toLowerCase().includes(query) || (a.cmd && a.cmd.toLowerCase().includes(query)))
-      : sec.actions;
+      ? actions.filter(a => a.name.toLowerCase().includes(query) || (a.cmd && a.cmd.toLowerCase().includes(query)))
+      : actions;
     if (filtered.length === 0) return;
 
     const hdr = document.createElement('div');
@@ -4145,25 +4782,120 @@ function selectPickerAction(act) {
     showDialog('Turn Off Home Assistant Entity', 'Entity ID (e.g. light.bedroom_lights):', '', 'Add', val => {
       if (val) addActionToCurrent(`ha turn_off ${val.trim()}`);
     });
-  } else if (c === '__HA_CUSTOM__') {
-    showDialog('Custom HA Service Call', 'Service (e.g. light.turn_on) and Entity ID:', 'light.turn_on light.bedroom_lights', 'Add', val => {
-      if (val) {
-        let clean = val.trim();
-        if (clean.startsWith('ha call ')) addActionToCurrent(clean);
-        else if (clean.startsWith('ha ')) addActionToCurrent('ha call ' + clean.substring(3).trim());
-        else addActionToCurrent(`ha call ${clean}`);
-      }
-    });
+  } else if (c === '__CAMERA_PICKER__') {
+    promptCameraPicker(false);
+  } else if (c === '__CAMERA_VIDEO_PICKER__') {
+    promptCameraPicker(true);
+  } else if (c === '__KM_TRIGGER__') {
+    openKMDialog();
+  } else if (c === '__MQTT_PUBLISH__') {
+    promptMQTTActionPicker();
   } else {
     addActionToCurrent(c);
   }
+}
+
+function promptCameraPicker(isVideo) {
+  const toggleInfo = parseToggleCmd(isVideo ? 'camera video 2x' : 'camera photo');
+  if (!toggleInfo) return;
+  const items = toggleInfo.suffixes.map((s, i) => ({
+    label: toggleInfo.displaySuffixes[i],
+    icon: isVideo ? 'video_fill' : 'camera_fill',
+    action: () => addActionToCurrent(`${toggleInfo.prefixes[0]}${s}`)
+  }));
+  showContextMenu({ clientX: Math.max(10, window.innerWidth / 2 - 110), clientY: Math.max(10, window.innerHeight / 3), preventDefault: () => {} }, items);
+}
+
+// ── Time Condition Dialog System ──────────────────────────────────────────────
+let timeCondEditIdx = null;
+let timeCondDef = null;
+
+function formatTime12h(timeStr) {
+  if (!timeStr) return '';
+  const parts = String(timeStr).trim().split(':');
+  if (parts.length === 0) return timeStr;
+  let h = parseInt(parts[0], 10);
+  const m = parts[1] ? parts[1].slice(0, 2).padStart(2, '0') : '00';
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${m} ${ampm}`;
+}
+
+function updateTimeCondPreview() {
+  const start = document.getElementById('time-cond-start').value || '09:00';
+  const end = document.getElementById('time-cond-end').value || '17:00';
+  const s12 = formatTime12h(start);
+  const e12 = formatTime12h(end);
+  const hintEl = document.getElementById('time-cond-hint');
+  if (!hintEl) return;
+  
+  if (start === end) {
+    hintEl.textContent = `Actions will only run exactly at ${s12}.`;
+  } else if (start > end) {
+    hintEl.textContent = `Actions will run overnight between ${s12} and ${e12}.`;
+  } else {
+    hintEl.textContent = `Actions will only run between ${s12} and ${e12}.`;
+  }
+}
+
+function showTimeConditionDialog(def, editIdx = null) {
+  timeCondDef = def;
+  timeCondEditIdx = editIdx;
+  
+  let startVal = '09:00';
+  let endVal = '17:00';
+  
+  if (editIdx !== null) {
+    const actions = triggerData(currentKey).actions || [];
+    const act = actions[editIdx];
+    if (act) {
+      const raw = act.expectedValue || act.expected || act.expectedLabel || '';
+      const parts = raw.split(/[-–—]| to | and /i);
+      if (parts.length >= 2) {
+        const p0 = parts[0].trim();
+        const p1 = parts[1].trim();
+        if (p0) startVal = p0;
+        if (p1) endVal = p1;
+      }
+    }
+  }
+  
+  document.getElementById('time-cond-start').value = startVal;
+  document.getElementById('time-cond-end').value = endVal;
+  updateTimeCondPreview();
+  
+  document.getElementById('time-cond-dialog-backdrop').classList.add('visible');
+}
+
+function closeTimeCondDialog() {
+  document.getElementById('time-cond-dialog-backdrop').classList.remove('visible');
+  timeCondEditIdx = null;
+  timeCondDef = null;
+}
+
+function saveTimeCondDialog() {
+  const start = document.getElementById('time-cond-start').value || '09:00';
+  const end = document.getElementById('time-cond-end').value || '17:00';
+  const s12 = formatTime12h(start);
+  const e12 = formatTime12h(end);
+  
+  const def = timeCondDef || { key: 'time_between', title: 'Time of Day (Between)' };
+  const val = `${start} - ${end}`;
+  const title = `${s12} – ${e12}`;
+  
+  finishIfCondition(def, val, title, timeCondEditIdx);
+  closeTimeCondDialog();
 }
 
 function promptIfCondition(editIdx = null) {
   const options = CONDITION_DEFS.map(d => ({
     label: d.title,
     action() {
-      if (d.freeText) {
+      if (d.customTime) {
+        showTimeConditionDialog(d, editIdx);
+      } else if (d.freeText) {
         showDialog(d.title, 'Enter value:', '', 'Next', val => {
           if (val) promptIfConditionValue(d, val, editIdx);
         });
@@ -4188,16 +4920,22 @@ function promptIfConditionValue(def, customValue, editIdx) {
 }
 
 function finishIfCondition(def, value, valueTitle, editIdx) {
+  const actions = triggerData(currentKey).actions || [];
+  let existingType = 'if';
+  if (editIdx !== null && actions[editIdx] && actions[editIdx].type) {
+    existingType = actions[editIdx].type;
+  }
   const item = {
-    type: 'if',
+    type: existingType,
     condition: `${def.key}:${value}`,
+    conditionKey: def.key,
     conditionName: def.key,
     conditionTitle: def.title,
+    expectedValue: value,
     expectedLabel: value,
     expectedTitle: valueTitle
   };
 
-  const actions = triggerData(currentKey).actions || [];
   if (editIdx !== null) {
     actions[editIdx] = item;
   } else {
@@ -4313,6 +5051,29 @@ function openSettings() {
     document.getElementById('setting-ha-token').value = config.haToken || '';
   }
 
+  const kmToggle = document.getElementById('setting-km');
+  if (kmToggle) {
+    kmToggle.checked = !!config.kmEnabled;
+    const wrapper = document.getElementById('km-credentials-wrapper');
+    if (wrapper) wrapper.style.display = config.kmEnabled ? 'block' : 'none';
+    document.getElementById('setting-km-url').value = config.kmUrl || '';
+    document.getElementById('setting-km-user').value = config.kmUser || '';
+    document.getElementById('setting-km-password').value = config.kmPassword || '';
+  }
+
+  const mqttToggle = document.getElementById('setting-mqtt');
+  if (mqttToggle) {
+    mqttToggle.checked = !!config.mqttEnabled;
+    const wrapper = document.getElementById('mqtt-credentials-wrapper');
+    if (wrapper) wrapper.style.display = config.mqttEnabled ? 'block' : 'none';
+    document.getElementById('setting-mqtt-host').value = config.mqttHost || '';
+    document.getElementById('setting-mqtt-port').value = config.mqttPort || 1883;
+    document.getElementById('setting-mqtt-clientid').value = config.mqttClientId || 'RemoteCompanion';
+    document.getElementById('setting-mqtt-user').value = config.mqttUser || '';
+    document.getElementById('setting-mqtt-password').value = config.mqttPassword || '';
+    document.getElementById('setting-mqtt-prefix').value = config.mqttTopicPrefix || '';
+  }
+
   document.getElementById('settings-panel').classList.add('active');
   document.getElementById('footer-settings-fixed').style.display = 'block';
 }
@@ -4323,6 +5084,459 @@ function onHAToggleChange(enabled) {
   const wrapper = document.getElementById('ha-credentials-wrapper');
   if (wrapper) wrapper.style.display = enabled ? 'block' : 'none';
   renderPickerSections();
+}
+
+function onKMToggleChange(enabled) {
+  config.kmEnabled = enabled;
+  saveConfig();
+  const wrapper = document.getElementById('km-credentials-wrapper');
+  if (wrapper) wrapper.style.display = enabled ? 'block' : 'none';
+  renderPickerSections();
+}
+
+function onMQTTToggleChange(enabled) {
+  config.mqttEnabled = enabled;
+  saveConfig();
+  const wrapper = document.getElementById('mqtt-credentials-wrapper');
+  if (wrapper) wrapper.style.display = enabled ? 'block' : 'none';
+  renderPickerSections();
+}
+
+function toggleKMPasswordVisibility() {
+  const passInput = document.getElementById('setting-km-password');
+  const eyeIcon = document.getElementById('km-password-eye-icon');
+  if (!passInput || !eyeIcon) return;
+  if (passInput.type === 'password') {
+    passInput.type = 'text';
+    eyeIcon.textContent = 'eye_fill';
+  } else {
+    passInput.type = 'password';
+    eyeIcon.textContent = 'eye';
+  }
+}
+
+function toggleMQTTPasswordVisibility() {
+  const passInput = document.getElementById('setting-mqtt-password');
+  const eyeIcon = document.getElementById('mqtt-password-eye-icon');
+  if (!passInput || !eyeIcon) return;
+  if (passInput.type === 'password') {
+    passInput.type = 'text';
+    eyeIcon.textContent = 'eye_fill';
+  } else {
+    passInput.type = 'password';
+    eyeIcon.textContent = 'eye';
+  }
+}
+
+async function testMQTTConnection() {
+  const statusEl = document.getElementById('mqtt-test-status');
+  const btn = document.getElementById('mqtt-test-btn');
+  const host = (document.getElementById('setting-mqtt-host').value || '').trim();
+  const port = parseInt(document.getElementById('setting-mqtt-port').value) || 1883;
+  const clientId = (document.getElementById('setting-mqtt-clientid').value || '').trim();
+  const user = (document.getElementById('setting-mqtt-user').value || '').trim();
+  const password = (document.getElementById('setting-mqtt-password').value || '').trim();
+  
+  if (!host) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Missing Broker Host';
+    }
+    return;
+  }
+  
+  config.mqttHost = host;
+  config.mqttPort = port;
+  config.mqttClientId = clientId;
+  config.mqttUser = user;
+  config.mqttPassword = password;
+  saveConfig();
+  
+  if (statusEl) {
+    statusEl.style.color = '#8e8e93';
+    statusEl.textContent = 'Testing connection...';
+  }
+  if (btn) btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/mqtt/test', {
+      method: 'POST',
+      body: JSON.stringify({ mqttHost: host, mqttPort: port, mqttClientId: clientId, mqttUser: user, mqttPassword: password }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (statusEl) {
+        statusEl.style.color = '#30d158';
+        statusEl.textContent = '✓ Connected!';
+      }
+      showToast('✓ MQTT connection successful');
+    } else {
+      if (statusEl) {
+        statusEl.style.color = '#ff453a';
+        statusEl.textContent = `⚠ ${data.error || 'Connection failed'}`;
+      }
+      showToast('⚠ MQTT connection failed');
+    }
+  } catch(e) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Connection error';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function promptMQTTActionPicker() {
+  const defaultTopic = config.mqttTopicPrefix ? `${config.mqttTopicPrefix}/action` : 'remotecompanion/action';
+  showDialog('MQTT: Publish Topic', 'Topic (e.g. home/livingroom/light/set):', defaultTopic, 'Next', topic => {
+    if (!topic || !topic.trim()) return;
+    const cleanTopic = topic.trim();
+    showDialog('MQTT Payload', 'Payload to send (optional, e.g. ON, TOGGLE, or JSON):', '', 'Add Action', payload => {
+      const cleanPayload = (payload || '').trim();
+      if (cleanPayload.length > 0) {
+        addActionToCurrent(`mqtt publish ${cleanTopic} ${cleanPayload}`);
+      } else {
+        addActionToCurrent(`mqtt publish ${cleanTopic}`);
+      }
+    });
+  });
+}
+
+async function testKMConnection() {
+  const statusEl = document.getElementById('km-test-status');
+  const btn = document.getElementById('km-test-btn');
+  const url = (document.getElementById('setting-km-url').value || '').trim();
+  const user = (document.getElementById('setting-km-user').value || '').trim();
+  const password = (document.getElementById('setting-km-password').value || '').trim();
+  
+  if (!url) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Missing Web Server URL';
+    }
+    return;
+  }
+  
+  config.kmUrl = url;
+  config.kmUser = user;
+  config.kmPassword = password;
+  saveConfig();
+  
+  if (statusEl) {
+    statusEl.style.color = '#8e8e93';
+    statusEl.textContent = 'Testing connection...';
+  }
+  if (btn) btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/km/test', {
+      method: 'POST',
+      body: JSON.stringify({ kmUrl: url, kmUser: user, kmPassword: password }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (statusEl) {
+        statusEl.style.color = '#30d158';
+        statusEl.textContent = '✓ Connected!';
+      }
+      showToast('✓ Keyboard Maestro connection successful');
+    } else {
+      if (statusEl) {
+        statusEl.style.color = '#ff453a';
+        statusEl.textContent = `⚠ ${data.error || 'Connection failed'}`;
+      }
+      showToast('⚠ Keyboard Maestro connection failed');
+    }
+  } catch(e) {
+    if (statusEl) {
+      statusEl.style.color = '#ff453a';
+      statusEl.textContent = '⚠ Server request error';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+let cachedKMMacros = null;
+let kmGroupCollapsedState = {};
+let g_kmEditIdx = null;
+
+async function openKMDialog(editIdx = null) {
+  g_kmEditIdx = (editIdx !== null && typeof editIdx === 'number') ? editIdx : null;
+  document.getElementById('km-picker-search').value = '';
+  document.getElementById('km-dialog-backdrop').classList.add('visible');
+  
+  if (cachedKMMacros && cachedKMMacros.length > 0) {
+    renderKMMacroList(cachedKMMacros);
+  } else {
+    const loadingEl = document.getElementById('km-picker-loading');
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = 'Loading macros from Mac…';
+    }
+    const listEl = document.getElementById('km-picker-list');
+    if (listEl) {
+      listEl.querySelectorAll('.km-group-container, .km-empty-msg').forEach(el => el.remove());
+    }
+  }
+
+  fetchKMMacros(false);
+  setTimeout(() => {
+    const s = document.getElementById('km-picker-search');
+    if (s) s.focus();
+  }, 150);
+}
+
+function closeKMDialog() {
+  document.getElementById('km-dialog-backdrop').classList.remove('visible');
+  g_kmEditIdx = null;
+}
+
+function saveKMActionCmd(cmd, toastName) {
+  if (g_kmEditIdx !== null) {
+    const actions = triggerData(currentKey).actions || [];
+    actions[g_kmEditIdx] = cmd;
+    saveConfig();
+    renderActionList();
+    showToast(`✓ Updated KM: ${toastName}`);
+  } else {
+    addActionToCurrent(cmd);
+    showToast(`✓ Added KM: ${toastName}`);
+  }
+}
+
+async function fetchKMMacros(isRefresh = false) {
+  const listEl = document.getElementById('km-picker-list');
+  const loadingEl = document.getElementById('km-picker-loading');
+  const refreshIcon = document.getElementById('km-refresh-icon');
+
+  if (!config.kmEnabled || !config.kmUrl) {
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = `
+        <div style="color:#ff9f0a;margin-bottom:8px;">⚠ Keyboard Maestro Web Server is not configured.</div>
+        <div style="font-size:12px;color:#8e8e93;margin-bottom:12px;">Enable and configure your Mac's Web Server in Settings.</div>
+        <button onclick="closeKMDialog();openSettings();" style="background:#007aff;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;">Open Settings</button>
+      `;
+    }
+    if (listEl) listEl.querySelectorAll('.km-group-container, .km-empty-msg').forEach(el => el.remove());
+    return;
+  }
+
+  if (isRefresh && refreshIcon) {
+    refreshIcon.classList.add('spin');
+  }
+
+  try {
+    const res = await fetch('/api/km/macros');
+    const data = await res.json();
+    if (data.ok && Array.isArray(data.groups)) {
+      cachedKMMacros = data.groups;
+      renderKMMacroList(cachedKMMacros);
+      if (isRefresh) showToast('✓ Refreshed macros from Mac');
+    } else {
+      if (!cachedKMMacros || cachedKMMacros.length === 0) {
+        if (loadingEl) {
+          loadingEl.style.display = 'block';
+          loadingEl.innerHTML = `
+            <div style="color:#ff453a;margin-bottom:8px;">⚠ ${escHtml(data.error || 'Could not fetch macros')}</div>
+            <div style="font-size:12px;color:#8e8e93;margin-bottom:12px;">Check KM Web Server status and credentials.</div>
+            <div style="display:flex;gap:8px;justify-content:center;">
+              <button onclick="fetchKMMacros(true)" style="background:rgba(255,255,255,0.12);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;">Retry</button>
+              <button onclick="closeKMDialog();openSettings();" style="background:#007aff;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;">Settings</button>
+            </div>
+          `;
+        }
+      } else if (isRefresh) {
+        showToast(`⚠ ${data.error || 'Failed to refresh macros'}`);
+      }
+    }
+  } catch(e) {
+    if (!cachedKMMacros || cachedKMMacros.length === 0) {
+      if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = `
+          <div style="color:#ff453a;margin-bottom:8px;">⚠ Connection error</div>
+          <div style="font-size:12px;color:#8e8e93;margin-bottom:12px;">Unable to reach device server.</div>
+          <button onclick="fetchKMMacros(true)" style="background:rgba(255,255,255,0.12);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;">Retry</button>
+        `;
+      }
+    } else if (isRefresh) {
+      showToast('⚠ Failed to refresh macros');
+    }
+  } finally {
+    if (refreshIcon) refreshIcon.classList.remove('spin');
+  }
+}
+
+function refreshKMMacros() {
+  fetchKMMacros(true);
+}
+
+function renderKMMacroList(groups) {
+  const listEl = document.getElementById('km-picker-list');
+  const loadingEl = document.getElementById('km-picker-loading');
+  if (loadingEl) loadingEl.style.display = 'none';
+
+  listEl.querySelectorAll('.km-group-container, .km-empty-msg').forEach(el => el.remove());
+
+  if (!groups || groups.length === 0) {
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = 'No macros found on Keyboard Maestro server.';
+    }
+    return;
+  }
+
+  groups.forEach(group => {
+    if (!group.macros || group.macros.length === 0) return;
+
+    const groupCont = document.createElement('div');
+    groupCont.className = 'km-group-container' + (kmGroupCollapsedState[group.name] ? ' collapsed' : '');
+    groupCont.dataset.group = (group.name || '').toLowerCase();
+
+    const header = document.createElement('div');
+    header.className = 'km-group-header';
+    header.innerHTML = `
+      <div class="km-group-title">
+        <i class="f7-icons" style="font-size:14px;color:#007aff;">folder_fill</i>
+        <span>${escHtml(group.name)}</span>
+        <span class="km-group-badge">${group.macros.length}</span>
+      </div>
+      <i class="f7-icons km-group-chevron">chevron_down</i>
+    `;
+
+    header.onclick = (e) => {
+      e.stopPropagation();
+      groupCont.classList.toggle('collapsed');
+      kmGroupCollapsedState[group.name] = groupCont.classList.contains('collapsed');
+    };
+
+    const body = document.createElement('div');
+    body.className = 'km-group-body';
+
+    group.macros.forEach(macro => {
+      if (macro.uid && macro.name) {
+        config.kmNamesByUuid = config.kmNamesByUuid || {};
+        config.kmNamesByUuid[macro.uid] = macro.name;
+      }
+      const row = document.createElement('div');
+      row.className = 'km-macro-row app-picker-row';
+      row.dataset.name = (macro.name || '').toLowerCase();
+      row.dataset.uid = (macro.uid || '').toLowerCase();
+      row.dataset.group = (group.name || '').toLowerCase();
+      row.innerHTML = `
+        <div class="app-picker-row-inner" style="display:flex; align-items:center; gap:10px;">
+          <i class="f7-icons" style="font-size:17px; color:#ff9f0a; flex-shrink:0;">command</i>
+          <div style="min-width:0; flex:1;">
+            <div class="app-picker-name">${escHtml(macro.name)}</div>
+          </div>
+        </div>
+        <i class="f7-icons" style="font-size:15px; color:#3a3a3c; flex-shrink:0;">ellipsis_circle</i>
+      `;
+      row.onclick = () => selectKMMacro(macro);
+      body.appendChild(row);
+    });
+
+    groupCont.appendChild(header);
+    groupCont.appendChild(body);
+    listEl.appendChild(groupCont);
+  });
+
+  filterKMList();
+}
+
+function filterKMList() {
+  const q = (document.getElementById('km-picker-search').value || '').toLowerCase().trim();
+  const groupContainers = document.querySelectorAll('#km-picker-list .km-group-container');
+  let totalVisible = 0;
+
+  groupContainers.forEach(gc => {
+    const groupName = gc.dataset.group || '';
+    const macroRows = gc.querySelectorAll('.km-macro-row');
+    let visibleInGroup = 0;
+
+    macroRows.forEach(row => {
+      const name = row.dataset.name || '';
+      const uid = row.dataset.uid || '';
+      const match = !q || name.includes(q) || uid.includes(q) || groupName.includes(q);
+      row.style.display = match ? 'flex' : 'none';
+      if (match) visibleInGroup++;
+    });
+
+    if (visibleInGroup > 0) {
+      gc.style.display = 'block';
+      totalVisible += visibleInGroup;
+      if (q) {
+        gc.classList.remove('collapsed');
+      } else if (kmGroupCollapsedState[gc.querySelector('.km-group-title span')?.textContent]) {
+        gc.classList.add('collapsed');
+      }
+    } else {
+      gc.style.display = 'none';
+    }
+  });
+
+  let emptyMsg = document.getElementById('km-no-results-msg');
+  if (totalVisible === 0 && groupContainers.length > 0) {
+    if (!emptyMsg) {
+      emptyMsg = document.createElement('div');
+      emptyMsg.id = 'km-no-results-msg';
+      emptyMsg.className = 'km-empty-msg';
+      emptyMsg.style.cssText = 'text-align:center;color:#8e8e93;padding:24px 16px;font-size:14px;';
+      emptyMsg.textContent = 'No matching macros found.';
+      document.getElementById('km-picker-list').appendChild(emptyMsg);
+    }
+    emptyMsg.style.display = 'block';
+  } else if (emptyMsg) {
+    emptyMsg.style.display = 'none';
+  }
+}
+
+function selectKMMacro(macro) {
+  closeKMDialog();
+  if (macro.uid && macro.name) {
+    config.kmNamesByUuid = config.kmNamesByUuid || {};
+    config.kmNamesByUuid[macro.uid] = macro.name;
+    saveConfig();
+  }
+  const target = macro.uid || `"${macro.name}"`;
+  showSheet(`Keyboard Maestro: ${macro.name}`, [
+    {
+      label: 'Trigger (No Parameter)',
+      action: () => {
+        saveKMActionCmd(`km trigger ${target}`, macro.name);
+      }
+    },
+    {
+      label: 'Trigger with Parameter…',
+      action: () => {
+        showDialog(`Trigger: ${macro.name}`, 'Optional trigger parameter / value (%TriggerValue%):', '', 'Save', val => {
+          if (val && val.trim()) {
+            saveKMActionCmd(`km trigger ${target} "${val.trim()}"`, `${macro.name} (${val.trim()})`);
+          } else {
+            saveKMActionCmd(`km trigger ${target}`, macro.name);
+          }
+        });
+      }
+    }
+  ]);
+}
+
+function promptManualKMAction() {
+  closeKMDialog();
+  showDialog('Keyboard Maestro Action', 'Enter Macro Name or UUID (and optional value):', '', 'Save', val => {
+    if (val && val.trim()) {
+      let clean = val.trim();
+      if (!clean.startsWith('km ') && !clean.startsWith('km\n') && clean !== 'km') {
+        clean = `km trigger ${clean}`;
+      }
+      saveKMActionCmd(clean, clean);
+    }
+  });
 }
 
 function toggleHATokenVisibility() {
@@ -4665,8 +5879,35 @@ function showAddTriggerSheet() {
     { label: 'Notification Trigger', action: () => promptNotifTrigger() },
     { label: 'App Launch Trigger', action: () => promptAppLaunchPicker() },
     { label: 'Scheduled Trigger', action: () => promptSchedTrigger() },
+    { label: 'MQTT Topic Trigger', action: () => promptMqttTrigger() },
     { label: 'NFC Tag Trigger', action: () => promptNfcTrigger() },
   ]);
+}
+
+function promptMqttTrigger(editKey = null) {
+  const defaultTopic = config.mqttTopicPrefix ? `${config.mqttTopicPrefix}/alerts/phone` : 'remotecompanion/alerts/phone';
+  showDialog('MQTT Topic Trigger', 'Topic to subscribe to (e.g. home/alerts/phone):', defaultTopic, 'Next', topic => {
+    if (!topic || !topic.trim()) return;
+    const cleanTopic = topic.trim();
+    showDialog('Payload Match (Optional)', 'Exact payload to match, or leave empty for Any:', '', 'Create Trigger', payload => {
+      const cleanPayload = (payload || '').trim();
+      const key = editKey || `mqtt_sub_${Date.now()}`;
+      const friendlyName = cleanPayload.length > 0 ? `MQTT: ${cleanTopic} (${cleanPayload})` : `MQTT: ${cleanTopic}`;
+      const triggerData = {
+        name: friendlyName,
+        topic: cleanTopic,
+        enabled: true,
+        actions: config.triggers[key] ? (config.triggers[key].actions || []) : []
+      };
+      if (cleanPayload.length > 0) {
+        triggerData.matchPayload = cleanPayload;
+      }
+      config.triggers[key] = triggerData;
+      saveConfig();
+      renderAll();
+      openActionsPanel(key);
+    });
+  });
 }
 
 function promptNfcTrigger() {

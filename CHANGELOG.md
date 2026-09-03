@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.0] - 2026-08-30
+
+### Added
+- **Native MQTT 3.1.1 Integration (Actions & Inbound Triggers)**: Complete native MQTT 3.1.1 implementation across the entire RemoteCompanion stack with zero third-party dependencies and near-zero battery consumption.
+  - **Publish Actions**: Trigger MQTT publish events from any hardware button, physical gesture, or automation sequence with customizable topics and text/JSON payloads.
+  - **Inbound Subscription Triggers (`RCMQTTTriggerViewController`)**: Added **MQTT Topic** to the `+` (New Trigger) menu to subscribe to broker topics (with optional payload matching) and trigger local iOS actions (alarms, haptics, flashlight, TTS, app launching, etc.) when MQTT messages arrive.
+  - **Background SpringBoard Listener**: Embedded lightweight TCP client with auto-reconnect and 60s keep-alive pings that only runs when active MQTT triggers exist.
+  - **CLI & Web UI**: Added `rc mqtt pub <topic> [payload]`, `/api/mqtt/test`, and `/api/mqtt/publish` endpoints with full Web UI sequence builder and trigger support.
+- **Nested Integrations Hub Architecture**:
+  - Refactored Settings with a dedicated **Integrations** disclosure menu (`RCIntegrationsViewController`) cleanly organizing external services into modular sub-menus.
+  - Dedicated sub-screens for **Home Assistant** (`RCHASettingsViewController`), **Keyboard Maestro** (`RCKMSettingsViewController`), and **MQTT** (`RCMQTTSettingsViewController`).
+- **Visual Keyboard Maestro Macro Selector & Discovery**: Added visual macro selector across Web UI and native iOS companion app (`RCKMMacroPickerViewController`).
+  - Automatically fetches and parses all macros grouped by category from `/authenticated.html`.
+  - Supports live search across macro names, groups, and UUIDs.
+  - Background automatic macro name-to-UUID resolution with dual-tier fallback (`/authenticatedaction.html` & `/action.html`) ensuring seamless execution even for private/protected macros.
+  - Tap / long-press parameter management: directly configure, update, or remove `%TriggerValue%` parameter values on any KM action within action sequences.
+  - Restored dedicated `command` SF symbol toast HUD notifications and exact case-sensitive macro title preservation.
+- **Time of Day Condition Target (`time_between`)**: Added native conditional time evaluation (`If Time is Between ...` / `Else If Time is Between ...`) allowing automation sequences to branch based on the current time of day.
+  - **Web UI & iOS App**: Configurable time range selector supporting 12-hour AM/PM and 24-hour time ranges, live preview hints, and overnight ranges crossing midnight (e.g. `22:00` to `06:00`).
+  - **Backend**: Optimized `rc_is_current_time_in_range` evaluator handling all standard time formats in live action sequence executions.
+- **Lock Screen Camera Launch Trigger**: Added inter-process notification bridging between `com.apple.camera`'s `CAMViewfinderViewController` and `SpringBoard` so that `app_launch_com.apple.camera` triggers execute reliably even when the camera is opened directly from the Lock Screen / CoverSheet while the device is locked.
+- **Disable/Enable Actions**: Added the ability to disable and enable individual actions within action sequences without deleting them.
+  - **iOS App**: Long-press any action to select **Disable Action** / **Enable Action**; disabled actions are automatically dimmed/greyed out.
+  - **Web UI**: Right-click (or touch-and-hold) any action in the sequence builder to toggle disable/enable state.
+  - **Execution Engine**: `rc_execute_action_sequence` automatically skips disabled actions in live and simulation modes.
+- **Location Services Toggle (GPS)**: Added native Location Services toggle and status queries across CLI (`rc location on|off|toggle|status`), Web UI (Action Picker, Quick Toggles, and Conditional Evaluator), Lua scripting (`setLocationServices(bool)` / `getLocationServices()`), and hardware/Bluetooth trigger sequences (e.g. automatically enable Location Services when connected to a vehicle Bluetooth device).
+- **Safe Mode**: Added native Safe Mode support across the CLI (`rc safemode`), Web UI (Action Picker & Quick Maintenance panel in System Info), and native iOS Companion App (Action Picker & Config Manager). Safely restarts SpringBoard into Safe Mode with tweaks disabled using Substrate/ElleKit exception triggering and marker flags.
+- **Home Assistant Entity Picker**: Integrated full-screen entity browser in the iOS app with live states, domain icons, search, quick action sheets (Toggle, Turn On, Turn Off), and manual command fallback.
+
+### Changed
+- **Streamlined Camera Action Picker**: Simplified camera options in the iOS and Web UI action pickers to clean, minimal **Open Camera** and **Open Video Camera** items while preserving specialized parameter variations when manually configured or imported.
+- **Wider Web UI Modals**: Increased the modal dialog widths for App Launch and Time Range trigger selectors for better readability on desktop and mobile browsers.
+
+### Fixed
+- **Power Button Lock & Proximity Sensor Suppression (#34)**:
+  - Resolved an issue where pressing the power button to lock the screen was unresponsive or delayed while the proximity sensor was covered (e.g. holding or handling the top of the device).
+  - Multi-click power button suppression logic now only intercepts events when multi-click power triggers (`power_double_tap`, `power_triple_click`, `power_quadruple_click`) are actively enabled in configuration, restoring immediate native `%orig` handling when unassigned.
+  - Power long press handling now checks whether `power_long_press` is actively enabled before intercepting `performLongPressActions`, allowing standard lock and system behavior to proceed without latency or sensor blocking.
+
 ## [3.5.2] - 2026-08-29
 
 ### Fixed

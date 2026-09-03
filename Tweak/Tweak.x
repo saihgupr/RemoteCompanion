@@ -7,6 +7,7 @@
 #import <unistd.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <netdb.h>
 #import <spawn.h>
 #import <notify.h>
 #import <sys/wait.h>
@@ -21,12 +22,22 @@
 #import <GraphicsServices/GraphicsServices.h>
 #import "native_curl.h"
 #import <CoreFoundation/CoreFoundation.h>
+#import <CoreLocation/CoreLocation.h>
+#import <objc/message.h>
+
+@interface CLLocationManager (RemoteCompanionPrivate)
++ (BOOL)locationServicesEnabled;
++ (void)setLocationServicesEnabled:(BOOL)enabled;
++ (void)_setLocationServicesEnabled:(BOOL)enabled;
+@end
 
 @class SBProximitySensorManager;
 
 static void trigger_haptic();
 static void toggle_system_vibration(BOOL silentMode, BOOL enable);
 static BOOL get_system_vibration(BOOL silentMode);
+static void toggle_location_services(BOOL state);
+static BOOL get_location_services_state(void);
 
 static NSString *g_currentAppBundleId = nil;
 static NSString *g_previousAppBundleId = nil;
@@ -517,6 +528,33 @@ static float sr_previous_volume = -1.0f;
 
 
 
+// Rootless-compatible log path helper
+static NSString *rc_get_log_file_path(void) {
+    static NSString *cachedLogPath = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSFileManager *fm = [NSFileManager defaultManager];
+        if ([fm fileExistsAtPath:@"/var/jb/tmp"]) {
+            cachedLogPath = @"/var/jb/tmp/remotecommand.log";
+        } else if ([fm fileExistsAtPath:@"/var/jb"]) {
+            if ([fm createDirectoryAtPath:@"/var/jb/tmp" withIntermediateDirectories:YES attributes:nil error:nil]) {
+                cachedLogPath = @"/var/jb/tmp/remotecommand.log";
+            }
+        }
+        
+        if (!cachedLogPath) {
+            if ([fm fileExistsAtPath:@"/tmp"]) {
+                cachedLogPath = @"/tmp/remotecommand.log";
+            } else {
+                NSString *logsDir = @"/var/mobile/Library/Logs/RemoteCompanion";
+                [fm createDirectoryAtPath:logsDir withIntermediateDirectories:YES attributes:nil error:nil];
+                cachedLogPath = [logsDir stringByAppendingPathComponent:@"remotecompanion.log"];
+            }
+        }
+    });
+    return cachedLogPath ?: @"/tmp/remotecommand.log";
+}
+
 // File-based logging helper
 void SRLog(NSString *format, ...) {
     va_list args;
@@ -529,8 +567,9 @@ void SRLog(NSString *format, ...) {
     
     // Write to file with synchronization
     @synchronized([NSFileManager defaultManager]) {
+        NSString *logPath = rc_get_log_file_path();
         NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] %@\n", [NSDate date], message];
-        NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
+        NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:logPath];
         if (fileHandle) {
             @try {
                 [fileHandle seekToEndOfFile];
@@ -539,7 +578,8 @@ void SRLog(NSString *format, ...) {
                 [fileHandle closeFile];
             } @catch (NSException *e) {}
         } else {
-            [logMsg writeToFile:@"/tmp/remotecommand.log" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            [logMsg writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            chmod([logPath UTF8String], 0666);
         }
     }
 }
@@ -647,6 +687,45 @@ static BOOL get_lpm_state() {
         }
     }
     return NO;
+}
+
+static BOOL get_location_services_state() {
+    Class LocationManagerClass = objc_getClass("CLLocationManager");
+    if (!LocationManagerClass) {
+        dlopen("/System/Library/Frameworks/CoreLocation.framework/CoreLocation", RTLD_NOW);
+        LocationManagerClass = objc_getClass("CLLocationManager");
+    }
+    if (LocationManagerClass && [LocationManagerClass respondsToSelector:@selector(locationServicesEnabled)]) {
+        return [LocationManagerClass locationServicesEnabled];
+    }
+    return NO;
+}
+
+static void toggle_location_services(BOOL state) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @try {
+            Class LocationManagerClass = objc_getClass("CLLocationManager");
+            if (!LocationManagerClass) {
+                dlopen("/System/Library/Frameworks/CoreLocation.framework/CoreLocation", RTLD_NOW);
+                LocationManagerClass = objc_getClass("CLLocationManager");
+            }
+            if (LocationManagerClass) {
+                if ([LocationManagerClass respondsToSelector:@selector(setLocationServicesEnabled:)]) {
+                    ((void (*)(id, SEL, BOOL))objc_msgSend)(LocationManagerClass, @selector(setLocationServicesEnabled:), state);
+                    SRLog(@"Location Services set to: %d", state);
+                } else if ([LocationManagerClass respondsToSelector:@selector(_setLocationServicesEnabled:)]) {
+                    ((void (*)(id, SEL, BOOL))objc_msgSend)(LocationManagerClass, @selector(_setLocationServicesEnabled:), state);
+                    SRLog(@"Location Services set to: %d via _setLocationServicesEnabled", state);
+                } else {
+                    SRLog(@"CLLocationManager does not respond to setLocationServicesEnabled:");
+                }
+            } else {
+                SRLog(@"CLLocationManager class not found");
+            }
+        } @catch (NSException *e) {
+            SRLog(@"EXCEPTION in toggle_location_services: %@", e);
+        }
+    });
 }
 
 static BOOL get_dnd_state() {
@@ -1440,6 +1519,8 @@ static void register_edge_gestures();
 static void unregister_edge_gestures();
 static void update_edge_gestures();
 static void start_schedule_timer();
+static void start_mqtt_subscriber();
+static void stop_mqtt_subscriber();
 
 static void config_changed_callback(CFNotificationCenterRef center, void *observer,
                                     CFStringRef name, const void *object, CFDictionaryRef userInfo) {
@@ -1456,7 +1537,9 @@ static void config_changed_callback(CFNotificationCenterRef center, void *observ
             update_edge_gestures(); 
             SRLog(@"Edge gestures updated. Checking schedule timer...");
             start_schedule_timer();
-            SRLog(@"Schedule timer check complete. Config reload complete.");
+            SRLog(@"Checking MQTT subscriber...");
+            start_mqtt_subscriber();
+            SRLog(@"Config reload complete.");
         } @catch (NSException *e) {
             SRLog(@"CRITICAL ERROR in config_changed_callback: %@\nStack: %@", e, e.callStackSymbols);
         }
@@ -1563,7 +1646,10 @@ static NSString *rc_status_command_for_condition_key(NSString *conditionKey) {
         @"airplane": @"airplane status",
         @"silent_vibration": @"vibration silent-status",
         @"ring_vibration": @"vibration ring-status",
-        @"orientation": @"orientation status"
+        @"orientation": @"orientation status",
+        @"location": @"location status",
+        @"location_services": @"location status",
+        @"gps": @"location status"
     };
     return map[conditionKey];
 }
@@ -1599,24 +1685,105 @@ static NSString *rc_canonical_status_value_for_condition_key(NSString *condition
     return nil;
 }
 
+static NSInteger rc_parse_time_to_minutes(NSString *timeStr) {
+    if (![timeStr isKindOfClass:[NSString class]] || timeStr.length == 0) return -1;
+    
+    NSString *clean = [[timeStr stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] uppercaseString];
+    BOOL isPM = [clean containsString:@"PM"];
+    BOOL isAM = [clean containsString:@"AM"];
+    
+    NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:@"0123456789:"];
+    NSMutableString *digitsAndColons = [NSMutableString string];
+    for (NSUInteger i = 0; i < clean.length; i++) {
+        unichar c = [clean characterAtIndex:i];
+        if ([allowed characterIsMember:c]) {
+            [digitsAndColons appendFormat:@"%C", c];
+        }
+    }
+    
+    NSArray *parts = [digitsAndColons componentsSeparatedByString:@":"];
+    if (parts.count == 0 || [parts[0] length] == 0) return -1;
+    
+    NSInteger hour = [parts[0] integerValue];
+    NSInteger min = (parts.count > 1) ? [parts[1] integerValue] : 0;
+    
+    if (isPM) {
+        if (hour < 12) hour += 12;
+    } else if (isAM) {
+        if (hour == 12) hour = 0;
+    }
+    
+    if (hour < 0) hour = 0;
+    if (hour > 23) hour = 23;
+    if (min < 0) min = 0;
+    if (min > 59) min = 59;
+    
+    return hour * 60 + min;
+}
+
+static BOOL rc_is_current_time_in_range(NSString *rangeString) {
+    if (![rangeString isKindOfClass:[NSString class]] || rangeString.length == 0) return NO;
+    
+    NSString *s = rangeString;
+    s = [s stringByReplacingOccurrencesOfString:@"–" withString:@"-"];
+    s = [s stringByReplacingOccurrencesOfString:@"—" withString:@"-"];
+    s = [s stringByReplacingOccurrencesOfString:@" to " withString:@"-" options:NSCaseInsensitiveSearch range:NSMakeRange(0, s.length)];
+    s = [s stringByReplacingOccurrencesOfString:@" and " withString:@"-" options:NSCaseInsensitiveSearch range:NSMakeRange(0, s.length)];
+    s = [s stringByReplacingOccurrencesOfString:@"," withString:@"-"];
+    
+    NSArray *comps = [s componentsSeparatedByString:@"-"];
+    if (comps.count < 2) return NO;
+    
+    NSInteger startMin = rc_parse_time_to_minutes(comps[0]);
+    NSInteger endMin = rc_parse_time_to_minutes(comps[1]);
+    if (startMin < 0 || endMin < 0) return NO;
+    
+    NSCalendar *calendar = [NSCalendar currentCalendar];
+    NSDateComponents *nowComps = [calendar components:(NSCalendarUnitHour | NSCalendarUnitMinute) fromDate:[NSDate date]];
+    NSInteger currentMin = nowComps.hour * 60 + nowComps.minute;
+    
+    if (startMin <= endMin) {
+        return (currentMin >= startMin && currentMin <= endMin);
+    } else {
+        // Crosses midnight (e.g. 22:00 to 06:00)
+        return (currentMin >= startMin || currentMin <= endMin);
+    }
+}
+
 static BOOL rc_evaluate_if_condition(NSDictionary *ifAction) {
     if (![ifAction isKindOfClass:[NSDictionary class]]) return NO;
     
-    NSString *conditionKey = ifAction[@"conditionKey"];
-    NSString *expectedValue = rc_trimmed_uppercase_string(ifAction[@"expectedValue"] ?: ifAction[@"expected"]);
+    NSString *conditionKey = ifAction[@"conditionKey"] ?: ifAction[@"conditionName"];
+    NSString *expectedValue = rc_trimmed_uppercase_string(ifAction[@"expectedValue"] ?: ifAction[@"expected"] ?: ifAction[@"expectedLabel"]);
     
     if (conditionKey.length == 0) {
-        // Backward compatibility for older formats where "condition" contained a command.
+        // Backward compatibility for older formats where "condition" contained a command or key:value.
         NSString *legacyCondition = ifAction[@"condition"];
         if (legacyCondition.length == 0) return NO;
-        NSString *legacyOutput = handle_command(legacyCondition);
-        NSString *legacyUpper = rc_trimmed_uppercase_string(legacyOutput);
-        return [legacyUpper isEqualToString:@"YES"] ||
-               [legacyUpper isEqualToString:@"TRUE"] ||
-               [legacyUpper isEqualToString:@"1"] ||
-               [legacyUpper hasPrefix:@"ON"] ||
-               [legacyUpper hasPrefix:@"LOCKED"] ||
-               [legacyUpper hasPrefix:@"PLAYING"];
+        NSRange colon = [legacyCondition rangeOfString:@":"];
+        if (colon.location != NSNotFound) {
+            conditionKey = [legacyCondition substringToIndex:colon.location];
+            NSString *rawExpected = [legacyCondition substringFromIndex:colon.location + 1];
+            if ([conditionKey isEqualToString:@"time_between"] || [conditionKey isEqualToString:@"time"] || [conditionKey isEqualToString:@"time_range"] || [conditionKey isEqualToString:@"time_of_day"]) {
+                return rc_is_current_time_in_range(rawExpected);
+            }
+            expectedValue = rc_trimmed_uppercase_string(rawExpected);
+        } else {
+            NSString *legacyOutput = handle_command(legacyCondition);
+            NSString *legacyUpper = rc_trimmed_uppercase_string(legacyOutput);
+            return [legacyUpper isEqualToString:@"YES"] ||
+                   [legacyUpper isEqualToString:@"TRUE"] ||
+                   [legacyUpper isEqualToString:@"1"] ||
+                   [legacyUpper hasPrefix:@"ON"] ||
+                   [legacyUpper hasPrefix:@"LOCKED"] ||
+                   [legacyUpper hasPrefix:@"PLAYING"];
+        }
+    }
+    
+    if ([conditionKey isEqualToString:@"time_between"] || [conditionKey isEqualToString:@"time"] || [conditionKey isEqualToString:@"time_range"] || [conditionKey isEqualToString:@"time_of_day"]) {
+        NSString *rawRange = ifAction[@"expectedValue"] ?: ifAction[@"expected"] ?: ifAction[@"expectedLabel"] ?: ifAction[@"expectedTitle"];
+        if (rawRange.length == 0) return NO;
+        return rc_is_current_time_in_range(rawRange);
     }
     
     if ([conditionKey isEqualToString:@"front_app"]) {
@@ -1660,11 +1827,26 @@ static BOOL rc_evaluate_if_condition(NSDictionary *ifAction) {
     return [actualValue isEqualToString:expectedValue];
 }
 
+static BOOL rc_is_action_item_disabled(id item) {
+    if ([item isKindOfClass:[NSDictionary class]]) {
+        id dis = ((NSDictionary *)item)[@"disabled"];
+        if (dis && ([dis boolValue] || [dis isEqual:@1] || [[dis description] isEqualToString:@"1"])) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 static void rc_execute_action_sequence(NSArray *actions, NSString *triggerKey, BOOL simulationMode) {
     if (![actions isKindOfClass:[NSArray class]] || actions.count == 0) return;
     
     for (NSInteger idx = 0; idx < (NSInteger)actions.count; idx++) {
         id actionItem = actions[idx];
+
+        if (rc_is_action_item_disabled(actionItem)) {
+            SRLog(@"[%@] Skipping disabled action: %@", triggerKey, actionItem);
+            continue;
+        }
         
         if ([actionItem isKindOfClass:[NSString class]]) {
             NSString *action = (NSString *)actionItem;
@@ -2008,6 +2190,321 @@ static void start_schedule_timer() {
     // Initial schedule
     scheduleNext();
     dispatch_resume(g_scheduleTimer);
+}
+
+// ============ MQTT BACKGROUND SUBSCRIBER ============
+static int g_mqttSubscriberSock = -1;
+static BOOL g_mqttSubscriberRunning = NO;
+static dispatch_queue_t g_mqttSubscriberQueue = NULL;
+static uint64_t g_mqttSubscriberGeneration = 0;
+
+static void rc_mqtt_append_rem_len(NSMutableData *data, NSUInteger length) {
+    do {
+        uint8_t d = length % 128;
+        length /= 128;
+        if (length > 0) d |= 128;
+        [data appendBytes:&d length:1];
+    } while (length > 0);
+}
+
+static void rc_mqtt_append_utf8(NSMutableData *data, NSString *str) {
+    if (!str) str = @"";
+    NSData *strData = [str dataUsingEncoding:NSUTF8StringEncoding];
+    uint16_t len = htons((uint16_t)strData.length);
+    [data appendBytes:&len length:2];
+    if (strData.length > 0) [data appendData:strData];
+}
+
+static void stop_mqtt_subscriber() {
+    g_mqttSubscriberGeneration++;
+    if (g_mqttSubscriberSock >= 0) {
+        shutdown(g_mqttSubscriberSock, SHUT_RDWR);
+        close(g_mqttSubscriberSock);
+        g_mqttSubscriberSock = -1;
+    }
+    g_mqttSubscriberRunning = NO;
+}
+
+static BOOL mqtt_topic_matches(NSString *subPattern, NSString *actualTopic) {
+    if (!subPattern || !actualTopic) return NO;
+    if ([subPattern isEqualToString:actualTopic] || [subPattern isEqualToString:@"#"]) return YES;
+    
+    NSArray *subParts = [subPattern componentsSeparatedByString:@"/"];
+    NSArray *actualParts = [actualTopic componentsSeparatedByString:@"/"];
+    
+    NSUInteger i = 0;
+    for (; i < subParts.count; i++) {
+        NSString *sp = subParts[i];
+        if ([sp isEqualToString:@"#"]) {
+            return YES;
+        }
+        if (i >= actualParts.count) return NO;
+        if (![sp isEqualToString:@"+"] && ![sp isEqualToString:actualParts[i]]) {
+            return NO;
+        }
+    }
+    return (i == actualParts.count);
+}
+
+static void start_mqtt_subscriber() {
+    if (!g_triggerConfig) load_trigger_config();
+    if (!g_triggerConfig) return;
+    
+    BOOL mqttEnabled = [g_triggerConfig[@"mqttEnabled"] boolValue];
+    if (!mqttEnabled) {
+        stop_mqtt_subscriber();
+        return;
+    }
+    
+    // Check if any active MQTT triggers exist
+    NSMutableSet *subscribedTopics = [NSMutableSet set];
+    NSDictionary *triggers = g_triggerConfig[@"triggers"];
+    for (NSString *key in triggers) {
+        if ([key hasPrefix:@"mqtt_sub_"] || [key hasPrefix:@"mqtt_"]) {
+            NSDictionary *trig = triggers[key];
+            if ([trig[@"enabled"] boolValue]) {
+                NSString *topic = trig[@"topic"];
+                if (topic.length > 0) {
+                    [subscribedTopics addObject:topic];
+                }
+            }
+        }
+    }
+    
+    if (subscribedTopics.count == 0) {
+        stop_mqtt_subscriber();
+        return;
+    }
+    
+    uint64_t currentGen = ++g_mqttSubscriberGeneration;
+    
+    if (g_mqttSubscriberSock >= 0) {
+        shutdown(g_mqttSubscriberSock, SHUT_RDWR);
+        close(g_mqttSubscriberSock);
+        g_mqttSubscriberSock = -1;
+    }
+    
+    if (!g_mqttSubscriberQueue) {
+        g_mqttSubscriberQueue = dispatch_queue_create("com.pizzaman.rc.mqtt_sub", DISPATCH_QUEUE_SERIAL);
+    }
+    
+    g_mqttSubscriberRunning = YES;
+    
+    NSString *host = g_triggerConfig[@"mqttHost"] ?: @"192.168.1.50";
+    NSInteger port = [g_triggerConfig[@"mqttPort"] integerValue] > 0 ? [g_triggerConfig[@"mqttPort"] integerValue] : 1883;
+    NSString *user = g_triggerConfig[@"mqttUser"];
+    NSString *pass = g_triggerConfig[@"mqttPassword"];
+    NSString *rawClientId = g_triggerConfig[@"mqttClientId"];
+    NSString *clientId = rawClientId.length > 0 ? [NSString stringWithFormat:@"%@_sub", rawClientId] : @"RemoteCompanion_Sub";
+    NSArray *topicsToSub = [subscribedTopics allObjects];
+    
+    dispatch_async(g_mqttSubscriberQueue, ^{
+        while (g_mqttSubscriberRunning && currentGen == g_mqttSubscriberGeneration) {
+            SRLog(@"[MQTT Sub] Connecting to %@:%ld...", host, (long)port);
+            
+            char portStr[16];
+            snprintf(portStr, sizeof(portStr), "%ld", (long)port);
+            
+            struct addrinfo hints;
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_STREAM;
+            hints.ai_protocol = IPPROTO_TCP;
+            
+            struct addrinfo *res = NULL;
+            int gai_err = getaddrinfo([host UTF8String], portStr, &hints, &res);
+            if (gai_err != 0 || !res) {
+                SRLog(@"[MQTT Sub] Host resolve failed: %s. Retrying in 10s...", gai_strerror(gai_err));
+                sleep(10);
+                continue;
+            }
+            
+            int sock = -1;
+            for (struct addrinfo *rp = res; rp != NULL; rp = rp->ai_next) {
+                sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+                if (sock == -1) continue;
+                
+                struct timeval tv = { 10, 0 };
+                setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv));
+                setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof(tv));
+                
+                if (connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
+                    break;
+                }
+                close(sock);
+                sock = -1;
+            }
+            freeaddrinfo(res);
+            
+            if (sock < 0 || currentGen != g_mqttSubscriberGeneration) {
+                if (sock >= 0) close(sock);
+                SRLog(@"[MQTT Sub] Connection failed. Retrying in 10s...");
+                sleep(10);
+                continue;
+            }
+            
+            g_mqttSubscriberSock = sock;
+            
+            // Build CONNECT packet
+            NSMutableData *varHeader = [NSMutableData data];
+            uint16_t protoNameLen = htons(4);
+            [varHeader appendBytes:&protoNameLen length:2];
+            [varHeader appendBytes:"MQTT" length:4];
+            uint8_t protoLevel = 4;
+            [varHeader appendBytes:&protoLevel length:1];
+            uint8_t connFlags = 0x02; // Clean session
+            if (user.length > 0) connFlags |= 0x80;
+            if (pass.length > 0) connFlags |= 0x40;
+            [varHeader appendBytes:&connFlags length:1];
+            uint16_t keepAlive = htons(60);
+            [varHeader appendBytes:&keepAlive length:2];
+            rc_mqtt_append_utf8(varHeader, clientId);
+            if (user.length > 0) rc_mqtt_append_utf8(varHeader, user);
+            if (pass.length > 0) rc_mqtt_append_utf8(varHeader, pass);
+            
+            NSMutableData *connPkt = [NSMutableData data];
+            uint8_t connType = 0x10;
+            [connPkt appendBytes:&connType length:1];
+            rc_mqtt_append_rem_len(connPkt, varHeader.length);
+            [connPkt appendData:varHeader];
+            
+            send(sock, connPkt.bytes, connPkt.length, 0);
+            
+            uint8_t connack[4];
+            ssize_t n = recv(sock, connack, 4, 0);
+            if (n < 4 || connack[0] != 0x20 || connack[3] != 0x00) {
+                close(sock);
+                g_mqttSubscriberSock = -1;
+                SRLog(@"[MQTT Sub] Broker rejected connection. Retrying in 10s...");
+                sleep(10);
+                continue;
+            }
+            
+            SRLog(@"[MQTT Sub] Connected! Subscribing to %lu topics...", (unsigned long)topicsToSub.count);
+            
+            // Send SUBSCRIBE packet for all configured topics
+            NSMutableData *subPayload = [NSMutableData data];
+            uint16_t packetId = htons(1);
+            [subPayload appendBytes:&packetId length:2];
+            for (NSString *t in topicsToSub) {
+                rc_mqtt_append_utf8(subPayload, t);
+                uint8_t qos = 0;
+                [subPayload appendBytes:&qos length:1];
+            }
+            
+            NSMutableData *subPkt = [NSMutableData data];
+            uint8_t subType = 0x82; // SUBSCRIBE QoS 1
+            [subPkt appendBytes:&subType length:1];
+            rc_mqtt_append_rem_len(subPkt, subPayload.length);
+            [subPkt appendData:subPayload];
+            send(sock, subPkt.bytes, subPkt.length, 0);
+            
+            // Read SUBACK
+            uint8_t suback[5];
+            recv(sock, suback, sizeof(suback), 0);
+            
+            time_t lastPing = time(NULL);
+            
+            // Event loop: receive packets and send periodic keep-alive PINGREQ
+            while (g_mqttSubscriberRunning && currentGen == g_mqttSubscriberGeneration) {
+                uint8_t header[1];
+                ssize_t r = recv(sock, header, 1, 0);
+                if (r <= 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                        if (time(NULL) - lastPing >= 45) {
+                            uint8_t pingreq[] = { 0xC0, 0x00 };
+                            if (send(sock, pingreq, 2, 0) <= 0) {
+                                break;
+                            }
+                            lastPing = time(NULL);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                
+                uint8_t pktType = (header[0] >> 4) & 0x0F;
+                
+                NSUInteger remLen = 0;
+                NSUInteger multiplier = 1;
+                uint8_t digit = 0;
+                do {
+                    if (recv(sock, &digit, 1, 0) <= 0) break;
+                    remLen += (digit & 127) * multiplier;
+                    multiplier *= 128;
+                } while ((digit & 128) != 0);
+                
+                if (pktType == 3) { // PUBLISH packet
+                    NSMutableData *pktData = [NSMutableData data];
+                    size_t bytesRead = 0;
+                    while (bytesRead < remLen) {
+                        char buf[1024];
+                        size_t toRead = MIN(sizeof(buf), remLen - bytesRead);
+                        ssize_t chunk = recv(sock, buf, toRead, 0);
+                        if (chunk <= 0) break;
+                        [pktData appendBytes:buf length:chunk];
+                        bytesRead += chunk;
+                    }
+                    
+                    if (pktData.length >= 2) {
+                        const uint8_t *bytes = (const uint8_t *)pktData.bytes;
+                        uint16_t tlen = (bytes[0] << 8) | bytes[1];
+                        if (pktData.length >= 2 + tlen) {
+                            NSString *inTopic = [[NSString alloc] initWithBytes:(bytes + 2) length:tlen encoding:NSUTF8StringEncoding];
+                            size_t payloadOffset = 2 + tlen;
+                            uint8_t qos = (header[0] >> 1) & 0x03;
+                            if (qos > 0) payloadOffset += 2; // Skip Packet ID
+                            
+                            NSString *inPayload = @"";
+                            if (pktData.length > payloadOffset) {
+                                inPayload = [[NSString alloc] initWithBytes:(bytes + payloadOffset) length:(pktData.length - payloadOffset) encoding:NSUTF8StringEncoding] ?: @"";
+                            }
+                            
+                            SRLog(@"[MQTT Sub] Received PUBLISH on '%@' (payload: '%@')", inTopic, inPayload);
+                            
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                if (!g_triggerConfig) load_trigger_config();
+                                NSDictionary *currentTriggers = g_triggerConfig[@"triggers"];
+                                for (NSString *trigKey in currentTriggers) {
+                                    if ([trigKey hasPrefix:@"mqtt_sub_"] || [trigKey hasPrefix:@"mqtt_"]) {
+                                        NSDictionary *tDef = currentTriggers[trigKey];
+                                        if ([tDef[@"enabled"] boolValue]) {
+                                            NSString *pat = tDef[@"topic"];
+                                            if (mqtt_topic_matches(pat, inTopic)) {
+                                                NSString *matchPayload = tDef[@"matchPayload"];
+                                                if (!matchPayload.length || [matchPayload isEqualToString:inPayload]) {
+                                                    SRLog(@"[MQTT Sub] Triggering '%@' for topic '%@'", trigKey, inTopic);
+                                                    RCExecuteTrigger(trigKey);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                } else if (pktType == 13) { // PINGRESP
+                    lastPing = time(NULL);
+                }
+                
+                if (time(NULL) - lastPing >= 45) {
+                    uint8_t pingreq[] = { 0xC0, 0x00 };
+                    if (send(sock, pingreq, 2, 0) <= 0) {
+                        break;
+                    }
+                    lastPing = time(NULL);
+                }
+            }
+            
+            close(sock);
+            g_mqttSubscriberSock = -1;
+            
+            if (g_mqttSubscriberRunning && currentGen == g_mqttSubscriberGeneration) {
+                SRLog(@"[MQTT Sub] Connection lost. Reconnecting in 5s...");
+                sleep(5);
+            }
+        }
+    });
 }
 
 BOOL RCIsNFCEnabled() {
@@ -3849,6 +4346,20 @@ static int lua_log(lua_State *L) {
     return 0;
 }
 
+// Lua binding: setLocationServices(bool) / locationServices(bool)
+static int lua_set_location_services(lua_State *L) {
+    BOOL state = lua_toboolean(L, 1);
+    toggle_location_services(state);
+    return 0;
+}
+
+// Lua binding: getLocationServices() -> bool
+static int lua_get_location_services(lua_State *L) {
+    BOOL state = get_location_services_state();
+    lua_pushboolean(L, state ? 1 : 0);
+    return 1;
+}
+
 // Lua binding: dlopen(path)
 static int lua_dlopen(lua_State *L) {
     const char *path = luaL_checkstring(L, 1);
@@ -4012,6 +4523,12 @@ static lua_State *setup_lua_environment() {
     lua_setglobal(L, "dlopen");
     lua_pushcfunction(L, lua_objc_call);
     lua_setglobal(L, "objc_call");
+    lua_pushcfunction(L, lua_set_location_services);
+    lua_setglobal(L, "setLocationServices");
+    lua_pushcfunction(L, lua_set_location_services);
+    lua_setglobal(L, "locationServices");
+    lua_pushcfunction(L, lua_get_location_services);
+    lua_setglobal(L, "getLocationServices");
     
     // Touch gesture functions
     lua_pushcfunction(L, lua_tap_fn);
@@ -4364,16 +4881,27 @@ static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *htt
     }
     
     NSString *fullUrlStr = nil;
-    if ([baseUrl containsString:@"/action.html"] || [baseUrl containsString:@"/authenticatedaction.html"]) {
-        fullUrlStr = baseUrl;
-    } else {
-        NSString *ep = endpointPath;
-        if (!ep || ep.length == 0) {
-            ep = (user.length > 0 || pass.length > 0) ? @"/authenticatedaction.html" : @"/action.html";
+    if (endpointPath.length > 0) {
+        NSString *cleanedBase = baseUrl;
+        if ([cleanedBase hasSuffix:@"/action.html"]) {
+            cleanedBase = [cleanedBase substringToIndex:cleanedBase.length - 12];
+        } else if ([cleanedBase hasSuffix:@"/authenticatedaction.html"]) {
+            cleanedBase = [cleanedBase substringToIndex:cleanedBase.length - 25];
+        } else if ([cleanedBase hasSuffix:@"/authenticated.html"]) {
+            cleanedBase = [cleanedBase substringToIndex:cleanedBase.length - 19];
         }
+        if ([cleanedBase hasSuffix:@"/"]) {
+            cleanedBase = [cleanedBase substringToIndex:cleanedBase.length - 1];
+        }
+        NSString *ep = endpointPath;
         if (![ep hasPrefix:@"/"] && ![ep hasPrefix:@"?"]) {
             ep = [NSString stringWithFormat:@"/%@", ep];
         }
+        fullUrlStr = [NSString stringWithFormat:@"%@%@", cleanedBase, ep];
+    } else if ([baseUrl containsString:@"/action.html"] || [baseUrl containsString:@"/authenticatedaction.html"]) {
+        fullUrlStr = baseUrl;
+    } else {
+        NSString *ep = (user.length > 0 || pass.length > 0) ? @"/authenticatedaction.html" : @"/action.html";
         fullUrlStr = [NSString stringWithFormat:@"%@%@", baseUrl, ep];
     }
     
@@ -4454,6 +4982,95 @@ static NSDictionary *rc_execute_km_request(NSString *endpointPath, NSString *htt
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC));
     
     return resultDict ?: @{@"ok": @NO, @"error": @"Request timed out"};
+}
+
+static NSString *rc_decode_html_entities(NSString *str) {
+    if (!str) return @"";
+    NSString *decoded = [str stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&quot;" withString:@"\""];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&#39;" withString:@"'"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&apos;" withString:@"'"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&lt;" withString:@"<"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&gt;" withString:@">"];
+    decoded = [decoded stringByReplacingOccurrencesOfString:@"&nbsp;" withString:@" "];
+    return decoded;
+}
+
+static NSArray<NSDictionary *> *rc_parse_km_html(NSString *html) {
+    if (!html || html.length == 0) return @[];
+    
+    NSMutableDictionary<NSString *, NSMutableDictionary *> *groupsMap = [NSMutableDictionary dictionary];
+    NSMutableArray<NSString *> *groupOrder = [NSMutableArray array];
+    
+    NSRegularExpression *optgroupRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)<optgroup\\s+[^>]*label=\"([^\"]+)\"[^>]*>([\\s\\S]*?)(?:</optgroup>|(?=<optgroup)|$)" options:0 error:nil];
+    NSRegularExpression *optionRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)<option\\b([^>]+)>" options:0 error:nil];
+    NSRegularExpression *labelAttrRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)\\blabel=\"([^\"]+)\"" options:0 error:nil];
+    NSRegularExpression *valueAttrRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)\\bvalue=\"([^\"]+)\"" options:0 error:nil];
+    
+    NSArray<NSTextCheckingResult *> *groupMatches = [optgroupRegex matchesInString:html options:0 range:NSMakeRange(0, html.length)];
+    for (NSTextCheckingResult *gMatch in groupMatches) {
+        if (gMatch.numberOfRanges < 3) continue;
+        NSString *rawGroupName = [html substringWithRange:[gMatch rangeAtIndex:1]];
+        NSString *groupName = rc_decode_html_entities([rawGroupName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]);
+        if (groupName.length == 0) continue;
+        
+        NSRange contentRange = [gMatch rangeAtIndex:2];
+        if (contentRange.location == NSNotFound || contentRange.length == 0) continue;
+        NSString *groupContent = [html substringWithRange:contentRange];
+        
+        NSMutableArray *macros = [NSMutableArray array];
+        NSArray<NSTextCheckingResult *> *optMatches = [optionRegex matchesInString:groupContent options:0 range:NSMakeRange(0, groupContent.length)];
+        for (NSTextCheckingResult *oMatch in optMatches) {
+            NSString *tagAttrs = [groupContent substringWithRange:[oMatch rangeAtIndex:1]];
+            
+            NSTextCheckingResult *lMatch = [labelAttrRegex firstMatchInString:tagAttrs options:0 range:NSMakeRange(0, tagAttrs.length)];
+            NSTextCheckingResult *vMatch = [valueAttrRegex firstMatchInString:tagAttrs options:0 range:NSMakeRange(0, tagAttrs.length)];
+            
+            if (lMatch && lMatch.numberOfRanges >= 2 && vMatch && vMatch.numberOfRanges >= 2) {
+                NSString *macroName = rc_decode_html_entities([[tagAttrs substringWithRange:[lMatch rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]);
+                NSString *macroUid = [[tagAttrs substringWithRange:[vMatch rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (macroName.length > 0 && macroUid.length > 0) {
+                    [macros addObject:@{
+                        @"name": macroName,
+                        @"uid": macroUid
+                    }];
+                }
+            }
+        }
+        
+        if (macros.count == 0) continue;
+        
+        NSString *groupKey = [groupName lowercaseString];
+        NSMutableDictionary *existingGroup = groupsMap[groupKey];
+        if (existingGroup) {
+            NSMutableArray *existingMacros = existingGroup[@"macros"];
+            NSMutableSet *existingUids = [NSMutableSet set];
+            for (NSDictionary *m in existingMacros) {
+                if (m[@"uid"]) [existingUids addObject:m[@"uid"]];
+            }
+            for (NSDictionary *m in macros) {
+                if (![existingUids containsObject:m[@"uid"]]) {
+                    [existingMacros addObject:m];
+                    [existingUids addObject:m[@"uid"]];
+                }
+            }
+        } else {
+            NSMutableDictionary *newGroup = [NSMutableDictionary dictionaryWithDictionary:@{
+                @"name": groupName,
+                @"macros": macros
+            }];
+            groupsMap[groupKey] = newGroup;
+            [groupOrder addObject:groupKey];
+        }
+    }
+    
+    NSMutableArray *result = [NSMutableArray array];
+    for (NSString *key in groupOrder) {
+        if (groupsMap[key]) {
+            [result addObject:groupsMap[key]];
+        }
+    }
+    return result;
 }
 
 static NSString *rc_execute_km_command(NSString *cmdArgs) {
@@ -4565,8 +5182,33 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
         return @"Error: Missing macro name or UUID\n";
     }
     
+    NSString *macroToExecute = macroName;
+    NSRegularExpression *uuidRegex = [NSRegularExpression regularExpressionWithPattern:@"^[0-9a-fA-F-]{30,}$" options:0 error:nil];
+    BOOL isUUID = [uuidRegex numberOfMatchesInString:macroName options:0 range:NSMakeRange(0, macroName.length)] > 0;
+    
+    if (!isUUID) {
+        // Fetch macro list from KM Web Server to resolve friendly macroName to its UID
+        NSDictionary *macrosRes = rc_execute_km_request(@"authenticated.html", @"GET", nil, nil, nil, nil);
+        if (![macrosRes[@"ok"] boolValue]) {
+            macrosRes = rc_execute_km_request(@"/", @"GET", nil, nil, nil, nil);
+        }
+        if ([macrosRes[@"ok"] boolValue] && [macrosRes[@"data"] isKindOfClass:[NSString class]]) {
+            NSArray *groups = rc_parse_km_html(macrosRes[@"data"]);
+            for (NSDictionary *group in groups) {
+                NSArray *macros = group[@"macros"];
+                for (NSDictionary *m in macros) {
+                    if ([m[@"name"] localizedCaseInsensitiveCompare:macroName] == NSOrderedSame) {
+                        macroToExecute = m[@"uid"];
+                        break;
+                    }
+                }
+                if (![macroToExecute isEqualToString:macroName]) break;
+            }
+        }
+    }
+    
     NSMutableDictionary *params = [NSMutableDictionary dictionary];
-    params[@"macro"] = macroName;
+    params[@"macro"] = macroToExecute;
     if (triggerValue.length > 0) {
         params[@"value"] = triggerValue;
     }
@@ -4582,13 +5224,225 @@ static NSString *rc_execute_km_command(NSString *cmdArgs) {
             res = fallbackRes;
         }
     }
+    if (![res[@"ok"] boolValue] && ![macroToExecute isEqualToString:macroName]) {
+        // Fallback with original macroName if UID execution failed
+        NSMutableDictionary *fallbackParams = [params mutableCopy];
+        fallbackParams[@"macro"] = macroName;
+        NSDictionary *nameRes = rc_execute_km_request(defaultEndpoint, @"GET", fallbackParams, nil, nil, nil);
+        if ([nameRes[@"ok"] boolValue]) {
+            res = nameRes;
+        }
+    }
+    
+    NSString *displayName = macroName;
+    if (isUUID && g_triggerConfig[@"kmNamesByUuid"] && [g_triggerConfig[@"kmNamesByUuid"] isKindOfClass:[NSDictionary class]]) {
+        NSString *resolved = g_triggerConfig[@"kmNamesByUuid"][macroName];
+        if (resolved.length > 0) {
+            displayName = resolved;
+        }
+    }
     
     if ([res[@"ok"] boolValue]) {
-        NSString *toastMsg = [NSString stringWithFormat:@"Triggered %@", macroName];
+        NSString *toastMsg = [NSString stringWithFormat:@"Triggered %@", displayName];
         rc_show_hud_toast(@"Keyboard Maestro", toastMsg, @"command");
-        return [NSString stringWithFormat:@"Keyboard Maestro macro triggered: %@\n", macroName];
+        return [NSString stringWithFormat:@"Keyboard Maestro macro triggered: %@\n", displayName];
     } else {
         return [NSString stringWithFormat:@"Keyboard Maestro trigger failed: %@\n", res[@"error"] ?: @"Unknown error"];
+    }
+}
+
+static BOOL rc_mqtt_publish(NSString *host, NSInteger port, NSString *user, NSString *pass, NSString *clientId, NSString *topic, NSString *payload, NSInteger qos, BOOL retain, NSError **error) {
+    if (!host.length) {
+        if (error) *error = [NSError errorWithDomain:@"RCMQTT" code:-1 userInfo:@{NSLocalizedDescriptionKey: @"Host is empty"}];
+        return NO;
+    }
+    
+    char portStr[16];
+    snprintf(portStr, sizeof(portStr), "%ld", (long)(port > 0 ? port : 1883));
+    
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    
+    struct addrinfo *res = NULL;
+    int gai_err = getaddrinfo([host UTF8String], portStr, &hints, &res);
+    if (gai_err != 0 || !res) {
+        if (error) *error = [NSError errorWithDomain:@"RCMQTT" code:-3 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Could not resolve host: %s", gai_strerror(gai_err)]}];
+        return NO;
+    }
+    
+    int sockfd = -1;
+    for (struct addrinfo *rp = res; rp != NULL; rp = rp->ai_next) {
+        sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sockfd == -1) continue;
+        
+        int flags = fcntl(sockfd, F_GETFL, 0);
+        fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+        
+        int conn = connect(sockfd, rp->ai_addr, rp->ai_addrlen);
+        if (conn == 0) {
+            fcntl(sockfd, F_SETFL, flags);
+            break;
+        }
+        if (errno == EINPROGRESS) {
+            fd_set fdset;
+            FD_ZERO(&fdset);
+            FD_SET(sockfd, &fdset);
+            struct timeval tv = { 5, 0 };
+            if (select(sockfd + 1, NULL, &fdset, NULL, &tv) == 1) {
+                int so_error = 0;
+                socklen_t len = sizeof(so_error);
+                getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &so_error, &len);
+                if (so_error == 0) {
+                    fcntl(sockfd, F_SETFL, flags);
+                    break;
+                }
+            }
+        }
+        close(sockfd);
+        sockfd = -1;
+    }
+    freeaddrinfo(res);
+    
+    if (sockfd == -1) {
+        if (error) *error = [NSError errorWithDomain:@"RCMQTT" code:-4 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Could not connect to %@:%ld", host, (long)port]}];
+        return NO;
+    }
+    
+    struct timeval rtv = { 5, 0 };
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&rtv, sizeof(rtv));
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&rtv, sizeof(rtv));
+    
+    // Build CONNECT packet
+    NSMutableData *varHeader = [NSMutableData data];
+    uint16_t protoNameLen = htons(4);
+    [varHeader appendBytes:&protoNameLen length:2];
+    [varHeader appendBytes:"MQTT" length:4];
+    uint8_t protoLevel = 4;
+    [varHeader appendBytes:&protoLevel length:1];
+    uint8_t connFlags = 0x02; // Clean session
+    if (user.length > 0) connFlags |= 0x80;
+    if (pass.length > 0) connFlags |= 0x40;
+    [varHeader appendBytes:&connFlags length:1];
+    uint16_t keepAlive = htons(60);
+    [varHeader appendBytes:&keepAlive length:2];
+    rc_mqtt_append_utf8(varHeader, clientId.length > 0 ? clientId : @"RemoteCompanion");
+    if (user.length > 0) rc_mqtt_append_utf8(varHeader, user);
+    if (pass.length > 0) rc_mqtt_append_utf8(varHeader, pass);
+    
+    NSMutableData *connPkt = [NSMutableData data];
+    uint8_t connType = 0x10;
+    [connPkt appendBytes:&connType length:1];
+    rc_mqtt_append_rem_len(connPkt, varHeader.length);
+    [connPkt appendData:varHeader];
+    
+    send(sockfd, connPkt.bytes, connPkt.length, 0);
+    
+    uint8_t connack[4];
+    ssize_t n = recv(sockfd, connack, 4, 0);
+    if (n < 4 || connack[0] != 0x20 || connack[3] != 0x00) {
+        close(sockfd);
+        if (error) *error = [NSError errorWithDomain:@"RCMQTT" code:-5 userInfo:@{NSLocalizedDescriptionKey: (n >= 4 && connack[3] != 0) ? [NSString stringWithFormat:@"Broker rejected connection (code %d)", connack[3]] : @"Invalid CONNACK from broker"}];
+        return NO;
+    }
+    
+    if (topic.length > 0) {
+        NSMutableData *pubPayload = [NSMutableData data];
+        rc_mqtt_append_utf8(pubPayload, topic);
+        if (qos > 0) {
+            uint16_t pktId = htons(1);
+            [pubPayload appendBytes:&pktId length:2];
+        }
+        if (payload.length > 0) {
+            NSData *pData = [payload dataUsingEncoding:NSUTF8StringEncoding];
+            if (pData) [pubPayload appendData:pData];
+        }
+        
+        NSMutableData *pubPkt = [NSMutableData data];
+        uint8_t pubType = 0x30;
+        if (qos == 1) pubType |= 0x02;
+        if (retain) pubType |= 0x01;
+        [pubPkt appendBytes:&pubType length:1];
+        rc_mqtt_append_rem_len(pubPkt, pubPayload.length);
+        [pubPkt appendData:pubPayload];
+        
+        send(sockfd, pubPkt.bytes, pubPkt.length, 0);
+    }
+    
+    uint8_t disconnectPacket[] = { 0xE0, 0x00 };
+    send(sockfd, disconnectPacket, sizeof(disconnectPacket), 0);
+    close(sockfd);
+    return YES;
+}
+
+static NSString *rc_execute_mqtt_command(NSString *cmdArgs) {
+    if (!g_triggerConfig) load_trigger_config();
+    BOOL mqttEnabled = [g_triggerConfig[@"mqttEnabled"] boolValue];
+    if (!mqttEnabled) {
+        return @"Error: MQTT is disabled in settings\n";
+    }
+    
+    NSString *cleanArgs = [cmdArgs stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cleanArgs.length == 0) {
+        return @"Error: Missing MQTT parameters. Usage: 'mqtt pub <topic> [payload]' or 'mqtt publish <topic> [payload]'\n";
+    }
+    
+    NSString *host = g_triggerConfig[@"mqttHost"] ?: @"192.168.1.50";
+    NSInteger port = [g_triggerConfig[@"mqttPort"] integerValue];
+    if (port <= 0) port = 1883;
+    NSString *user = g_triggerConfig[@"mqttUser"];
+    NSString *pass = g_triggerConfig[@"mqttPassword"];
+    NSString *clientId = g_triggerConfig[@"mqttClientId"] ?: @"RemoteCompanion";
+    
+    NSString *topic = nil;
+    NSString *payload = nil;
+    
+    NSString *after = cleanArgs;
+    if ([cleanArgs hasPrefix:@"publish "] || [cleanArgs hasPrefix:@"pub "]) {
+        after = [cleanArgs hasPrefix:@"publish "] ? [cleanArgs substringFromIndex:8] : [cleanArgs substringFromIndex:4];
+        after = [after stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    }
+    
+    if ([after hasPrefix:@"\""]) {
+        NSRange endQuote = [after rangeOfString:@"\"" options:0 range:NSMakeRange(1, after.length - 1)];
+        if (endQuote.location != NSNotFound) {
+            topic = [after substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+            NSString *rem = [[after substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if (rem.length > 0) {
+                if ([rem hasPrefix:@"\""] && [rem hasSuffix:@"\""] && rem.length >= 2) {
+                    payload = [rem substringWithRange:NSMakeRange(1, rem.length - 2)];
+                } else {
+                    payload = rem;
+                }
+            }
+        }
+    }
+    if (!topic) {
+        NSArray *parts = [after componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        NSMutableArray *cleanParts = [NSMutableArray array];
+        for (NSString *p in parts) { if (p.length > 0) [cleanParts addObject:p]; }
+        if (cleanParts.count > 0) {
+            topic = cleanParts[0];
+            if (cleanParts.count > 1) {
+                payload = [[cleanParts subarrayWithRange:NSMakeRange(1, cleanParts.count - 1)] componentsJoinedByString:@" "];
+            }
+        }
+    }
+    
+    if (!topic || topic.length == 0) {
+        return @"Error: Missing MQTT topic\n";
+    }
+    
+    NSError *error = nil;
+    BOOL success = rc_mqtt_publish(host, port, user, pass, clientId, topic, payload ?: @"", 0, NO, &error);
+    if (success) {
+        NSString *toastDetail = payload.length > 0 ? [NSString stringWithFormat:@"%@ (%@)", topic, payload] : topic;
+        rc_show_hud_toast(@"MQTT Published", toastDetail, @"antenna.radiowaves.left.and.right");
+        return [NSString stringWithFormat:@"MQTT message published to '%@'\n", topic];
+    } else {
+        return [NSString stringWithFormat:@"MQTT publish failed: %@\n", error.localizedDescription ?: @"Connection error"];
     }
 }
 
@@ -4761,6 +5615,158 @@ static void rc_execute_shortcut(NSString *shortcutName, NSString *inputArg) {
     });
 }
 
+static NSString *rc_open_camera_unified(NSInteger mode, NSInteger device, double zoomFactor, NSInteger flashMode, BOOL autoShutter) {
+    if (zoomFactor <= 0) zoomFactor = (mode == 1 && device == 0) ? 2.0 : 1.0;
+    
+    NSString *modeName = @"Photo";
+    NSString *icon = @"camera.fill";
+    if (mode == 1) { modeName = @"Video"; icon = @"video.fill"; }
+    else if (mode == 2) { modeName = @"Slo-Mo"; icon = @"video.fill"; }
+    else if (mode == 3) { modeName = @"Pano"; icon = @"camera.fill"; }
+    else if (mode == 4 || mode == 5) { modeName = @"Time-Lapse"; icon = @"video.fill"; }
+    else if (mode == 6) { modeName = @"Portrait"; icon = @"camera.fill"; }
+    else if (mode == 7) { modeName = @"Cinematic"; icon = @"video.fill"; }
+    
+    if (flashMode == 1) icon = @"bolt.fill";
+    
+    SRLog(@"[Camera] Opening Camera: mode=%ld (%@), device=%ld, zoom=%.1fx, flash=%ld, autoShutter=%d", 
+          (long)mode, modeName, (long)device, zoomFactor, (long)flashMode, autoShutter);
+    
+    // 1. Write camera intent payload for com.apple.camera hook
+    @try {
+        NSDictionary *intent = @{
+            @"uuid": [[NSUUID UUID] UUIDString],
+            @"mode": @(mode),
+            @"device": @(device),
+            @"zoom": @(zoomFactor),
+            @"flash": @(flashMode),
+            @"autoShutter": @(autoShutter),
+            @"timestamp": @([[NSDate date] timeIntervalSince1970])
+        };
+        [intent writeToFile:@"/tmp/rc_camera_intent.plist" atomically:YES];
+        notify_post("com.saihgupr.remotecompanion.camera_intent");
+    } @catch (NSException *e) {
+        SRLog(@"[Camera] Error writing camera intent: %@", e);
+    }
+    
+    // 2. Configure Camera preferences in com.apple.camera
+    @try {
+        CFStringRef appID = CFSTR("com.apple.camera");
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesCaptureMode"), (CFPropertyListRef)@(mode), appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesCaptureModeKey"), (CFPropertyListRef)@(mode), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesExplicitCaptureModeKey"), (CFPropertyListRef)@(mode), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesPreserveCaptureModeKey"), (CFPropertyListRef)@YES, appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesPreserveCaptureModeKey"), (CFPropertyListRef)@YES, appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesCameraDeviceKey"), (CFPropertyListRef)@(device), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesCameraDeviceKey"), (CFPropertyListRef)@(device), appID);
+        CFPreferencesSetAppValue(CFSTR("UserPreferencesZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        if (mode == 1) {
+            CFPreferencesSetAppValue(CFSTR("UserPreferencesVideoZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+            CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesBackCameraVideoZoomFactor"), (CFPropertyListRef)@(zoomFactor), appID);
+        }
+        if (flashMode == 1) {
+            CFPreferencesSetAppValue(CFSTR("UserPreferencesTorchMode"), (CFPropertyListRef)@(1), appID);
+            CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesTorchModeKey"), (CFPropertyListRef)@(1), appID);
+            CFPreferencesSetAppValue(CFSTR("UserPreferencesFlashMode"), (CFPropertyListRef)@(1), appID);
+            CFPreferencesSetAppValue(CFSTR("CAMUserPreferencesFlashModeKey"), (CFPropertyListRef)@(1), appID);
+        }
+        CFPreferencesAppSynchronize(appID);
+    } @catch (NSException *e) {
+        SRLog(@"[Camera] Error writing camera preferences: %@", e);
+    }
+    
+    // 3. Launch com.apple.camera via FBSOpenApplicationService on main thread
+    dispatch_async(dispatch_get_main_queue(), ^{
+        Class fbsOptionsClass = objc_getClass("FBSOpenApplicationOptions");
+        Class fbsServiceClass = objc_getClass("FBSOpenApplicationService");
+        
+        NSMutableDictionary *payload = [NSMutableDictionary dictionaryWithDictionary:@{
+            @"CAMUserPreferencesCaptureModeKey": @(mode),
+            @"CAMCaptureMode": @(mode),
+            @"CAMUserPreferencesCameraDeviceKey": @(device),
+            @"UserPreferencesZoomFactor": @(zoomFactor),
+            @"CAMUserPreferencesZoomFactor": @(zoomFactor)
+        }];
+        if (flashMode == 1) {
+            payload[@"CAMUserPreferencesTorchModeKey"] = @(1);
+            payload[@"CAMUserPreferencesFlashModeKey"] = @(1);
+        }
+        
+        NSDictionary *optionsDict = @{
+            @"__PayloadOptions": payload,
+            @"__UnlockDevice": @YES,
+            @"__PromptUnlockDevice": @YES
+        };
+        
+        id options = nil;
+        if (fbsOptionsClass && [fbsOptionsClass respondsToSelector:@selector(optionsWithDictionary:)]) {
+            options = [fbsOptionsClass optionsWithDictionary:optionsDict];
+        }
+        
+        if (fbsServiceClass) {
+            FBSOpenApplicationService *service = [fbsServiceClass serviceWithDefaultShellEndpoint];
+            [service openApplication:@"com.apple.camera" withOptions:options completion:^(id response, NSError *error) {
+                if (error) {
+                    SRLog(@"[Camera] FBS openApplication error: %@", error);
+                } else {
+                    SRLog(@"[Camera] Opened com.apple.camera with mode:%ld device:%ld zoom:%.1f", (long)mode, (long)device, zoomFactor);
+                }
+            }];
+        } else {
+            NSURL *url = [NSURL URLWithString:@"camera://"];
+            [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+        }
+        
+        notify_post("com.saihgupr.remotecompanion.camera_intent");
+    });
+    
+    // 4. Automated Touch Assistance Fallback for Zoom
+    if (device == 0) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.65 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            rc_load_touch_symbols();
+            __block CGSize s = CGSizeZero;
+            rc_dispatch_sync_main_safe(^{
+                s = [UIScreen mainScreen].bounds.size;
+            });
+            double sw = MIN(s.width, s.height);
+            double sh = MAX(s.width, s.height);
+            if (sw <= 0) sw = 375.0;
+            if (sh <= 0) sh = 667.0;
+            
+            if (zoomFactor >= 1.9 && zoomFactor <= 2.5) {
+                rc_simulate_tap(sw * 0.61, sh * 0.71);
+            } else if (zoomFactor >= 2.9) {
+                rc_simulate_tap(sw * 0.72, sh * 0.71);
+            } else if (zoomFactor >= 0.9 && zoomFactor <= 1.1) {
+                rc_simulate_tap(sw * 0.50, sh * 0.71);
+            } else if (zoomFactor < 0.9) {
+                rc_simulate_tap(sw * 0.38, sh * 0.71);
+            }
+        });
+    }
+    
+    NSString *zoomLabel = (zoomFactor == (int)zoomFactor)
+        ? [NSString stringWithFormat:@"%dx", (int)zoomFactor]
+        : [NSString stringWithFormat:@"%.1fx", zoomFactor];
+    
+    NSMutableArray *details = [NSMutableArray array];
+    if (device == 1) [details addObject:@"Front"];
+    if (zoomFactor != 1.0 || (mode == 1 && device == 0)) [details addObject:zoomLabel];
+    if (flashMode == 1) [details addObject:@"Flash ON"];
+    if (autoShutter) [details addObject:(mode == 1 || mode == 2) ? @"Recording" : @"Snapped"];
+    
+    NSString *detailStr = (details.count > 0) ? [NSString stringWithFormat:@" (%@)", [details componentsJoinedByString:@", "]] : @"";
+    NSString *modeDesc = [NSString stringWithFormat:@"%@ Mode%@", modeName, detailStr];
+    
+    rc_show_hud_toast(@"Camera", modeDesc, icon);
+    return [NSString stringWithFormat:@"Opened Camera in %@\n", modeDesc];
+}
+
+static NSString *rc_open_camera_video(double zoomFactor, NSInteger flashMode) {
+    return rc_open_camera_unified(1, 0, zoomFactor, flashMode, NO);
+}
+
 static NSString *handle_command(NSString *cmd) {
     if (!cmd || ![cmd isKindOfClass:[NSString class]]) {
         SRLog(@"ERROR: handle_command received nil or invalid command string");
@@ -4778,6 +5784,11 @@ static NSString *handle_command(NSString *cmd) {
     if ([cleanCmd isEqualToString:@"km"] || [cleanCmd hasPrefix:@"km "]) {
         NSString *subArgs = [cleanCmd isEqualToString:@"km"] ? @"" : [cleanCmd substringFromIndex:3];
         return rc_execute_km_command(subArgs);
+    }
+    
+    if ([cleanCmd isEqualToString:@"mqtt"] || [cleanCmd hasPrefix:@"mqtt "]) {
+        NSString *subArgs = [cleanCmd isEqualToString:@"mqtt"] ? @"" : [cleanCmd substringFromIndex:5];
+        return rc_execute_mqtt_command(subArgs);
     }
     
     // Debug hex dump of command
@@ -5905,6 +6916,37 @@ static NSString *handle_command(NSString *cmd) {
             toggle_dnd(!current);
             return [NSString stringWithFormat:@"DND %@\n", !current ? @"Enabled" : @"Disabled"];
         }
+    } else if ([cleanCmd hasPrefix:@"location "] || [cleanCmd hasPrefix:@"location-"] ||
+               [cleanCmd hasPrefix:@"locationservices "] || [cleanCmd hasPrefix:@"locationservices-"] ||
+               [cleanCmd hasPrefix:@"location services "] ||
+               [cleanCmd hasPrefix:@"gps "] || [cleanCmd hasPrefix:@"gps-"] ||
+               [cleanCmd isEqualToString:@"location"] || [cleanCmd isEqualToString:@"locationservices"] || [cleanCmd isEqualToString:@"location services"] || [cleanCmd isEqualToString:@"gps"]) {
+        NSString *subCmd = nil;
+        if ([cleanCmd hasPrefix:@"location services "]) subCmd = [cleanCmd substringFromIndex:18];
+        else if ([cleanCmd hasPrefix:@"locationservices "]) subCmd = [cleanCmd substringFromIndex:17];
+        else if ([cleanCmd hasPrefix:@"locationservices-"]) subCmd = [cleanCmd substringFromIndex:17];
+        else if ([cleanCmd hasPrefix:@"location "]) subCmd = [cleanCmd substringFromIndex:9];
+        else if ([cleanCmd hasPrefix:@"location-"]) subCmd = [cleanCmd substringFromIndex:9];
+        else if ([cleanCmd hasPrefix:@"gps "]) subCmd = [cleanCmd substringFromIndex:4];
+        else if ([cleanCmd hasPrefix:@"gps-"]) subCmd = [cleanCmd substringFromIndex:4];
+        else subCmd = @"toggle";
+        
+        subCmd = [subCmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        if ([subCmd isEqualToString:@"on"] || [subCmd isEqualToString:@"enable"] || [subCmd isEqualToString:@"1"]) {
+            toggle_location_services(YES);
+            return @"Location Services Enabled\n";
+        } else if ([subCmd isEqualToString:@"off"] || [subCmd isEqualToString:@"disable"] || [subCmd isEqualToString:@"0"]) {
+            toggle_location_services(NO);
+            return @"Location Services Disabled\n";
+        } else if ([subCmd isEqualToString:@"status"]) {
+            BOOL current = get_location_services_state();
+            return current ? @"Location Services ON\n" : @"Location Services OFF\n";
+        } else if ([subCmd isEqualToString:@"toggle"]) {
+            BOOL current = get_location_services_state();
+            toggle_location_services(!current);
+            return [NSString stringWithFormat:@"Location Services %@\n", !current ? @"Enabled" : @"Disabled"];
+        }
     } else if ([cleanCmd hasPrefix:@"lpm "]) {
         NSString *subCmd = [[cleanCmd substringFromIndex:4] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if ([subCmd isEqualToString:@"on"]) {
@@ -6155,6 +7197,84 @@ static NSString *handle_command(NSString *cmd) {
              }
         }
         return @"Error: AVSystemController failed.\n";
+    } else if ([cleanCmd isEqualToString:@"camera"] || [cleanCmd hasPrefix:@"camera "] || 
+               [cleanCmd isEqualToString:@"open camera"] || [cleanCmd hasPrefix:@"open camera "]) {
+        NSString *lowCmd = [cleanCmd lowercaseString];
+        
+        // Mode detection
+        NSInteger mode = 0; // 0 = Photo (default)
+        if ([lowCmd containsString:@"video"] || [lowCmd containsString:@"movie"] || [lowCmd containsString:@"vid"] || [lowCmd containsString:@"2x"] || [lowCmd containsString:@"record"]) {
+            mode = 1;
+        }
+        if ([lowCmd containsString:@"photo"] || [lowCmd containsString:@"still"] || [lowCmd containsString:@"pic"] || [lowCmd containsString:@"picture"]) {
+            mode = 0;
+        }
+        if ([lowCmd containsString:@"portrait"] || [lowCmd containsString:@"port"]) {
+            mode = 6;
+        }
+        if ([lowCmd containsString:@"slomo"] || [lowCmd containsString:@"slo-mo"] || [lowCmd containsString:@"slowmo"] || [lowCmd containsString:@"slow-mo"]) {
+            mode = 2;
+        }
+        if ([lowCmd containsString:@"timelapse"] || [lowCmd containsString:@"time-lapse"] || [lowCmd containsString:@"lapse"]) {
+            mode = 4;
+        }
+        if ([lowCmd containsString:@"pano"] || [lowCmd containsString:@"panorama"]) {
+            mode = 3;
+        }
+        if ([lowCmd containsString:@"cinematic"] || [lowCmd containsString:@"cinema"]) {
+            mode = 7;
+        }
+        
+        // Device detection (0 = Back, 1 = Front)
+        NSInteger device = 0;
+        if ([lowCmd containsString:@"front"] || [lowCmd containsString:@"selfie"]) {
+            device = 1;
+        }
+        
+        // Flash / Torch
+        BOOL hasFlash = ([lowCmd containsString:@"flash"] || [lowCmd containsString:@"torch"]);
+        
+        // Standalone Shutter / Record Toggle commands
+        if ([lowCmd isEqualToString:@"camera shutter"] || [lowCmd isEqualToString:@"camera snap"] || 
+            [lowCmd isEqualToString:@"camera capture"] || [lowCmd isEqualToString:@"camera record toggle"] || 
+            [lowCmd isEqualToString:@"camera record-toggle"]) {
+            notify_post("com.saihgupr.remotecompanion.camera_shutter");
+            return [lowCmd containsString:@"record"] ? @"Toggled Camera Recording\n" : @"Triggered Camera Shutter\n";
+        }
+        
+        // Auto Shutter on launch
+        BOOL autoShutter = ([lowCmd containsString:@"record"] || [lowCmd containsString:@"snap"] || [lowCmd containsString:@"capture"] || [lowCmd containsString:@"shoot"]);
+        
+        // Zoom factor extraction
+        double zoom = 0.0;
+        NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"(\\d+(\\.\\d+)?)\\s*x" options:NSRegularExpressionCaseInsensitive error:nil];
+        NSTextCheckingResult *match = [regex firstMatchInString:lowCmd options:0 range:NSMakeRange(0, lowCmd.length)];
+        if (match) {
+            NSString *zoomStr = [lowCmd substringWithRange:[match rangeAtIndex:1]];
+            zoom = [zoomStr doubleValue];
+        } else {
+            NSArray *tokens = [lowCmd componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            for (NSString *tok in tokens) {
+                if ([tok isEqualToString:@"camera"] || [tok isEqualToString:@"open"] || [tok isEqualToString:@"video"] || 
+                    [tok isEqualToString:@"photo"] || [tok isEqualToString:@"portrait"] || [tok isEqualToString:@"slomo"] ||
+                    [tok isEqualToString:@"timelapse"] || [tok isEqualToString:@"pano"] || [tok isEqualToString:@"cinematic"] ||
+                    [tok isEqualToString:@"front"] || [tok isEqualToString:@"selfie"] || [tok isEqualToString:@"back"] ||
+                    [tok isEqualToString:@"flash"] || [tok isEqualToString:@"torch"] || [tok isEqualToString:@"on"] || 
+                    [tok isEqualToString:@"off"] || [tok isEqualToString:@"record"] || [tok isEqualToString:@"snap"] ||
+                    [tok isEqualToString:@"capture"] || [tok isEqualToString:@"shoot"]) continue;
+                double v = [tok doubleValue];
+                if (v > 0) {
+                    zoom = v;
+                    break;
+                }
+            }
+        }
+        
+        if (zoom <= 0) {
+            zoom = (mode == 1 && device == 0) ? 2.0 : 1.0;
+        }
+        
+        return rc_open_camera_unified(mode, device, zoom, hasFlash ? 1 : 0, autoShutter);
     } else if ([cleanCmd hasPrefix:@"uiopen "]) {
         NSString *bundleId = [[cleanCmd substringFromIndex:7] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         NSLog(@"[RemoteCommand] UIOPEN Bundle ID: %@", bundleId);
@@ -7262,7 +8382,7 @@ static NSDictionary* get_system_diagnostics(void) {
         : [NSString stringWithFormat:@"http://127.0.0.1:%d", g_actualWebPort];
 
     // Log File Info
-    NSString *logPath = @"/tmp/remotecommand.log";
+    NSString *logPath = rc_get_log_file_path();
     uint64_t logSizeBytes = 0;
     NSDictionary *logAttrs = [[NSFileManager defaultManager] attributesOfItemAtPath:logPath error:nil];
     if (logAttrs) {
@@ -7419,11 +8539,14 @@ static void start_web_server() {
                                 if (![g_triggerConfig[@"webUIEnabled"] boolValue]) {
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 403 Forbidden\r\n%@Content-Length: 17\r\n\r\nWeb UI is disabled", cors];
                                 } else {
-                                    NSString *htmlPath = @"/Library/Application Support/RemoteCompanion/rc_webui.html";
+                                    NSString *htmlPath = [NSString stringWithFormat:@"%@/Library/Application Support/RemoteCompanion/rc_webui.html", root_prefix()];
                                     NSString *html = [NSString stringWithContentsOfFile:htmlPath encoding:NSUTF8StringEncoding error:nil];
                                     if (!html) {
                                         NSString *rootlessPath = @"/var/jb/Library/Application Support/RemoteCompanion/rc_webui.html";
                                         html = [NSString stringWithContentsOfFile:rootlessPath encoding:NSUTF8StringEncoding error:nil];
+                                    }
+                                    if (!html) {
+                                        html = [NSString stringWithContentsOfFile:@"/Library/Application Support/RemoteCompanion/rc_webui.html" encoding:NSUTF8StringEncoding error:nil];
                                     }
                                     if (!html) {
                                         html = @"<html><body><h1>RemoteCompanion WebUI</h1><p>rc_webui.html not found. Please reinstall the tweak.</p></body></html>";
@@ -7433,10 +8556,14 @@ static void start_web_server() {
                                 }
                             } else if ([path isEqualToString:@"/favicon.ico"] || [path isEqualToString:@"/apple-touch-icon.png"] || [path hasPrefix:@"/favicon-"] || [path hasPrefix:@"/android-chrome-"] || [path isEqualToString:@"/site.webmanifest"]) {
                                 NSString *filename = [path lastPathComponent];
-                                NSString *assetPath = [NSString stringWithFormat:@"/Library/Application Support/RemoteCompanion/%@", filename];
+                                NSString *assetPath = [NSString stringWithFormat:@"%@/Library/Application Support/RemoteCompanion/%@", root_prefix(), filename];
                                 NSData *assetData = [NSData dataWithContentsOfFile:assetPath];
                                 if (!assetData) {
                                     assetPath = [NSString stringWithFormat:@"/var/jb/Library/Application Support/RemoteCompanion/%@", filename];
+                                    assetData = [NSData dataWithContentsOfFile:assetPath];
+                                }
+                                if (!assetData) {
+                                    assetPath = [NSString stringWithFormat:@"/Library/Application Support/RemoteCompanion/%@", filename];
                                     assetData = [NSData dataWithContentsOfFile:assetPath];
                                 }
                                 
@@ -7498,7 +8625,7 @@ static void start_web_server() {
                                         }
                                     }
                                 } else if ([path isEqualToString:@"/api/logs"] && [method isEqualToString:@"GET"]) {
-                                    NSString *logPath = @"/tmp/remotecommand.log";
+                                    NSString *logPath = rc_get_log_file_path();
                                     NSString *logContent = @"";
                                     if ([[NSFileManager defaultManager] fileExistsAtPath:logPath]) {
                                         NSError *err = nil;
@@ -7538,7 +8665,7 @@ static void start_web_server() {
                                     });
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
                                 } else if ([path isEqualToString:@"/api/sysaction/clearlog"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
-                                    NSString *logPath = @"/tmp/remotecommand.log";
+                                    NSString *logPath = rc_get_log_file_path();
                                     [@"" writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
                                     responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\": true}", cors];
                                 } else if ([path isEqualToString:@"/api/sysaction/safemode"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
@@ -7663,10 +8790,106 @@ static void start_web_server() {
                                      NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
                                      NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
                                      responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                 } else if ([path isEqualToString:@"/api/mqtt/test"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                       load_trigger_config();
+                                       NSString *overrideHost = nil;
+                                       NSInteger overridePort = 0;
+                                       NSString *overrideUser = nil;
+                                       NSString *overridePass = nil;
+                                       NSString *overrideClientId = nil;
+                                       if ([method isEqualToString:@"POST"]) {
+                                           NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                           int contentLength = 0;
+                                           if (clRange.location != NSNotFound) {
+                                               NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                               contentLength = [afterCl intValue];
+                                           }
+                                           const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                           if (headersEnd != NULL) {
+                                               size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                               size_t availableBodyLength = valread - headerBytesOffset;
+                                               NSMutableData *bodyData = [NSMutableData data];
+                                               if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                               while (bodyData.length < contentLength) {
+                                                   char chunk[4096];
+                                                   ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                                   if (chunkRead <= 0) break;
+                                                   [bodyData appendBytes:chunk length:chunkRead];
+                                               }
+                                               NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                               if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                                   overrideHost = jsonObj[@"mqttHost"];
+                                                   if (jsonObj[@"mqttPort"]) overridePort = [jsonObj[@"mqttPort"] integerValue];
+                                                   overrideUser = jsonObj[@"mqttUser"];
+                                                   overridePass = jsonObj[@"mqttPassword"];
+                                                   overrideClientId = jsonObj[@"mqttClientId"];
+                                               }
+                                           }
+                                       }
+                                       NSString *host = overrideHost.length > 0 ? overrideHost : (g_triggerConfig[@"mqttHost"] ?: @"192.168.1.50");
+                                       NSInteger port = overridePort > 0 ? overridePort : ([g_triggerConfig[@"mqttPort"] integerValue] > 0 ? [g_triggerConfig[@"mqttPort"] integerValue] : 1883);
+                                       NSString *user = overrideUser != nil ? overrideUser : g_triggerConfig[@"mqttUser"];
+                                       NSString *pass = overridePass != nil ? overridePass : g_triggerConfig[@"mqttPassword"];
+                                       NSString *clientId = overrideClientId.length > 0 ? overrideClientId : (g_triggerConfig[@"mqttClientId"] ?: @"RemoteCompanion");
+                                       
+                                       NSError *err = nil;
+                                       BOOL ok = rc_mqtt_publish(host, port, user, pass, clientId, nil, nil, 0, NO, &err);
+                                       NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                       if (ok) {
+                                           resp[@"ok"] = @YES;
+                                           resp[@"message"] = [NSString stringWithFormat:@"Connected to MQTT broker (%@:%ld)", host, (long)port];
+                                       } else {
+                                           resp[@"ok"] = @NO;
+                                           resp[@"error"] = err.localizedDescription ?: @"Connection failed";
+                                       }
+                                       NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                       NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                       responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                   } else if ([path isEqualToString:@"/api/mqtt/publish"] && [method isEqualToString:@"POST"]) {
+                                       load_trigger_config();
+                                       NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                       int contentLength = 0;
+                                       if (clRange.location != NSNotFound) {
+                                           NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                           contentLength = [afterCl intValue];
+                                       }
+                                       const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                       NSString *topic = nil;
+                                       NSString *payload = nil;
+                                       if (headersEnd != NULL) {
+                                           size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                           size_t availableBodyLength = valread - headerBytesOffset;
+                                           NSMutableData *bodyData = [NSMutableData data];
+                                           if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                           while (bodyData.length < contentLength) {
+                                               char chunk[4096];
+                                               ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                               if (chunkRead <= 0) break;
+                                               [bodyData appendBytes:chunk length:chunkRead];
+                                           }
+                                           NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                           if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                               topic = jsonObj[@"topic"];
+                                               payload = jsonObj[@"payload"];
+                                           }
+                                       }
+                                       NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                       if (topic.length > 0) {
+                                           NSString *cmdStr = payload.length > 0 ? [NSString stringWithFormat:@"publish %@ %@", topic, payload] : [NSString stringWithFormat:@"publish %@", topic];
+                                           NSString *mqttRes = rc_execute_mqtt_command(cmdStr);
+                                           resp[@"ok"] = [mqttRes containsString:@"Error:"] || [mqttRes containsString:@"failed:"] ? @NO : @YES;
+                                           resp[@"output"] = mqttRes;
+                                       } else {
+                                           resp[@"ok"] = @NO;
+                                           resp[@"error"] = @"Missing topic parameter";
+                                       }
+                                       NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                       NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                       responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
                                  } else if ([path isEqualToString:@"/api/km/trigger"] && [method isEqualToString:@"POST"]) {
                                      load_trigger_config();
-                                     NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
                                      int contentLength = 0;
+                                     NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
                                      if (clRange.location != NSNotFound) {
                                          NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
                                          contentLength = [afterCl intValue];
@@ -7710,6 +8933,62 @@ static void start_web_server() {
                                      NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
                                      NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
                                      responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
+                                  } else if ([path isEqualToString:@"/api/km/macros"] && ([method isEqualToString:@"POST"] || [method isEqualToString:@"GET"])) {
+                                      load_trigger_config();
+                                      NSString *overrideUrl = nil;
+                                      NSString *overrideUser = nil;
+                                      NSString *overridePass = nil;
+                                      if ([method isEqualToString:@"POST"]) {
+                                          NSRange clRange = [requestString rangeOfString:@"Content-Length: " options:NSCaseInsensitiveSearch];
+                                          int contentLength = 0;
+                                          if (clRange.location != NSNotFound) {
+                                              NSString *afterCl = [requestString substringFromIndex:clRange.location + clRange.length];
+                                              contentLength = [afterCl intValue];
+                                          }
+                                          const char *headersEnd = strnstr(buffer, "\r\n\r\n", valread);
+                                          if (headersEnd != NULL) {
+                                              size_t headerBytesOffset = (headersEnd - buffer) + 4;
+                                              size_t availableBodyLength = valread - headerBytesOffset;
+                                              NSMutableData *bodyData = [NSMutableData data];
+                                              if (availableBodyLength > 0) [bodyData appendBytes:(buffer + headerBytesOffset) length:availableBodyLength];
+                                              while (bodyData.length < contentLength) {
+                                                  char chunk[4096];
+                                                  ssize_t chunkRead = read(new_socket, chunk, sizeof(chunk));
+                                                  if (chunkRead <= 0) break;
+                                                  [bodyData appendBytes:chunk length:chunkRead];
+                                              }
+                                              NSDictionary *jsonObj = [NSJSONSerialization JSONObjectWithData:bodyData options:0 error:nil];
+                                              if ([jsonObj isKindOfClass:[NSDictionary class]]) {
+                                                  overrideUrl = jsonObj[@"kmUrl"];
+                                                  overrideUser = jsonObj[@"kmUser"];
+                                                  overridePass = jsonObj[@"kmPassword"];
+                                              }
+                                          }
+                                      }
+                                      
+                                      NSDictionary *res = rc_execute_km_request(@"authenticated.html", @"GET", nil, overrideUrl, overrideUser, overridePass);
+                                      if (![res[@"ok"] boolValue]) {
+                                          // Fallback to / if authenticated.html was not accessible
+                                          NSDictionary *fallbackRes = rc_execute_km_request(@"/", @"GET", nil, overrideUrl, overrideUser, overridePass);
+                                          if ([fallbackRes[@"ok"] boolValue] && [fallbackRes[@"data"] length] > 0) {
+                                              res = fallbackRes;
+                                          }
+                                      }
+                                      
+                                      NSMutableDictionary *resp = [NSMutableDictionary dictionary];
+                                      if ([res[@"ok"] boolValue] && [res[@"data"] isKindOfClass:[NSString class]]) {
+                                          NSArray *groups = rc_parse_km_html(res[@"data"]);
+                                          resp[@"ok"] = @YES;
+                                          resp[@"groups"] = groups ?: @[];
+                                      } else {
+                                          resp[@"ok"] = @NO;
+                                          resp[@"error"] = res[@"error"] ?: @"Could not connect to Keyboard Maestro Web Server";
+                                          resp[@"groups"] = @[];
+                                      }
+                                      
+                                      NSData *respData = [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
+                                      NSString *jsonStr = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+                                      responseString = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\n%@Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n%@", cors, (unsigned long)[jsonStr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], jsonStr];
     } else if ([path isEqualToString:@"/api/version"] && [method isEqualToString:@"GET"]) {
                                 NSString *plistPath = [NSString stringWithFormat:@"%@/Applications/RemoteCompanion.app/Info.plist", root_prefix()];
                                 NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:plistPath];
@@ -7858,6 +9137,7 @@ static void start_web_server() {
                                     @{@"command": @"unlock <passcode>", @"desc": @"Security: Unlock device screen (INSECURE: Passcode sent in plain text!)"},
                                     @{@"command": @"home", @"desc": @"System: Simulate a Home Button press"},
                                     @{@"command": @"screenshot", @"desc": @"System: Take a screenshot"},
+                                    @{@"command": @"camera video [zoom] [flash]", @"desc": @"Camera: Open Camera in Video mode (e.g. 2x, 2x flash)"},
                                     @{@"command": @"open control center", @"desc": @"System: Open Control Center"},
                                     @{@"command": @"app switcher", @"desc": @"System: Open App Switcher"},
                                     @{@"command": @"open <bundleId>", @"desc": @"System: Launch an application by bundle identifier"},
@@ -7880,6 +9160,7 @@ static void start_web_server() {
                                     @{@"command": @"bt on/off", @"desc": @"Toggles: Bluetooth power"},
                                     @{@"command": @"wifi on/off", @"desc": @"Toggles: WiFi power"},
                                     @{@"command": @"cellular on/off", @"desc": @"Toggles: Cellular Data power"},
+                                    @{@"command": @"location on/off/toggle/status", @"desc": @"Toggles: Location Services (GPS)"},
                                     @{@"command": @"airplane on/off", @"desc": @"Toggles: Airplane Mode power"},
                                     @{@"command": @"dnd on/off", @"desc": @"Toggles: Do Not Disturb Mode"},
                                     @{@"command": @"audiomix on/off", @"desc": @"Toggles: AudioMix simultaneous playback"},
@@ -8895,6 +10176,18 @@ static void handle_hid_event(void* target, void* refcon, IOHIDEventSystemClientR
                         g_powerIsDown = NO;
                         SRLog(@"[HID] ⚡️ Power UP");
                         
+                        // Invalidate pending power hold timers immediately on physical button release
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            if (g_lockButtonTimer) {
+                                [g_lockButtonTimer invalidate];
+                                g_lockButtonTimer = nil;
+                            }
+                            if (g_systemPowerOffTimer) {
+                                [g_systemPowerOffTimer invalidate];
+                                g_systemPowerOffTimer = nil;
+                            }
+                        });
+
                         // If a combo was triggered, DON'T count this as a click for multi-tap
                         if (g_powerVolComboTriggered) {
                             SRLog(@"[HID] Combo was triggered, resetting power click count.");
@@ -9029,26 +10322,6 @@ static void setup_background_hid_listener() {
     SRLog(@"[RemoteCompanion] Hooked SBProximitySensorManager custom init: %@", g_proximitySensorManager);
     return orig;
 }
-- (void)_setObjectInProximity:(BOOL)arg1 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setObjectInProximity: %d", arg1);
-    %orig;
-}
-- (void)_setProximityDetectionEnabled:(BOOL)arg1 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _setProximityDetectionEnabled: %d (forced=%d)", arg1, g_forceProximityDetection);
-    if (g_forceProximityDetection) {
-        %orig(YES);
-    } else {
-        %orig;
-    }
-}
-- (void)client:(id)arg1 wantsProximityDetectionEnabled:(BOOL)arg2 {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager client: %@ wantsProximityDetectionEnabled: %d", arg1, arg2);
-    %orig;
-}
-- (void)_updateProxState {
-    SRLog(@"[RemoteCompanion] SBProximitySensorManager _updateProxState");
-    %orig;
-}
 %end
 
 %hook SBLockHardwareButtonActions
@@ -9080,43 +10353,31 @@ static void setup_background_hid_listener() {
     }
     
     load_trigger_config();
-    BOOL enabled = [g_triggerConfig[@"masterEnabled"] boolValue] && 
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL longPressEnabled = masterEnabled && 
                    [g_triggerConfig[@"triggers"][@"power_long_press"][@"enabled"] boolValue];
 
-    SRLog(@"Power Button DOWN (Actions) - enabled=%d", enabled);
+    SRLog(@"Power Button DOWN (Actions) - enabled=%d", longPressEnabled);
 
-    if (enabled) {
-        // Automatically enable proximity sensor monitoring during power button press
-        g_forceProximityDetection = YES;
-        id manager = g_proximitySensorManager;
-        if (!manager) {
-            Class cls = objc_getClass("SBProximitySensorManager");
-            if (cls && [cls respondsToSelector:@selector(sharedInstance)]) {
-                manager = [cls performSelector:@selector(sharedInstance)];
-            }
-        }
-        if (manager) {
-            if ([manager respondsToSelector:@selector(_enableProx)]) {
-                [manager _enableProx];
-            } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
-                [manager _setProximityDetectionEnabled:YES];
-            }
-        }
-        [UIDevice currentDevice].proximityMonitoringEnabled = YES;
-
+    if (longPressEnabled) {
         if (g_lockButtonTimer == nil && !g_lockButtonTriggered) {
             g_lockButtonTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:NO block:^(NSTimer *timer) {
-                g_lockButtonTriggered = YES;
                 g_lockButtonTimer = nil;
+                if (!g_powerIsDown) {
+                    SRLog(@"Power Long Press ignored because button is not down");
+                    return;
+                }
+                g_lockButtonTriggered = YES;
                 trigger_haptic();
                 RCExecuteTrigger(@"power_long_press");
                 SRLog(@"Power Long Press Fired (Stage 1)!");
                 
                 // Start Stage 2 Timer (System Power Off) - 2.0s later (2.5s total hold)
                 g_systemPowerOffTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:NO block:^(NSTimer *t) {
+                     g_systemPowerOffTimer = nil;
+                     if (!g_powerIsDown) return;
                      SRLog(@"Power Long Press (Stage 2) - Forcing System Power Off Screen");
                      g_forceSystemLongPress = YES;
-                     g_systemPowerOffTimer = nil;
                      
                      // Manually invoke the action again, but this time g_forceSystemLongPress is YES
                      [self performLongPressActions];
@@ -9125,9 +10386,14 @@ static void setup_background_hid_listener() {
         }
     }
 
-    // SUPPRESSION: If a multi-click sequence is in progress, swallow the DOWN event.
-    // This stops the phone from waking/locking on subsequent clicks.
-    if (g_powerClickCount >= 1) {
+    BOOL multiClickEnabled = masterEnabled && 
+        ([g_triggerConfig[@"triggers"][@"power_double_tap"][@"enabled"] boolValue] ||
+         [g_triggerConfig[@"triggers"][@"power_triple_click"][@"enabled"] boolValue] ||
+         [g_triggerConfig[@"triggers"][@"power_quadruple_click"][@"enabled"] boolValue]);
+
+    // SUPPRESSION: If a multi-click sequence is in progress, swallow the DOWN event for 2nd click onwards.
+    // This stops the phone from waking/locking on subsequent clicks while allowing single-tap %orig.
+    if (multiClickEnabled && g_powerClickCount >= 2) {
         SRLog(@"Suppressing system DOWN for click sequence (count=%d)", g_powerClickCount);
         return;
     }
@@ -9139,24 +10405,6 @@ static void setup_background_hid_listener() {
     SRLog(@"performButtonUpPreActions on %@", [self class]);
     SRLog(@"Power Button UP (Actions)");
     g_powerIsDown = NO;
-
-    // Automatically disable proximity sensor monitoring when power button is released
-    g_forceProximityDetection = NO;
-    id manager = g_proximitySensorManager;
-    if (!manager) {
-        Class cls = objc_getClass("SBProximitySensorManager");
-        if (cls && [cls respondsToSelector:@selector(sharedInstance)]) {
-            manager = [cls performSelector:@selector(sharedInstance)];
-        }
-    }
-    if (manager) {
-        if ([manager respondsToSelector:@selector(_disableProx)]) {
-            [manager _disableProx];
-        } else if ([manager respondsToSelector:@selector(_setProximityDetectionEnabled:)]) {
-            [manager _setProximityDetectionEnabled:NO];
-        }
-    }
-    [UIDevice currentDevice].proximityMonitoringEnabled = NO;
 
     if (g_lockButtonTimer) {
         [g_lockButtonTimer invalidate];
@@ -9174,9 +10422,16 @@ static void setup_background_hid_listener() {
         return; 
     }
 
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL multiClickEnabled = masterEnabled && 
+        ([g_triggerConfig[@"triggers"][@"power_double_tap"][@"enabled"] boolValue] ||
+         [g_triggerConfig[@"triggers"][@"power_triple_click"][@"enabled"] boolValue] ||
+         [g_triggerConfig[@"triggers"][@"power_quadruple_click"][@"enabled"] boolValue]);
+
     // SUPPRESSION: Swallow UP events for 2nd click onwards.
     // Click 1 passes %orig so system can lock/wake normally if sequence stops.
-    if (g_powerClickCount >= 2) {
+    if (multiClickEnabled && g_powerClickCount >= 2) {
         SRLog(@"Suppressing system UP for click #%d", g_powerClickCount);
         return;
     }
@@ -9199,6 +10454,35 @@ static void setup_background_hid_listener() {
         g_forceSystemLongPress = NO; // Reset immediately
         %orig;
         return;
+    }
+
+    load_trigger_config();
+    BOOL masterEnabled = [g_triggerConfig[@"masterEnabled"] boolValue];
+    BOOL longPressEnabled = masterEnabled && 
+                   [g_triggerConfig[@"triggers"][@"power_long_press"][@"enabled"] boolValue];
+
+    if (longPressEnabled) {
+        if (!g_lockButtonTriggered) {
+            if (g_lockButtonTimer) {
+                [g_lockButtonTimer invalidate];
+                g_lockButtonTimer = nil;
+            }
+            g_lockButtonTriggered = YES;
+            trigger_haptic();
+            RCExecuteTrigger(@"power_long_press");
+            SRLog(@"Power Long Press Fired (via performLongPressActions)!");
+            
+            // Start Stage 2 Timer (System Power Off) - 2.0s later
+            g_systemPowerOffTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:NO block:^(NSTimer *t) {
+                 g_systemPowerOffTimer = nil;
+                 if (!g_powerIsDown) return;
+                 SRLog(@"Power Long Press (Stage 2) - Forcing System Power Off Screen");
+                 g_forceSystemLongPress = YES;
+                 [self performLongPressActions];
+            }];
+        }
+        SRLog(@"Power Long Press Actions (Default) Suppressed (Stage 1 active)");
+        return; 
     }
 
     if (g_lockButtonTriggered) {
@@ -9808,6 +11092,20 @@ static void update_edge_gestures() {
 %end
 
 
+static NSTimeInterval s_last_camera_app_trigger = 0;
+
+static void rc_camera_launched_notification_callback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+        if (now - s_last_camera_app_trigger > 2.0) {
+            s_last_camera_app_trigger = now;
+            g_currentAppBundleId = @"com.apple.camera";
+            SRLog(@"[AppLaunch] Camera App Launched event received (lockscreen or unlocked), triggering app_launch_com.apple.camera");
+            RCExecuteTrigger(@"app_launch_com.apple.camera");
+        }
+    });
+}
+
 %hook SpringBoard
 
 - (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
@@ -9837,6 +11135,9 @@ static void update_edge_gestures() {
             NSString *effectiveBundleId = bundleId ?: @"com.apple.springboard";
             if (![effectiveBundleId isEqualToString:lastApp]) {
                 lastApp = effectiveBundleId;
+                if ([effectiveBundleId isEqualToString:@"com.apple.camera"]) {
+                    s_last_camera_app_trigger = [[NSDate date] timeIntervalSince1970];
+                }
                 SRLog(@"[AppLaunch] App became Active: %@", effectiveBundleId);
                 NSString *triggerKey = [NSString stringWithFormat:@"app_launch_%@", effectiveBundleId];
                 RCExecuteTrigger(triggerKey);
@@ -9855,36 +11156,6 @@ static void update_edge_gestures() {
 
 %end
 
-%ctor {
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-    if ([bundleID isEqualToString:@"com.apple.springboard"]) {
-        %init(_ungrouped);
-        
-        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
-        
-        // Start Background HID Listener immediately (safe for NFC)
-        setup_background_hid_listener();
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SRLog(@"Delayed Initialization & Gesture Setup...");
-            
-            load_trigger_config();
-            register_config_observer();
-            register_simulation_observers();
-            register_system_event_observers(); // WiFi/BT Triggers
-            start_server();
-            start_web_server();
-            start_schedule_timer();
-            
-            // Conditionally register edge gestures based on config
-            update_edge_gestures();
-            
-            SRLog(@"Initialization Complete.");
-        });
-    } else {
-        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
-    }
-}
 %hook BBServer
 - (void)publishBulletin:(id)bulletin destinations:(NSUInteger)destinations {
     %orig;
@@ -9932,3 +11203,316 @@ static void update_edge_gestures() {
     }
 }
 %end
+
+// ==========================================
+// Camera App Hooks (com.apple.camera)
+// ==========================================
+
+@interface CAMViewfinderViewController : UIViewController
+- (void)changeToCaptureMode:(NSInteger)mode device:(NSInteger)device animated:(BOOL)animated;
+- (void)changeToCaptureMode:(NSInteger)mode animated:(BOOL)animated;
+- (void)changeToCaptureMode:(NSInteger)mode;
+- (void)changeToZoomFactor:(double)zoom animated:(BOOL)animated;
+- (void)setZoomFactor:(double)zoom;
+- (void)_setZoomFactor:(double)zoom;
+- (id)zoomControl;
+@end
+
+@interface CAMZoomControl : UIControl
+- (void)setZoomFactor:(double)zoom animated:(BOOL)animated;
+- (void)setZoomFactor:(double)zoom;
+- (void)setSelectedZoomFactor:(double)zoom;
+@end
+
+%group CameraHook
+
+static NSTimeInterval s_last_shutter_time = 0;
+static NSString *s_last_intent_uuid = nil;
+static NSString *s_last_autoshutter_uuid = nil;
+
+static void rc_trigger_camera_shutter(id viewfinder) {
+    if (!viewfinder) return;
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (now - s_last_shutter_time < 1.2) {
+        SRLog(@"[CameraHook] rc_trigger_camera_shutter debounced (%.2fs ago)", now - s_last_shutter_time);
+        return;
+    }
+    s_last_shutter_time = now;
+    SRLog(@"[CameraHook] rc_trigger_camera_shutter executing on %@", viewfinder);
+    
+    // Method 1: CameraUI Master Shutter Handler
+    if ([viewfinder respondsToSelector:@selector(_handleShutterButtonActionWithEventTriggerDescription:)]) {
+        SRLog(@"[CameraHook] Calling _handleShutterButtonActionWithEventTriggerDescription:");
+        ((void (*)(id, SEL, id))objc_msgSend)(viewfinder, @selector(_handleShutterButtonActionWithEventTriggerDescription:), @"RemoteCompanion");
+        return;
+    }
+    
+    // Method 2: capturePhoto / direct capture
+    if ([viewfinder respondsToSelector:@selector(capturePhoto)]) {
+        SRLog(@"[CameraHook] Calling capturePhoto");
+        ((void (*)(id, SEL))objc_msgSend)(viewfinder, @selector(capturePhoto));
+        return;
+    }
+    
+    // Method 3: CAMViewfinderViewController direct methods
+    if ([viewfinder respondsToSelector:@selector(pressShutterButton)]) {
+        SRLog(@"[CameraHook] Calling pressShutterButton");
+        ((void (*)(id, SEL))objc_msgSend)(viewfinder, @selector(pressShutterButton));
+        return;
+    }
+    
+    // Method 4: Check for shutterButton property
+    if ([viewfinder respondsToSelector:@selector(shutterButton)]) {
+        id sb = [viewfinder performSelector:@selector(shutterButton)];
+        if (sb) {
+            SRLog(@"[CameraHook] Found shutterButton: %@", sb);
+            if ([sb respondsToSelector:@selector(sendActionsForControlEvents:)]) {
+                [sb performSelector:@selector(sendActionsForControlEvents:) withObject:@(UIControlEventTouchUpInside)];
+                return;
+            }
+        }
+    }
+    
+    // Method 5: Check bottomBar / shutterControl / viewfinder controls
+    if ([viewfinder respondsToSelector:@selector(bottomBar)]) {
+        id bb = [viewfinder performSelector:@selector(bottomBar)];
+        if (bb && [bb respondsToSelector:@selector(shutterButton)]) {
+            id sb = [bb performSelector:@selector(shutterButton)];
+            if (sb && [sb respondsToSelector:@selector(sendActionsForControlEvents:)]) {
+                SRLog(@"[CameraHook] Found bottomBar shutterButton: %@", sb);
+                [sb performSelector:@selector(sendActionsForControlEvents:) withObject:@(UIControlEventTouchUpInside)];
+                return;
+            }
+        }
+    }
+    
+    // Method 6: Simulated tap on physical/UI shutter button location
+    rc_load_touch_symbols();
+    CGSize s = [UIScreen mainScreen].bounds.size;
+    double sw = MIN(s.width, s.height);
+    double sh = MAX(s.width, s.height);
+    if (sw <= 0) sw = 375.0;
+    if (sh <= 0) sh = 667.0;
+    SRLog(@"[CameraHook] Simulating tap on shutter at (%.1f, %.1f)", sw * 0.50, sh * 0.88);
+    rc_simulate_tap(sw * 0.50, sh * 0.88);
+}
+
+static void rc_camera_shutter_notification_callback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    id vf = (__bridge id)observer;
+    if (vf) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            rc_trigger_camera_shutter(vf);
+        });
+    }
+}
+
+static void rc_apply_camera_intent_to_viewfinder(id viewfinder) {
+    if (!viewfinder) return;
+    NSDictionary *intent = [NSDictionary dictionaryWithContentsOfFile:@"/tmp/rc_camera_intent.plist"];
+    if (!intent) return;
+    
+    NSTimeInterval ts = [intent[@"timestamp"] doubleValue];
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (now - ts > 12.0) return; // Expired (older than 12 seconds)
+    
+    NSString *uuid = intent[@"uuid"];
+    if (uuid && [uuid isEqualToString:s_last_intent_uuid]) {
+        return; // Already processed this intent
+    }
+    s_last_intent_uuid = [uuid copy];
+    
+    NSInteger targetMode = [intent[@"mode"] integerValue];
+    NSInteger targetDevice = [intent[@"device"] integerValue]; // 0 = Back, 1 = Front
+    double targetZoom = [intent[@"zoom"] doubleValue];
+    if (targetZoom <= 0) targetZoom = (targetMode == 1 && targetDevice == 0) ? 2.0 : 1.0;
+    NSInteger targetFlash = [intent[@"flash"] integerValue]; // 1 = Flash / Torch ON
+    BOOL autoShutter = [intent[@"autoShutter"] boolValue];
+    
+    SRLog(@"[CameraHook] Executing intent (UUID=%@): targetMode=%ld, targetDevice=%ld, targetZoom=%.1f, targetFlash=%ld, autoShutter=%d on %@", 
+          uuid, (long)targetMode, (long)targetDevice, targetZoom, (long)targetFlash, autoShutter, viewfinder);
+    
+    // 1. Primary Mode & Device Switch
+    if ([viewfinder respondsToSelector:@selector(_handleUserChangedToMode:device:zoomFactor:)]) {
+        SRLog(@"[CameraHook] Invoking _handleUserChangedToMode:%ld device:%ld zoomFactor:%.1f", (long)targetMode, (long)targetDevice, targetZoom);
+        ((void (*)(id, SEL, NSInteger, NSInteger, double))objc_msgSend)(viewfinder, @selector(_handleUserChangedToMode:device:zoomFactor:), targetMode, targetDevice, targetZoom);
+    } else if ([viewfinder respondsToSelector:@selector(changeToCaptureMode:device:animated:)]) {
+        [viewfinder changeToCaptureMode:targetMode device:targetDevice animated:NO];
+    }
+    
+    // 2. Zoom Control Notification
+    if (targetDevice == 0 && [viewfinder respondsToSelector:@selector(zoomControl:didChangeZoomFactor:interactionType:)]) {
+        id zc = nil;
+        if ([viewfinder respondsToSelector:@selector(zoomControl)]) {
+            zc = [viewfinder performSelector:@selector(zoomControl)];
+        }
+        ((void (*)(id, SEL, id, double, NSInteger))objc_msgSend)(viewfinder, @selector(zoomControl:didChangeZoomFactor:interactionType:), zc, targetZoom, 1);
+    }
+    
+    // 3. Mode Dial fallback
+    if ([viewfinder respondsToSelector:@selector(modeDial)]) {
+        id dial = [viewfinder performSelector:@selector(modeDial)];
+        if (dial && [dial respondsToSelector:@selector(setSelectedMode:animated:)]) {
+            [dial performSelector:@selector(setSelectedMode:animated:) withObject:@(targetMode) withObject:@(NO)];
+        }
+    }
+    
+    // 4. Flash / Torch Control (applied cleanly once capture session is ready)
+    if (targetFlash == 1) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SRLog(@"[CameraHook] Engaging Flash/Torch ON once");
+            if ([viewfinder respondsToSelector:@selector(_setResolvedTorchMode:animated:)]) {
+                ((void (*)(id, SEL, NSInteger, BOOL))objc_msgSend)(viewfinder, @selector(_setResolvedTorchMode:animated:), 1, NO);
+            }
+            if ([viewfinder respondsToSelector:@selector(_handleUserChangedTorchMode:)]) {
+                ((void (*)(id, SEL, NSInteger))objc_msgSend)(viewfinder, @selector(_handleUserChangedTorchMode:), 1);
+            }
+            if ([viewfinder respondsToSelector:@selector(_setResolvedFlashMode:)]) {
+                ((void (*)(id, SEL, NSInteger))objc_msgSend)(viewfinder, @selector(_setResolvedFlashMode:), 1);
+            }
+            if ([viewfinder respondsToSelector:@selector(_handleUserChangedFlashMode:)]) {
+                ((void (*)(id, SEL, NSInteger))objc_msgSend)(viewfinder, @selector(_handleUserChangedFlashMode:), 1);
+            }
+            if ([viewfinder respondsToSelector:@selector(remoteShutter:setFlashMode:)]) {
+                ((void (*)(id, SEL, id, NSInteger))objc_msgSend)(viewfinder, @selector(remoteShutter:setFlashMode:), nil, 1);
+            }
+            if ([viewfinder respondsToSelector:@selector(torchButton)]) {
+                id tb = [viewfinder performSelector:@selector(torchButton)];
+                if (tb && [tb respondsToSelector:@selector(setTorchMode:animated:)]) {
+                    ((void (*)(id, SEL, NSInteger, BOOL))objc_msgSend)(tb, @selector(setTorchMode:animated:), 1, NO);
+                } else if (tb && [tb respondsToSelector:@selector(setTorchMode:)]) {
+                    ((void (*)(id, SEL, NSInteger))objc_msgSend)(tb, @selector(setTorchMode:), 1);
+                }
+            }
+        });
+    }
+    
+    // 5. Auto Shutter trigger (fires exactly once if requested)
+    if (autoShutter) {
+        if (!uuid || ![uuid isEqualToString:s_last_autoshutter_uuid]) {
+            s_last_autoshutter_uuid = [uuid copy];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.80 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                SRLog(@"[CameraHook] Auto-triggering shutter once for intent %@...", uuid);
+                rc_trigger_camera_shutter(viewfinder);
+            });
+        }
+    }
+}
+
+static void rc_camera_intent_notification_callback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    id vf = (__bridge id)observer;
+    if (vf) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            rc_apply_camera_intent_to_viewfinder(vf);
+        });
+    }
+}
+
+%hook CAMViewfinderViewController
+
+static NSTimeInterval s_last_camera_launch_notify = 0;
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    SRLog(@"[CameraHook] viewDidAppear called on %@", self);
+    rc_apply_camera_intent_to_viewfinder(self);
+    
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (now - s_last_camera_launch_notify > 2.0) {
+        s_last_camera_launch_notify = now;
+        SRLog(@"[CameraHook] Posting com.saihgupr.remotecompanion.camera_launched");
+        notify_post("com.saihgupr.remotecompanion.camera_launched");
+    }
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    SRLog(@"[CameraHook] viewWillAppear called on %@", self);
+    rc_apply_camera_intent_to_viewfinder(self);
+}
+
+- (void)viewDidLoad {
+    %orig;
+    SRLog(@"[CameraHook] viewDidLoad called on %@", self);
+    
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge const void *)(self),
+        (CFNotificationCallback)rc_camera_intent_notification_callback,
+        CFSTR("com.saihgupr.remotecompanion.camera_intent"),
+        NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately
+    );
+    
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge const void *)(self),
+        (CFNotificationCallback)rc_camera_shutter_notification_callback,
+        CFSTR("com.saihgupr.remotecompanion.camera_shutter"),
+        NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately
+    );
+}
+
+- (void)dealloc {
+    CFNotificationCenterRemoveObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge const void *)(self),
+        CFSTR("com.saihgupr.remotecompanion.camera_intent"),
+        NULL
+    );
+    CFNotificationCenterRemoveObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge const void *)(self),
+        CFSTR("com.saihgupr.remotecompanion.camera_shutter"),
+        NULL
+    );
+    %orig;
+}
+
+%end
+
+%end
+
+%ctor {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    if ([bundleID isEqualToString:@"com.apple.springboard"]) {
+        %init(_ungrouped);
+        
+        SRLog(@"Tweak Loaded in %@ - Starting Initialization...", bundleID);
+        
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            (CFNotificationCallback)rc_camera_launched_notification_callback,
+            CFSTR("com.saihgupr.remotecompanion.camera_launched"),
+            NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately
+        );
+        
+        // Start Background HID Listener immediately (safe for NFC)
+        setup_background_hid_listener();
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SRLog(@"Delayed Initialization & Gesture Setup...");
+            
+            load_trigger_config();
+            register_config_observer();
+            register_simulation_observers();
+            register_system_event_observers(); // WiFi/BT Triggers
+            start_server();
+            start_web_server();
+            start_schedule_timer();
+            start_mqtt_subscriber();
+            
+            // Conditionally register edge gestures based on config
+            update_edge_gestures();
+            
+            SRLog(@"Initialization Complete.");
+        });
+    } else if ([bundleID isEqualToString:@"com.apple.camera"]) {
+        %init(CameraHook);
+        SRLog(@"[RemoteCompanion] Loaded inside com.apple.camera");
+    } else {
+        SRLog(@"Tweak Loaded in %@ - Skipping Full Initialization (Choicy Visibility Only)", bundleID);
+    }
+}

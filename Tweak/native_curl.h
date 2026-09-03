@@ -1,6 +1,31 @@
 
 #import <Foundation/Foundation.h>
 
+static NSString *Curl_get_log_file_path(void) {
+    static NSString *cachedLogPath = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSFileManager *fm = [NSFileManager defaultManager];
+        if ([fm fileExistsAtPath:@"/var/jb/tmp"]) {
+            cachedLogPath = @"/var/jb/tmp/remotecommand.log";
+        } else if ([fm fileExistsAtPath:@"/var/jb"]) {
+            if ([fm createDirectoryAtPath:@"/var/jb/tmp" withIntermediateDirectories:YES attributes:nil error:nil]) {
+                cachedLogPath = @"/var/jb/tmp/remotecommand.log";
+            }
+        }
+        if (!cachedLogPath) {
+            if ([fm fileExistsAtPath:@"/tmp"]) {
+                cachedLogPath = @"/tmp/remotecommand.log";
+            } else {
+                NSString *logsDir = @"/var/mobile/Library/Logs/RemoteCompanion";
+                [fm createDirectoryAtPath:logsDir withIntermediateDirectories:YES attributes:nil error:nil];
+                cachedLogPath = [logsDir stringByAppendingPathComponent:@"remotecompanion.log"];
+            }
+        }
+    });
+    return cachedLogPath ?: @"/tmp/remotecommand.log";
+}
+
 static void CurlLog(NSString *format, ...) {
     va_list args;
     va_start(args, format);
@@ -10,14 +35,17 @@ static void CurlLog(NSString *format, ...) {
     NSLog(@"[RemoteCommand] [NativeCurl] %@", message);
     
     // Write to same log file
+    NSString *logPath = Curl_get_log_file_path();
     NSString *logMsg = [NSString stringWithFormat:@"%@ [RemoteCommand] [NativeCurl] %@\n", [NSDate date], message];
-    NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/remotecommand.log"];
+    NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingAtPath:logPath];
     if (fileHandle) {
         @try {
             [fileHandle seekToEndOfFile];
             [fileHandle writeData:[logMsg dataUsingEncoding:NSUTF8StringEncoding]];
         } @catch (NSException *e) {}
         [fileHandle closeFile];
+    } else {
+        [logMsg writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
     }
 }
 

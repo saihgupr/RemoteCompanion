@@ -63,9 +63,21 @@ A sequence is a **JSON array** of actions. Each action is either:
 | `previous app` | Switch to previous app |
 | `open control center` | Open Control Center |
 | `screenshot` | Take a screenshot |
+| `camera photo 0.5x` | Open Camera in Photo mode (0.5x ultra-wide lens) |
+| `camera photo 2x` | Open Camera in Photo mode (2x telephoto zoom) |
+| `camera portrait 2x` | Open Camera in Portrait mode (2x zoom) |
+| `camera video 2x` | Open Camera in Video mode (2x zoom) |
+| `camera video 2x flash` | Open Camera in Video mode (2x zoom, Flash/Torch ON) |
+| `camera front` | Open Camera in Front Selfie mode |
+| `camera slomo` | Open Camera in Slo-Mo mode |
+| `camera timelapse` | Open Camera in Time-Lapse mode |
+| `camera shutter` | Press Camera shutter button to take photo or toggle recording |
+| `camera snap` | Take a photo in Camera app |
+| `camera record` | Toggle video recording in Camera app |
 | `haptic` | Trigger haptic feedback |
 | `siri` | Activate Siri |
 | `respring` | Respring (restart SpringBoard) |
+| `safemode` | Enter Safe Mode (restart SpringBoard with tweaks disabled) |
 | `ldrestart` | Soft reboot |
 | `userspace-reboot` | Userspace reboot |
 | `uicache` | Refresh icon cache |
@@ -79,6 +91,9 @@ A sequence is a **JSON array** of actions. Each action is either:
 |---|---|
 | `wifi toggle` | Toggle Wi-Fi |
 | `bluetooth toggle` | Toggle Bluetooth |
+| `location toggle` | Toggle Location Services (GPS) |
+| `location on` | Turn on Location Services |
+| `location off` | Turn off Location Services |
 | `airplane toggle` | Toggle Airplane Mode |
 | `bt connect Device Name` | Connect a Bluetooth device by name |
 | `bt disconnect Device Name` | Disconnect a Bluetooth device |
@@ -141,21 +156,21 @@ Run arbitrary Lua code on the device.
 ```
 
 ### If / Else Condition
-Branch based on device state. Currently supported condition: **front app**.
+Branch based on device state or time of day. Supported conditions: **front app**, **time of day (between)**, **lock status**, **player status**, **wifi**, **bluetooth**, **airplane mode**, **vibration**, etc.
 
 ```json
 {
   "type": "if",
-  "conditionKey": "front_app",
-  "conditionTitle": "Front Application",
-  "expectedValue": "com.spotify.client",
-  "expectedTitle": "Spotify"
+  "conditionKey": "time_between",
+  "conditionTitle": "Time of Day",
+  "expectedValue": "09:00 - 17:00",
+  "expectedTitle": "9:00 AM – 5:00 PM"
 },
-"pause",
+"volume 25",
 {
   "type": "else"
 },
-"play"
+"volume 75"
 ```
 
 - Everything after `"type": "if"` up to `"type": "else"` runs when the condition is **true**

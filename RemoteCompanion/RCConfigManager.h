@@ -8,6 +8,20 @@
 @property (nonatomic, assign) BOOL webUIEnabled;
 @property (nonatomic, assign) BOOL nfcEnabled;
 @property (nonatomic, assign) BOOL rootEnabled;
+@property (nonatomic, assign) BOOL haEnabled;
+@property (nonatomic, copy) NSString *haUrl;
+@property (nonatomic, copy) NSString *haToken;
+@property (nonatomic, assign) BOOL kmEnabled;
+@property (nonatomic, copy) NSString *kmUrl;
+@property (nonatomic, copy) NSString *kmUser;
+@property (nonatomic, copy) NSString *kmPassword;
+@property (nonatomic, assign) BOOL mqttEnabled;
+@property (nonatomic, copy) NSString *mqttHost;
+@property (nonatomic, assign) NSInteger mqttPort;
+@property (nonatomic, copy) NSString *mqttUser;
+@property (nonatomic, copy) NSString *mqttPassword;
+@property (nonatomic, copy) NSString *mqttClientId;
+@property (nonatomic, copy) NSString *mqttTopicPrefix;
 
 
 + (instancetype)sharedManager;
@@ -45,6 +59,11 @@
 - (NSString *)nameForBundleId:(NSString *)bundleId;
 - (NSString *)iconForCommand:(id)cmd;
 - (NSDictionary *)toggleInfoForCommand:(NSString *)cmd;
+- (BOOL)isActionDisabled:(id)actionItem;
+- (id)toggleActionDisabled:(id)actionItem;
+- (void)registerKMMacroName:(NSString *)name forUid:(NSString *)uid;
+- (void)registerKMMacroNamesBatch:(NSDictionary<NSString *, NSString *> *)map;
+- (NSString *)nameForKMMacroUid:(NSString *)uid;
 
 // Backup/Restore
 - (NSData *)exportConfigAsJSON;

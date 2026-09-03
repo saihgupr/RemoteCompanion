@@ -273,6 +273,133 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     [self saveConfig];
 }
 
+- (BOOL)haEnabled {
+    return [_config[@"haEnabled"] boolValue];
+}
+
+- (void)setHaEnabled:(BOOL)haEnabled {
+    _config[@"haEnabled"] = @(haEnabled);
+    [self saveConfig];
+}
+
+- (NSString *)haUrl {
+    return _config[@"haUrl"] ?: @"";
+}
+
+- (void)setHaUrl:(NSString *)haUrl {
+    _config[@"haUrl"] = haUrl ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)haToken {
+    return _config[@"haToken"] ?: @"";
+}
+
+- (void)setHaToken:(NSString *)haToken {
+    _config[@"haToken"] = haToken ?: @"";
+    [self saveConfig];
+}
+
+- (BOOL)kmEnabled {
+    return [_config[@"kmEnabled"] boolValue];
+}
+
+- (void)setKmEnabled:(BOOL)kmEnabled {
+    _config[@"kmEnabled"] = @(kmEnabled);
+    [self saveConfig];
+}
+
+- (NSString *)kmUrl {
+    return _config[@"kmUrl"] ?: @"";
+}
+
+- (void)setKmUrl:(NSString *)kmUrl {
+    _config[@"kmUrl"] = kmUrl ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)kmUser {
+    return _config[@"kmUser"] ?: @"";
+}
+
+- (void)setKmUser:(NSString *)kmUser {
+    _config[@"kmUser"] = kmUser ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)kmPassword {
+    return _config[@"kmPassword"] ?: @"";
+}
+
+- (void)setKmPassword:(NSString *)kmPassword {
+    _config[@"kmPassword"] = kmPassword ?: @"";
+    [self saveConfig];
+}
+
+- (BOOL)mqttEnabled {
+    return [_config[@"mqttEnabled"] boolValue];
+}
+
+- (void)setMqttEnabled:(BOOL)mqttEnabled {
+    _config[@"mqttEnabled"] = @(mqttEnabled);
+    [self saveConfig];
+}
+
+- (NSString *)mqttHost {
+    return _config[@"mqttHost"] ?: @"192.168.1.50";
+}
+
+- (void)setMqttHost:(NSString *)mqttHost {
+    _config[@"mqttHost"] = mqttHost ?: @"192.168.1.50";
+    [self saveConfig];
+}
+
+- (NSInteger)mqttPort {
+    if (_config[@"mqttPort"] == nil) return 1883;
+    return [_config[@"mqttPort"] integerValue];
+}
+
+- (void)setMqttPort:(NSInteger)mqttPort {
+    _config[@"mqttPort"] = @(mqttPort > 0 ? mqttPort : 1883);
+    [self saveConfig];
+}
+
+- (NSString *)mqttUser {
+    return _config[@"mqttUser"] ?: @"";
+}
+
+- (void)setMqttUser:(NSString *)mqttUser {
+    _config[@"mqttUser"] = mqttUser ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)mqttPassword {
+    return _config[@"mqttPassword"] ?: @"";
+}
+
+- (void)setMqttPassword:(NSString *)mqttPassword {
+    _config[@"mqttPassword"] = mqttPassword ?: @"";
+    [self saveConfig];
+}
+
+- (NSString *)mqttClientId {
+    return _config[@"mqttClientId"] ?: @"RemoteCompanion";
+}
+
+- (void)setMqttClientId:(NSString *)mqttClientId {
+    _config[@"mqttClientId"] = mqttClientId ?: @"RemoteCompanion";
+    [self saveConfig];
+}
+
+- (NSString *)mqttTopicPrefix {
+    return _config[@"mqttTopicPrefix"] ?: @"remotecompanion";
+}
+
+- (void)setMqttTopicPrefix:(NSString *)mqttTopicPrefix {
+    _config[@"mqttTopicPrefix"] = mqttTopicPrefix ?: @"remotecompanion";
+    [self saveConfig];
+}
+
 - (NSDictionary *)triggerDataForKey:(NSString *)triggerKey {
     return _config[@"triggers"][triggerKey];
 }
@@ -392,7 +519,7 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return customName ?: [NSString stringWithFormat:@"NFC Tag %@", [triggerKey substringFromIndex:4]];
     }
 
-    if ([triggerKey hasPrefix:@"wifi_"] || [triggerKey hasPrefix:@"bt_"] || [triggerKey hasPrefix:@"app_launch_"] || [triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"] || [triggerKey hasPrefix:@"sched_"]) {
+    if ([triggerKey hasPrefix:@"wifi_"] || [triggerKey hasPrefix:@"bt_"] || [triggerKey hasPrefix:@"app_launch_"] || [triggerKey hasPrefix:@"notif_"] || [triggerKey hasPrefix:@"notify_"] || [triggerKey hasPrefix:@"sched_"] || [triggerKey hasPrefix:@"mqtt_"] || [triggerKey hasPrefix:@"mqtt_sub_"]) {
         return _config[@"triggers"][triggerKey][@"name"] ?: triggerKey;
     }
     
@@ -650,28 +777,60 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     return YES;
 }
 
-#pragma mark - Command Helpers
+- (BOOL)isActionDisabled:(id)actionItem {
+    if ([actionItem isKindOfClass:[NSDictionary class]]) {
+        id dis = ((NSDictionary *)actionItem)[@"disabled"];
+        if (dis && ([dis boolValue] || [dis isEqual:@1] || [[dis description] isEqualToString:@"1"])) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (id)toggleActionDisabled:(id)actionItem {
+    if ([actionItem isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *dict = [((NSDictionary *)actionItem) mutableCopy];
+        BOOL currentlyDisabled = [self isActionDisabled:dict];
+        if (currentlyDisabled) {
+            [dict removeObjectForKey:@"disabled"];
+            // If it only wrapped a command and has no other keys except command (or type=command), we can unwrap or keep as dict
+            if (dict[@"command"] && dict.count == 1) {
+                return dict[@"command"];
+            }
+            return dict;
+        } else {
+            dict[@"disabled"] = @YES;
+            return dict;
+        }
+    } else if ([actionItem isKindOfClass:[NSString class]]) {
+        return @{
+            @"command": (NSString *)actionItem,
+            @"disabled": @YES
+        };
+    }
+    return actionItem;
+}
 
 - (NSString *)nameForCommand:(id)cmdId truncate:(BOOL)shouldTruncate {
     if ([cmdId isKindOfClass:[NSDictionary class]]) {
         NSDictionary *dict = (NSDictionary *)cmdId;
+        if (dict[@"command"] && [dict[@"command"] isKindOfClass:[NSString class]]) {
+            return [self nameForCommand:dict[@"command"] truncate:shouldTruncate];
+        }
         NSString *type = [[dict[@"type"] description] lowercaseString];
-        if ([type isEqualToString:@"if"]) {
+        if ([type isEqualToString:@"if"] || [type isEqualToString:@"else_if"]) {
             NSString *conditionTitle = dict[@"conditionTitle"] ?: dict[@"conditionName"];
-            NSString *expectedTitle = dict[@"expectedTitle"] ?: dict[@"expectedLabel"];
+            NSString *expectedTitle = dict[@"expectedTitle"] ?: dict[@"expectedLabel"] ?: dict[@"expectedValue"];
+            NSString *prefix = [type isEqualToString:@"else_if"] ? @"Else If" : @"If";
+            NSString *condKey = dict[@"conditionKey"] ?: dict[@"conditionName"] ?: @"";
+            if ([condKey isEqualToString:@"time_between"] || [conditionTitle.lowercaseString containsString:@"time"]) {
+                return [NSString stringWithFormat:@"%@ Time is Between %@", prefix, expectedTitle ?: @"Time Range"];
+            }
             if (conditionTitle.length > 0 && expectedTitle.length > 0) {
-                return [NSString stringWithFormat:@"If %@ is %@", conditionTitle, expectedTitle];
+                return [NSString stringWithFormat:@"%@ %@ is %@", prefix, conditionTitle, expectedTitle];
             }
             NSString *legacy = dict[@"condition"] ?: @"Condition";
-            return [NSString stringWithFormat:@"If %@", legacy];
-        } else if ([type isEqualToString:@"else_if"]) {
-            NSString *conditionTitle = dict[@"conditionTitle"] ?: dict[@"conditionName"];
-            NSString *expectedTitle = dict[@"expectedTitle"] ?: dict[@"expectedLabel"];
-            if (conditionTitle.length > 0 && expectedTitle.length > 0) {
-                return [NSString stringWithFormat:@"Else If %@ is %@", conditionTitle, expectedTitle];
-            }
-            NSString *legacy = dict[@"condition"] ?: @"Condition";
-            return [NSString stringWithFormat:@"Else If %@", legacy];
+            return [NSString stringWithFormat:@"%@ %@", prefix, legacy];
         } else if ([type isEqualToString:@"else"]) {
             return @"Else";
         } else if ([type isEqualToString:@"repeat"]) {
@@ -686,7 +845,8 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return @"Unknown Action";
     }
 
-    NSString *cmd = [[(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    NSString *originalCmd = [(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *cmd = [originalCmd lowercaseString];
     NSDictionary *names = @{
         @"play": @"Play",
         @"pause": @"Pause",
@@ -728,6 +888,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"dnd off": @"Do Not Disturb Off",
         @"dnd toggle": @"Do Not Disturb Toggle",
         @"respring": @"Respring",
+        @"safemode": @"Safe Mode",
+        @"safe-mode": @"Safe Mode",
+        @"safe_mode": @"Safe Mode",
         @"lpm on": @"Low Power Mode On",
         @"lpm off": @"Low Power Mode Off",
         @"lpm toggle": @"Low Power Mode Toggle",
@@ -797,13 +960,68 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"sneakycam takephoto": @"SneakyCam Photo",
         @"sneakycam video": @"SneakyCam Video",
         @"sneakycam record": @"SneakyCam Video",
-        @"sneakycam startstopvideo": @"SneakyCam Video"
+        @"sneakycam startstopvideo": @"SneakyCam Video",
+        @"camera video 2x flash": @"Open Video Camera (2x, Flash)",
+        @"camera video 2x": @"Open Video Camera (2x)",
+        @"camera video flash": @"Open Video Camera (2x, Flash)",
+        @"camera video": @"Open Video Camera (2x)",
+        @"open camera video 2x flash": @"Open Video Camera (2x, Flash)",
+        @"open camera video 2x": @"Open Video Camera (2x)",
+        @"open camera video flash": @"Open Video Camera (2x, Flash)",
+        @"open camera video": @"Open Video Camera (2x)",
+        @"camera 2x flash": @"Open Video Camera (2x, Flash)",
+        @"camera 2x": @"Open Video Camera (2x)",
+        @"open camera 2x flash": @"Open Video Camera (2x, Flash)",
+        @"open camera 2x": @"Open Video Camera (2x)",
+        @"camera photo 0.5x": @"Open Camera (Photo 0.5x)",
+        @"camera photo 2x": @"Open Camera (Photo 2x)",
+        @"camera photo": @"Open Camera (Photo)",
+        @"camera portrait 2x": @"Open Camera (Portrait 2x)",
+        @"camera portrait": @"Open Camera (Portrait)",
+        @"camera front": @"Open Camera (Front Selfie)",
+        @"camera selfie": @"Open Camera (Front Selfie)",
+        @"camera slomo": @"Open Camera (Slo-Mo)",
+        @"camera timelapse": @"Open Camera (Time-Lapse)",
+        @"camera cinematic": @"Open Camera (Cinematic)",
+        @"camera pano": @"Open Camera (Pano)",
+        @"camera shutter": @"Camera Shutter / Snap",
+        @"camera snap": @"Camera Shutter / Snap",
+        @"camera record": @"Camera Record Toggle",
+        @"camera record toggle": @"Camera Record Toggle"
     };
     
     NSString *result = names[cmd];
     
     if (!result) {
-        if ([cmd hasPrefix:@"root "]) {
+        if ([cmd hasPrefix:@"camera"] || [cmd hasPrefix:@"open camera"]) {
+            NSString *low = [cmd lowercaseString];
+            NSString *modeName = @"Photo";
+            if ([low containsString:@"video"] || [low containsString:@"2x"]) modeName = @"Video";
+            if ([low containsString:@"photo"]) modeName = @"Photo";
+            if ([low containsString:@"portrait"]) modeName = @"Portrait";
+            if ([low containsString:@"slomo"] || [low containsString:@"slo-mo"]) modeName = @"Slo-Mo";
+            if ([low containsString:@"timelapse"] || [low containsString:@"time-lapse"]) modeName = @"Time-Lapse";
+            if ([low containsString:@"pano"] || [low containsString:@"panorama"]) modeName = @"Pano";
+            if ([low containsString:@"cinematic"]) modeName = @"Cinematic";
+            
+            NSMutableArray *details = [NSMutableArray array];
+            if ([low containsString:@"front"] || [low containsString:@"selfie"]) [details addObject:@"Front"];
+            
+            NSRegularExpression *rx = [NSRegularExpression regularExpressionWithPattern:@"(\\d+(\\.\\d+)?)\\s*x" options:NSRegularExpressionCaseInsensitive error:nil];
+            NSTextCheckingResult *m = [rx firstMatchInString:low options:0 range:NSMakeRange(0, low.length)];
+            if (m) {
+                [details addObject:[low substringWithRange:[m rangeAtIndex:0]]];
+            } else if ([modeName isEqualToString:@"Video"] && ![low containsString:@"front"]) {
+                [details addObject:@"2x"];
+            }
+            
+            if ([low containsString:@"flash"] || [low containsString:@"torch"]) [details addObject:@"Flash"];
+            if ([low containsString:@"record"]) [details addObject:@"Record"];
+            if ([low containsString:@"snap"]) [details addObject:@"Snap"];
+            
+            NSString *detStr = (details.count > 0) ? [NSString stringWithFormat:@" (%@)", [details componentsJoinedByString:@", "]] : @"";
+            result = [NSString stringWithFormat:@"Open Camera (%@%@)", modeName, detStr];
+        } else if ([cmd hasPrefix:@"root "]) {
             result = [NSString stringWithFormat:@"[root] %@", [cmd substringFromIndex:5]];
         } else if ([cmd hasPrefix:@"exec-root "]) {
             result = [NSString stringWithFormat:@"[root] %@", [cmd substringFromIndex:10]];
@@ -875,6 +1093,75 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
                 result = [NSString stringWithFormat:@"HA Call %@%@", service, eid.length ? [NSString stringWithFormat:@": %@", formatEntity(eid)] : @""];
             } else {
                 result = [NSString stringWithFormat:@"HA: %@", raw.length ? raw : @"Control"];
+            }
+        } else if ([cmd hasPrefix:@"km "] || [cmd isEqualToString:@"km"]) {
+            NSString *raw = [originalCmd length] >= 3 ? [[originalCmd substringFromIndex:3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : @"";
+            if ([[raw lowercaseString] hasPrefix:@"trigger "]) {
+                NSString *afterTrigger = [[raw substringFromIndex:8] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                NSString *macro = nil;
+                NSString *val = nil;
+                if ([afterTrigger hasPrefix:@"\""]) {
+                    NSRange endQuote = [afterTrigger rangeOfString:@"\"" options:0 range:NSMakeRange(1, afterTrigger.length - 1)];
+                    if (endQuote.location != NSNotFound) {
+                        macro = [afterTrigger substringWithRange:NSMakeRange(1, endQuote.location - 1)];
+                        NSString *rem = [[afterTrigger substringFromIndex:endQuote.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                        if (rem.length > 0) {
+                            if ([rem hasPrefix:@"\""] && [rem hasSuffix:@"\""] && rem.length >= 2) {
+                                val = [rem substringWithRange:NSMakeRange(1, rem.length - 2)];
+                            } else {
+                                val = rem;
+                            }
+                        }
+                    }
+                }
+                if (!macro) {
+                    NSArray *p = [afterTrigger componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                    NSMutableArray *cp = [NSMutableArray array];
+                    for (NSString *item in p) { if (item.length > 0) [cp addObject:item]; }
+                    if (cp.count > 0) {
+                        macro = cp[0];
+                        if (cp.count > 1) {
+                            val = [[cp subarrayWithRange:NSMakeRange(1, cp.count - 1)] componentsJoinedByString:@" "];
+                        }
+                    }
+                }
+                if (macro.length > 0) {
+                    NSString *displayMacro = [self nameForKMMacroUid:macro] ?: macro;
+                    result = val.length > 0 ? [NSString stringWithFormat:@"KM: %@ (%@)", displayMacro, val] : [NSString stringWithFormat:@"KM: %@", displayMacro];
+                } else {
+                    result = @"KM Trigger";
+                }
+            } else if ([[raw lowercaseString] hasPrefix:@"url "]) {
+                result = [NSString stringWithFormat:@"KM URL: %@", [raw substringFromIndex:4]];
+            } else if (raw.length > 0) {
+                result = [NSString stringWithFormat:@"KM: %@", raw];
+            } else {
+                result = @"Keyboard Maestro";
+            }
+        } else if ([cmd hasPrefix:@"mqtt "] || [cmd isEqualToString:@"mqtt"]) {
+            NSString *raw = [cmd hasPrefix:@"mqtt "] ? [cmd substringFromIndex:5] : @"";
+            raw = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if ([raw hasPrefix:@"pub "] || [raw hasPrefix:@"publish "]) {
+                NSString *args = [raw hasPrefix:@"publish "] ? [raw substringFromIndex:8] : [raw substringFromIndex:4];
+                args = [args stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                NSArray *parts = [args componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                NSMutableArray *clean = [NSMutableArray array];
+                for (NSString *p in parts) { if (p.length > 0) [clean addObject:p]; }
+                if (clean.count > 0) {
+                    NSString *topic = clean[0];
+                    if (clean.count > 1) {
+                        NSString *payload = [[clean subarrayWithRange:NSMakeRange(1, clean.count - 1)] componentsJoinedByString:@" "];
+                        result = [NSString stringWithFormat:@"MQTT: %@ (%@)", topic, payload];
+                    } else {
+                        result = [NSString stringWithFormat:@"MQTT: %@", topic];
+                    }
+                } else {
+                    result = @"MQTT Publish";
+                }
+            } else if (raw.length > 0) {
+                result = [NSString stringWithFormat:@"MQTT: %@", raw];
+            } else {
+                result = @"MQTT";
             }
         } else if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) {
             result = @"Lua Script";
@@ -956,6 +1243,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 - (NSString *)iconForCommand:(id)cmdId {
     if ([cmdId isKindOfClass:[NSDictionary class]]) {
         NSDictionary *dict = (NSDictionary *)cmdId;
+        if (dict[@"command"] && [dict[@"command"] isKindOfClass:[NSString class]]) {
+            return [self iconForCommand:dict[@"command"]];
+        }
         NSString *type = [[dict[@"type"] description] lowercaseString];
         if ([type isEqualToString:@"if"] || [type isEqualToString:@"else_if"] || [type isEqualToString:@"else"]) {
             return @"arrow.triangle.branch";
@@ -967,13 +1257,19 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         return @"square.grid.2x2";
     }
 
-    if (![cmdId isKindOfClass:[NSString class]]) {
-        return @"questionmark";
-    }
     NSString *cmd = [[(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    if ([cmd hasPrefix:@"camera"] || [cmd hasPrefix:@"open camera"]) {
+        if ([cmd containsString:@"flash"] || [cmd containsString:@"torch"]) return @"bolt.fill";
+        if ([cmd containsString:@"front"] || [cmd containsString:@"selfie"]) return @"person.fill";
+        if ([cmd containsString:@"portrait"]) return @"person.crop.square";
+        if ([cmd containsString:@"video"] || [cmd containsString:@"slomo"] || [cmd containsString:@"timelapse"] || [cmd containsString:@"cinematic"] || [cmd containsString:@"2x"]) return @"video.fill";
+        return @"camera.fill";
+    }
     if ([cmd hasPrefix:@"sneakycam photo"] || [cmd isEqualToString:@"sneakycam takephoto"]) return @"camera.aperture";
     if ([cmd hasPrefix:@"sneakycam video"] || [cmd isEqualToString:@"sneakycam record"] || [cmd isEqualToString:@"sneakycam startstopvideo"]) return @"video.fill";
     if ([cmd hasPrefix:@"ha "] || [cmd isEqualToString:@"ha"]) return @"house.fill";
+    if ([cmd hasPrefix:@"km "] || [cmd isEqualToString:@"km"]) return @"command";
+    if ([cmd hasPrefix:@"mqtt "] || [cmd isEqualToString:@"mqtt"]) return @"antenna.radiowaves.left.and.right";
     if ([cmd hasPrefix:@"toast"]) return @"text.bubble.fill";
     if ([cmd hasPrefix:@"root "] || [cmd hasPrefix:@"exec-root "]) return @"terminal.fill";
     if ([cmd hasPrefix:@"exec "]) return @"terminal.fill";
@@ -1041,6 +1337,9 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
         @"dnd off": @"moon",
         @"dnd toggle": @"moon.circle.fill",
         @"respring": @"memories",
+        @"safemode": @"shield.slash.fill",
+        @"safe-mode": @"shield.slash.fill",
+        @"safe_mode": @"shield.slash.fill",
         @"lpm on": @"battery.25",
         @"lpm off": @"battery.100",
         @"lpm toggle": @"battery.25",
@@ -1219,6 +1518,63 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
         },
         @{
+            @"key": @"camera_video",
+            @"name": @"Open Video Camera",
+            @"icon": @"video.fill",
+            @"prefixes": @[@"camera video "],
+            @"suffixes": @[@"2x", @"2x flash", @"1x", @"flash", @"0.5x", @"front"],
+            @"displaySuffixes": @[@"Video (2x)", @"Video (2x, Flash)", @"Video (1x)", @"Video (1x, Flash)", @"Video (0.5x)", @"Video (Front)"],
+            @"exactMatches": @{
+                @"camera video 2x": @"2x",
+                @"camera video": @"2x",
+                @"open camera video 2x": @"2x",
+                @"open camera video": @"2x",
+                @"camera video 2x flash": @"2x flash",
+                @"open camera video 2x flash": @"2x flash",
+                @"camera video 1x": @"1x",
+                @"open camera video 1x": @"1x",
+                @"camera video flash": @"flash",
+                @"open camera video flash": @"flash",
+                @"camera video 0.5x": @"0.5x",
+                @"open camera video 0.5x": @"0.5x",
+                @"camera video front": @"front",
+                @"open camera video front": @"front"
+            }
+        },
+        @{
+            @"key": @"camera_photo",
+            @"name": @"Open Camera",
+            @"icon": @"camera.fill",
+            @"prefixes": @[@"camera "],
+            @"suffixes": @[@"photo", @"photo 0.5x", @"photo 2x", @"portrait", @"portrait 2x", @"front", @"slomo", @"timelapse", @"cinematic", @"pano"],
+            @"displaySuffixes": @[@"Photo (1x)", @"Photo (0.5x)", @"Photo (2x)", @"Portrait (1x)", @"Portrait (2x)", @"Front Selfie", @"Slo-Mo", @"Time-Lapse", @"Cinematic", @"Pano"],
+            @"exactMatches": @{
+                @"camera photo": @"photo",
+                @"camera": @"photo",
+                @"open camera": @"photo",
+                @"camera photo 0.5x": @"photo 0.5x",
+                @"open camera photo 0.5x": @"photo 0.5x",
+                @"camera photo 2x": @"photo 2x",
+                @"open camera photo 2x": @"photo 2x",
+                @"camera portrait": @"portrait",
+                @"open camera portrait": @"portrait",
+                @"camera portrait 2x": @"portrait 2x",
+                @"open camera portrait 2x": @"portrait 2x",
+                @"camera front": @"front",
+                @"camera selfie": @"front",
+                @"open camera front": @"front",
+                @"open camera selfie": @"front",
+                @"camera slomo": @"slomo",
+                @"open camera slomo": @"slomo",
+                @"camera timelapse": @"timelapse",
+                @"open camera timelapse": @"timelapse",
+                @"camera cinematic": @"cinematic",
+                @"open camera cinematic": @"cinematic",
+                @"camera pano": @"pano",
+                @"open camera pano": @"pano"
+            }
+        },
+        @{
             @"key": @"mute",
             @"name": @"Mute",
             @"icon": @"speaker.slash.fill",
@@ -1271,6 +1627,49 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     }
     
     return nil;
+}
+
+- (void)registerKMMacroName:(NSString *)name forUid:(NSString *)uid {
+    if (!name.length || !uid.length) return;
+    NSMutableDictionary *dict = _config[@"kmNamesByUuid"];
+    if (!dict) {
+        dict = [NSMutableDictionary dictionary];
+        _config[@"kmNamesByUuid"] = dict;
+    } else if (![dict isKindOfClass:[NSMutableDictionary class]]) {
+        dict = [dict mutableCopy];
+        _config[@"kmNamesByUuid"] = dict;
+    }
+    if ([dict[uid] isEqualToString:name]) return;
+    dict[uid] = name;
+    [self saveConfig];
+}
+
+- (void)registerKMMacroNamesBatch:(NSDictionary<NSString *, NSString *> *)map {
+    if (!map || map.count == 0) return;
+    NSMutableDictionary *dict = _config[@"kmNamesByUuid"];
+    if (!dict) {
+        dict = [NSMutableDictionary dictionary];
+        _config[@"kmNamesByUuid"] = dict;
+    } else if (![dict isKindOfClass:[NSMutableDictionary class]]) {
+        dict = [dict mutableCopy];
+        _config[@"kmNamesByUuid"] = dict;
+    }
+    BOOL changed = NO;
+    for (NSString *uid in map) {
+        NSString *name = map[uid];
+        if (uid.length > 0 && name.length > 0 && ![dict[uid] isEqualToString:name]) {
+            dict[uid] = name;
+            changed = YES;
+        }
+    }
+    if (changed) {
+        [self saveConfig];
+    }
+}
+
+- (NSString *)nameForKMMacroUid:(NSString *)uid {
+    if (!uid.length) return nil;
+    return _config[@"kmNamesByUuid"][uid];
 }
 
 @end

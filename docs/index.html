@@ -78,7 +78,7 @@
                 <h1 class="hero-title">RemoteCompanion</h1>
                 <p class="hero-tagline">Scriptable system control, gesture automation, and desktop hub for modern jailbroken iOS.</p>
                 <div class="badge-group">
-                    <span class="compat-badge"><span class="badge-dot"></span> v3.6.1 Latest</span>
+                    <span class="compat-badge"><span class="badge-dot"></span> v3.6.2 Latest</span>
                     <span class="compat-badge">iOS 14.0 – 16.x</span>
                     <span class="compat-badge secondary">Rootless (Dopamine / Palera1n)</span>
                     <span class="compat-badge secondary">Rootful & RootHide</span>
@@ -143,7 +143,7 @@
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Latest Version</span>
-                    <span class="meta-value">3.6.1</span>
+                    <span class="meta-value">3.6.2</span>
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Architectures</span>
@@ -337,12 +337,16 @@
             <div class="changelog-header">
                 <div>
                     <div class="section-label">Release Notes</div>
-                    <h2 class="section-title">What's New in v3.6.1</h2>
+                    <h2 class="section-title">What's New in v3.6.2</h2>
                 </div>
                 <span class="version-badge">September 3, 2026</span>
             </div>
 
             <div class="changelog-list">
+                <div class="changelog-item">
+                    <span class="changelog-tag tag-new">New</span>
+                    <p class="changelog-text"><strong>Location Services in iOS App:</strong> Added Location Services toggle directly to the companion app's action picker (Connectivity section), command name/icon mappings, and conditional branching (<em>If Condition... -> Location Services</em>).</p>
+                </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
                     <p class="changelog-text"><strong>External Integrations System:</strong> A new modular architecture designed to connect your iOS action sequences directly to third-party services and desktop tools. Includes built-in support for Home Assistant (live entity browser and toggle control), Keyboard Maestro (macro picker and parameter editing), and MQTT (publish actions and background subscription listeners).</p>
@@ -361,7 +365,7 @@
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Location Services & Safe Mode:</strong> Native GPS toggling and status queries (<code>rc location on|off|toggle</code>), plus a dedicated Safe Mode trigger (<code>rc safemode</code>) across the CLI, Web UI, and iOS app.</p>
+                    <p class="changelog-text"><strong>Safe Mode Action:</strong> Dedicated Safe Mode trigger (<code>rc safemode</code>) across the CLI, Web UI, and iOS companion app.</p>
                 </div>
                 <div class="changelog-item">
                     <p class="changelog-text" style="color: var(--text-tertiary); font-style: italic; margin-top: 4px;">The goal with the new integrations system is to keep expanding it based on what you use in your setups. If you have an idea or request for a service you would like to see added next, please leave a suggestion in the comments!</p>
@@ -370,8 +374,12 @@
 
             <!-- Expandable Past Releases -->
             <details class="history-accordion">
-                <summary>View Previous Version History (v3.5.2 – v3.0.0)</summary>
+                <summary>View Previous Version History (v3.6.1 – v3.0.0)</summary>
                 <div class="history-content">
+                    <div class="changelog-item">
+                        <span class="changelog-tag tag-fix">v3.6.1</span>
+                        <p class="changelog-text">Added native MQTT 3.1.1 Pub/Sub triggers and actions, nested Integrations Hub in Settings, visual Keyboard Maestro macro browser, time-of-day condition evaluator, and Location Services daemon CLI support.</p>
+                    </div>
                     <div class="changelog-item">
                         <span class="changelog-tag tag-fix">v3.5.2</span>
                         <p class="changelog-text">Modernized Siri Shortcuts execution with WorkflowKit / VoiceShortcutClient fallbacks, respring reliability improvements, and multi-button combo detection.</p>
@@ -418,17 +426,17 @@
                     <h3 class="feature-title">2. Direct .deb Downloads</h3>
                     <p class="feature-desc">Download prebuilt Debian binaries directly for Filza or terminal installation:</p>
                     <div class="direct-downloads">
-                        <a href="com.saihgupr.remotecompanion_3.6.1_iphoneos-arm64.deb" class="deb-btn" download>
+                        <a href="com.saihgupr.remotecompanion_3.6.2_iphoneos-arm64.deb" class="deb-btn" download>
                             <div>
                                 <div>Rootless (arm64) .deb</div>
-                                <span class="deb-meta">Dopamine / Palera1n • v3.6.1</span>
+                                <span class="deb-meta">Dopamine / Palera1n • v3.6.2</span>
                             </div>
                             <span>⬇</span>
                         </a>
-                        <a href="com.saihgupr.remotecompanion_3.6.1_iphoneos-arm.deb" class="deb-btn" download>
+                        <a href="com.saihgupr.remotecompanion_3.6.2_iphoneos-arm.deb" class="deb-btn" download>
                             <div>
                                 <div>Rootful (arm) .deb</div>
-                                <span class="deb-meta">Legacy Rootful • v3.6.1</span>
+                                <span class="deb-meta">Legacy Rootful • v3.6.2</span>
                             </div>
                             <span>⬇</span>
                         </a>

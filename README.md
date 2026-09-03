@@ -3,18 +3,13 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.6.1**
-> - **Integrations Hub**: Dedicated Settings sub-menu organizing external services into modular configuration screens:
->   - **Home Assistant**: Full-screen entity browser with live states, quick action sheets (Toggle, Turn On, Turn Off), and remote API control.
->   - **Keyboard Maestro**: Visual macro picker with group browsing, search, `%TriggerValue%` parameter editing, and automatic UUID resolution.
->   - **MQTT (Pub / Sub)**: Lightweight local broker client to publish from hardware triggers and subscribe to topics for inbound iOS action sequences.
-> - **Camera & Video Recording Automation**:
->   - Automated video recording modes (start/stop recording, auto-switch to video capture mode with custom zoom, flash, and camera selection).
->   - **Lock Screen Camera Launch Trigger**: Inter-process notification bridging between `com.apple.camera` and `SpringBoard` so camera launch triggers fire reliably even when opened from the Lock Screen / CoverSheet.
-> - **Time of Day Condition Target (`time_between`)**: Native conditional time evaluation (`If Time is Between ...`) allowing automation sequences to branch based on 12-hour AM/PM or 24-hour time ranges.
-> - **Action Disable / Enable**: Easily disable and enable individual actions within an action sequence without deleting them.
-> - **Location Services Toggle (GPS)**: Direct toggle and status queries across CLI (`rc location on|off|toggle`), Web UI, and hardware triggers.
-> - **Safe Mode Action & CLI**: Enter Safe Mode directly from the CLI (`rc safemode`), Web UI, or iOS companion app.
+> **What’s New in v3.6**
+> - **Location Services in iOS Companion App**: Added Location Services directly to the iOS app action picker (Connectivity section), action display names/icons, and conditional branching (`If Condition... -> Location Services`).
+> - **Integrations Hub**: Dedicated Settings sub-menu organizing external services into modular configuration screens (Home Assistant, Keyboard Maestro, and native MQTT Pub/Sub).
+> - **Camera & Video Recording Automation**: Automated video recording modes and Lock Screen camera launch triggers.
+> - **Time of Day Condition Target (`time_between`)**: Native conditional time evaluation (`If Time is Between ...`).
+> - **Action Disable / Enable**: Easily disable and enable individual actions within an action sequence.
+> - **Safe Mode Action & CLI**: Enter Safe Mode directly from CLI (`rc safemode`), Web UI, or iOS companion app.
 
 <p align="center">
   <a href="#features">Features</a> •

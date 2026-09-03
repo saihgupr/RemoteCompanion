@@ -1031,6 +1031,14 @@ static id g_actionClipboard = nil;
             ]
         },
         @{
+            @"key": @"location",
+            @"title": @"Location Services",
+            @"values": @[
+                @{ @"value": @"ON", @"title": @"On" },
+                @{ @"value": @"OFF", @"title": @"Off" }
+            ]
+        },
+        @{
             @"key": @"airplane",
             @"title": @"Airplane Mode",
             @"values": @[

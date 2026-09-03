@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.2] - 2026-09-03
+
+### Added
+- **Location Services in iOS Companion App**:
+  - Added **Location Services** (`location toggle`) directly to the **Connectivity** actions list in the action picker (`RCActionPickerViewController`).
+  - Added full display name mappings and SF Symbol icon definitions for `location on`, `location off`, `location toggle`, and `location status` (`RCConfigManager`).
+  - Added **Location Services** condition target (`ON` / `OFF`) to the `If Condition...` picker (`RCActionsViewController`).
+
 ## [3.6.1] - 2026-09-03
 
 ### Added

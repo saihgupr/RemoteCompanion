@@ -337,7 +337,7 @@
             <div class="changelog-header">
                 <div>
                     <div class="section-label">Release Notes</div>
-                    <h2 class="section-title">What's New in v3.6.2</h2>
+                    <h2 class="section-title">What's New in v3.6</h2>
                 </div>
                 <span class="version-badge">September 3, 2026</span>
             </div>
@@ -345,41 +345,30 @@
             <div class="changelog-list">
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Location Services in iOS App:</strong> Added Location Services toggle directly to the companion app's action picker (Connectivity section), command name/icon mappings, and conditional branching (<em>If Condition... -> Location Services</em>).</p>
+                    <p class="changelog-text"><strong>External Integrations Hub:</strong> Connect your automation sequences to Home Assistant (live entity browser & toggles), Keyboard Maestro (visual macro browser & parameter editing), and native MQTT 3.1.1 (pub/sub triggers & actions).</p>
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>External Integrations System:</strong> A new modular architecture designed to connect your iOS action sequences directly to third-party services and desktop tools. Includes built-in support for Home Assistant (live entity browser and toggle control), Keyboard Maestro (macro picker and parameter editing), and MQTT (publish actions and background subscription listeners).</p>
+                    <p class="changelog-text"><strong>Camera & Video Automation:</strong> Automated video recording controls and Lock Screen camera launch triggers.</p>
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Camera & Video Recording Automation:</strong> Automated video recording modes (start/stop recording, auto-switch to video capture mode with custom zoom, flash, and camera selection), plus inter-process bridging for reliable Lock Screen camera launch triggers.</p>
-                </div>
-                <div class="changelog-item">
-                    <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Time of Day Conditions:</strong> Native conditional branching (<em>If Time is Between ...</em>) allowing actions to run conditionally based on 12-hour AM/PM or 24-hour time ranges (including ranges crossing midnight).</p>
+                    <p class="changelog-text"><strong>Time of Day Conditions:</strong> Native conditional branching (<em>If Time is Between ...</em>) for 12h/24h time ranges.</p>
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-improved">Improved</span>
-                    <p class="changelog-text"><strong>Action Enable / Disable:</strong> Toggle individual actions on or off within an automation sequence directly from the iOS app or Web UI without deleting them.</p>
+                    <p class="changelog-text"><strong>Action Enable / Disable:</strong> Easily toggle individual actions on or off in an automation sequence.</p>
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Safe Mode Action:</strong> Dedicated Safe Mode trigger (<code>rc safemode</code>) across the CLI, Web UI, and iOS companion app.</p>
-                </div>
-                <div class="changelog-item">
-                    <p class="changelog-text" style="color: var(--text-tertiary); font-style: italic; margin-top: 4px;">The goal with the new integrations system is to keep expanding it based on what you use in your setups. If you have an idea or request for a service you would like to see added next, please leave a suggestion in the comments!</p>
+                    <p class="changelog-text"><strong>Location Services & Safe Mode:</strong> GPS toggle in companion app, Web UI, and CLI (<code>rc location on|off|toggle</code>), plus dedicated Safe Mode trigger (<code>rc safemode</code>).</p>
                 </div>
             </div>
 
             <!-- Expandable Past Releases -->
             <details class="history-accordion">
-                <summary>View Previous Version History (v3.6.1 – v3.0.0)</summary>
+                <summary>View Previous Version History (v3.5.2 – v3.0.0)</summary>
                 <div class="history-content">
-                    <div class="changelog-item">
-                        <span class="changelog-tag tag-fix">v3.6.1</span>
-                        <p class="changelog-text">Added native MQTT 3.1.1 Pub/Sub triggers and actions, nested Integrations Hub in Settings, visual Keyboard Maestro macro browser, time-of-day condition evaluator, and Location Services daemon CLI support.</p>
-                    </div>
                     <div class="changelog-item">
                         <span class="changelog-tag tag-fix">v3.5.2</span>
                         <p class="changelog-text">Modernized Siri Shortcuts execution with WorkflowKit / VoiceShortcutClient fallbacks, respring reliability improvements, and multi-button combo detection.</p>

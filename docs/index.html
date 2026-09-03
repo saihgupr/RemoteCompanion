@@ -210,7 +210,7 @@
                     <ul class="feature-list">
                         <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Home Assistant:</strong> Full entity picker & live state control</li>
                         <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Keyboard Maestro:</strong> Visual macro picker & params</li>
-                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Native MQTT 3.1.1:</strong> Publish actions & background subscription triggers</li>
+                        <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Native MQTT:</strong> Publish actions & background subscription triggers</li>
                         <li class="feature-list-item"><span class="feature-check">✓</span> <strong>Siri Shortcuts:</strong> Deep native workflow integration</li>
                     </ul>
                 </div>
@@ -345,27 +345,26 @@
             <div class="changelog-list">
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Native MQTT 3.1.1 Integration:</strong> Publish messages from any hardware trigger, plus background SpringBoard subscription listener for local action execution on incoming broker topics.</p>
+                    <p class="changelog-text"><strong>External Integrations System:</strong> A new modular architecture designed to connect your iOS action sequences directly to third-party services and desktop tools. Includes built-in support for Home Assistant (live entity browser and toggle control), Keyboard Maestro (macro picker and parameter editing), and MQTT (publish actions and background subscription listeners).</p>
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Nested Integrations Hub:</strong> Dedicated Settings sub-screens for Home Assistant, Keyboard Maestro (with visual macro selector & %TriggerValue% editing), and MQTT.</p>
+                    <p class="changelog-text"><strong>Camera & Video Recording Automation:</strong> Automated video recording modes (start/stop recording, auto-switch to video capture mode with custom zoom, flash, and camera selection), plus inter-process bridging for reliable Lock Screen camera launch triggers.</p>
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Time of Day Conditionals (`time_between`):</strong> Native sequence branching based on 12-hour AM/PM or 24-hour time ranges crossing midnight.</p>
-                </div>
-                <div class="changelog-item">
-                    <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Lock Screen Camera Bridge:</strong> Reliable trigger execution when opening the Camera directly from the locked CoverSheet.</p>
+                    <p class="changelog-text"><strong>Time of Day Conditions:</strong> Native conditional branching (<em>If Time is Between ...</em>) allowing actions to run conditionally based on 12-hour AM/PM or 24-hour time ranges (including ranges crossing midnight).</p>
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-improved">Improved</span>
-                    <p class="changelog-text"><strong>Action Enable / Disable:</strong> Easily toggle individual actions on/off within sequences in the iOS app and Web UI without deleting them.</p>
+                    <p class="changelog-text"><strong>Action Enable / Disable:</strong> Toggle individual actions on or off within an automation sequence directly from the iOS app or Web UI without deleting them.</p>
                 </div>
                 <div class="changelog-item">
                     <span class="changelog-tag tag-new">New</span>
-                    <p class="changelog-text"><strong>Location Services & Safe Mode:</strong> Full CLI (`rc location`, `rc safemode`), Web UI, and iOS app controls.</p>
+                    <p class="changelog-text"><strong>Location Services & Safe Mode:</strong> Native GPS toggling and status queries (<code>rc location on|off|toggle</code>), plus a dedicated Safe Mode trigger (<code>rc safemode</code>) across the CLI, Web UI, and iOS app.</p>
+                </div>
+                <div class="changelog-item">
+                    <p class="changelog-text" style="color: var(--text-tertiary); font-style: italic; margin-top: 4px;">The goal with the new integrations system is to keep expanding it based on what you use in your setups. If you have an idea or request for a service you would like to see added next, please leave a suggestion in the comments!</p>
                 </div>
             </div>
 
@@ -450,7 +449,6 @@
                 <ul class="footer-links">
                     <li><a href="https://github.com/saihgupr/remotecompanion" class="footer-link" target="_blank" rel="noopener">GitHub</a></li>
                     <li><a href="https://github.com/saihgupr/remotecompanion/issues" class="footer-link" target="_blank" rel="noopener">Issues</a></li>
-                    <li><a href="https://github.com/saihgupr/remotecompanion/blob/master/SCRIPTING.md" class="footer-link" target="_blank" rel="noopener">AI Scripting Guide</a></li>
                     <li><a href="https://github.com/saihgupr/remotecompanion/blob/master/CHANGELOG.md" class="footer-link" target="_blank" rel="noopener">Full Changelog</a></li>
                 </ul>
             </div>

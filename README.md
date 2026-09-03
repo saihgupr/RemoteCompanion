@@ -3,7 +3,7 @@
 RemoteCompanion provides fast, scriptable system control for modern rootless jailbreaks. It lets you bind physical gestures and hardware buttons, or send commands remotely from your computer, to trigger system actions, control media playback, and run custom scripts.
 
 > [!IMPORTANT]
-> **What’s New in v3.6.0**
+> **What’s New in v3.6.1**
 > - **Integrations Hub**: Dedicated Settings sub-menu organizing external services into modular configuration screens:
 >   - **Home Assistant**: Full-screen entity browser with live states, quick action sheets (Toggle, Turn On, Turn Off), and remote API control.
 >   - **Keyboard Maestro**: Visual macro picker with group browsing, search, `%TriggerValue%` parameter editing, and automatic UUID resolution.

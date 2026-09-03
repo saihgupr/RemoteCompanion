@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.6.0] - 2026-08-30
+## [3.6.1] - 2026-09-03
 
 ### Added
 - **Native MQTT 3.1.1 Integration (Actions & Inbound Triggers)**: Complete native MQTT 3.1.1 implementation across the entire RemoteCompanion stack with zero third-party dependencies and near-zero battery consumption.

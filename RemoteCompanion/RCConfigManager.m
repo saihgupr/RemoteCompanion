@@ -1483,6 +1483,14 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
             @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
         },
         @{
+            @"key": @"location",
+            @"name": @"Location Services",
+            @"icon": @"location.fill",
+            @"prefixes": @[@"location ", @"locationservices ", @"location services ", @"gps "],
+            @"suffixes": @[@"on", @"off", @"toggle"],
+            @"displaySuffixes": @[@"On", @"Off", @"Toggle"]
+        },
+        @{
             @"key": @"flashlight",
             @"name": @"Flashlight",
             @"icon": @"flashlight.on.fill",
